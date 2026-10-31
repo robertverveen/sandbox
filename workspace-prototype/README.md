@@ -1,40 +1,30 @@
-# Home Zero Workspace: prototype
+# Home Zero Workspace
 
-A clickable first prototype of a single workspace where Slack, mail, tasks, Google Calendar, Google Drive and the **contextlaag** (Home Zero's context layer: a GitHub repo holding all company context) come together.
+One workspace where your agenda, mail, Slack, tasks, meetings and commitments come together, with a ⌘K search bar on top. It answers one question when you get to the office: **where should my attention go right now?**
 
-Open `index.html` in a browser. It's one self-contained file with no build step. All data in it is **demo data**.
+Live version: https://claude.ai/artifact/4CzejHBSKjJNrvBNESpYw4 (private). Open it in claude.ai and it loads your own data through your connectors. Opened locally, `index.html` runs on example data.
 
-## What you can try
+## What's in it
 
-| Part | What it shows |
+| Screen | What it does |
 |---|---|
-| **⌘K / Ctrl+K** (or `/`) | Master search bar. `veenstra` gives a context card for the partner first, then results grouped by source (context layer, meetings, mail, Slack, tasks, Drive). |
-| **Keywords** | Build views with `@veenstra`, `type:mail`, `from:sanne`, `in:#dev`, `when:week`, `is:open`, `is:unread`, `is:pending`. Save any search as a view in the sidebar with **⌘↵** (or "Bewaar als view"). Tab on a partner adds `@partner` to the query. |
-| **Commands** | Start with `>`: write back the latest meeting, ask the context layer, add a task, toggle theme. |
-| **Vandaag** | Day timeline with the context status of each meeting, a briefing for the next meeting, tasks and new activity. |
-| **Agenda** | Week view. Colour shows whether a meeting has been written back (green), is waiting for write-back (orange) or has a briefing ready (blue). |
-| **Meeting** | *Before:* a briefing from the context layer (agreements, open questions, previous meeting). *After:* a proposal from the transcript (summary, decisions, action items → Google Tasks, Slack questions that got answered) plus a diff of the context-layer files. "Wegschrijven" (write back) commits it and updates the partner context everywhere. |
-| **Partnerpagina** (partner page) | Everything about one partner: context-layer facts, a timeline across all sources, upcoming meetings, open tasks. |
-| **Chat** | A layer over Slack: all channels and DMs in one stream, plus "Vraag Home Zero" for questions answered by the context layer with sources. |
-| **Activiteit** | A stream of everything, plus a quick-add box for tasks (`@veenstra Jeroen bellen morgen`). |
+| **Dagstart** (day start) | Welcome-back screen showing a top 5 of "here's where your attention goes", ranked by urgency: late commitments, external meetings with open commitments (the catcher), invites without a response, Slack messages and mail waiting on you, overdue tasks. Below that, three columns: **Reageren** (respond: Slack DMs and mentions you haven't answered, mail sent to you), **Verwerken** (process: Wispr meetings to pull commitments from, cc mail, notifications) and **Agenda** (the next working day, plus invites you can accept or decline right away). "Vat samen" (summarise) lets Claude brief you in five sentences. |
+| **Agenda** | Week view from Google Calendar. External meetings, invites not yet accepted and the number of open commitments per organisation are all visible. Click a meeting to see attendees with their responses, open commitments and related items. |
+| **Toezeggingen** (commitments) | The commitment tracker from the design of 7 October: three streams (what I promised, what was promised to me, my own intentions), statuses, evidence rules. **Haal op** (pull in): Claude extracts commitments from Slack, mail or a Wispr meeting, and you review them before they're added. **Zoek bewijs** (find evidence): searches your sent mail, your Slack messages and your agenda, and sets items to "waarschijnlijk klaar" (probably done). You confirm or object. Nothing closes automatically. |
+| **Chat** | Slack messages addressed to you, mentioning you, and your own, in one stream, marked "wacht op jou" (waiting on you) or "beantwoord" (answered). "Vraag Claude" (ask Claude) answers questions about all your sources. |
+| **⌘K** | Searches everything at once. Keywords build views: `@tonzon`, `type:mail`, `from:mike`, `in:-hz`, `when:week`, `is:reageren`, `is:invite`, `is:extern`, `type:commit is:te_laat`. Save any view with ⌘↵. |
+| **Organisaties** | Built automatically from the email domains in your agenda and mail, and from `-hz` Slack channels. One page per organisation: timeline, open commitments, upcoming meetings. |
+| **Meeting wegschrijven** (write back a meeting) | Concept with example data: how a meeting gets committed to the context layer (GitHub) once that repo is connected. |
 
-## Data model (basis for the real app)
+## Connectors and storage
 
-Every item (mail, Slack message, meeting, context file, task, Drive file) has a type, a time and a list of **entities** (partner, product, person). Search, views, briefings and the "related" panel all work through those entity links. The context layer is the source of truth for each entity:
-
-```
-homezero/context/
-  partners/<partner>/README.md        # profile, status, contacts
-  partners/<partner>/afspraken.md     # running agreements (checklists)
-  partners/<partner>/meetings/<date>-<type>.md   # written-back meetings, with frontmatter
-  product/pico/...
-```
-
-A written-back meeting gets frontmatter that links it to the calendar event and the transcript (`agenda:` and `bron:`). That's how the calendar invite can show its context right away.
+- Google Calendar (`list_events`, `respond_to_event`), Gmail (`search_threads`, `get_thread`), Slack (`slack_search_public_and_private`), Google Tasks (`today`, `overdue`, `complete`), Wispr Flow (`search_meetings`, `get_meeting`).
+- Commitments live in the page's database (`commitments`, `processed`), readable and writable **only by the owner**.
+- Claude (via `sample`) for extraction, the summary and chat.
 
 ## Next steps
 
-1. **Connectors**: Gmail, Slack, Google Calendar/Tasks/Drive and GitHub through their APIs (or the MCP connectors we already use), with an indexer that recognises entities per item.
-2. **Write-back pipeline**: transcript (Wispr Flow / tl;dv / Fireflies) → Claude proposes the summary, decisions, tasks and diff → review → commit + Google Tasks + Slack reply.
-3. **App shell**: build it as a web app first (e.g. Next.js), then wrap it as a Mac app (Tauri or Electron) for a global ⌘K hotkey and notifications.
-4. **Search**: a local index (SQLite FTS / embeddings) over all sources, with the keyword syntax from this prototype as the query language.
+1. Connect the context layer (GitHub repo): partner profiles on the organisation page, and meetings actually committed.
+2. Schedule extraction and the evidence sweep (07:30 / 12:30 / 17:00) and fold them into the Telegram morning briefing.
+3. Reply to Slack and mail directly from the workspace.
+4. Mac shell (Tauri) for a global ⌘K hotkey and notifications.
