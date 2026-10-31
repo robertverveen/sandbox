@@ -6,15 +6,44 @@ Live version (private): https://claude.ai/artifact/4CzejHBSKjJNrvBNESpYw4. Opene
 
 ## Screens
 
+The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker and Chat**. Everything else (saved views, partners, wegschrijven/write-back, settings) is reached through `⌘K`. Less is more: each screen shows one thing at a time and keeps the rest one key away.
+
 | Screen | Keys | What it does |
 |---|---|---|
-| **Dagstart** (day start) | `g d` | Built on `/morning-briefing`. **Te plannen** (to plan) is the inbox: everything that needs a decision, ranked by urgency. That covers Slack waiting on you, 📣-marked messages, mail sent to you, overdue and undated Google Tasks, unplanned or late commitments, Wachten op (waiting for) items whose reminder date has passed, invites, external meetings without prep, and Wispr meetings without a recap. Next to it: today (max 10), the agenda with prep and recap status, Wachten op, week goals, and Ter info (FYI). |
-| **Planning** | `g p` | Late · Vandaag (today) · Morgen (tomorrow) · Later deze week (later this week, per-day load) · Volgende week (next week) · Zonder datum (no date) · Backlog. Google Tasks and the tracker side by side. |
-| **Plan session** | `s` | Card by card (Tinder style): week goals and roadmap first (`g` on track, `o` at risk, `r` blocked, `x` done, `n` note), then everything that needs a decision (`1`–`5` plan, `e`, `w`, `b`, `x`). `s` skip, `u` back. |
-| **Agenda** | `g a`, `[` `]` | All your Google calendars in one view (work, private, family, holidays and imports; colleagues' calendars can be switched on). Times always shown in Dutch time. |
-| **Tracker** | `g t`, `n`, `⇧1–7` | Alles (all) · Ik beloofde (I promised) · Wachten op (waiting for) · Bespreken bij contact (raise at next contact) · Voornemens (intentions) · Google Tasks · Afgerond (done). Replaces the Slack canvas "⏳ Wachten op" (already copied over; "Neem canvas over" picks up new rows). |
+| **Dagstart** (day start) | `g d` | A felt yellow header with the greeting and one line: how many items need a decision, today's load (x/10) and the next meeting, plus the **Start plansessie** button. Below it: the morning briefing as one collapsed line, **Vandaag** (today, max 10) next to **Agenda vandaag**, and "Om te beslissen" (to decide) folded away. Two chips at the bottom: the current sprint and the week goals. |
+| **Planning** | `g p`, `v` | Tab **Mijn planning**: late · today · tomorrow · later this week · next week · no date · backlog (Google Tasks and the tracker together). Tab **Sprint** (`v`): the current Jira sprint of project HOM, with a progress bar by status, "Voor jou om te testen" (where you are the Tester) at the top, then the stories by status. |
+| **Plan session** | `s` | Card by card on a felt blue plane: week goals and roadmap first (`g` on track, `o` at risk, `r` blocked, `x` done, `n` note), then everything that needs a decision (`1`–`5` plan, `e`, `w`, `b`, `x`). `s` skip, `u` back. |
+| **Agenda** | `g a`, `[` `]`, `l`, `n` | All Google calendars in one week view, in Dutch time, with Google Tasks in the all-day row. `l` opens the layers (Werk, Privé, Lou, Collega's); `n` plans something with colleagues (free slots via `suggest_time`). |
+| **Tracker** | `g t`, `⇧1–7` | Ik beloofde (I promised) · Wachten op (waiting for) · Bespreken (raise at next contact) · Voornemens (intentions) · Weekdoelen (week goals) · Roadmap · Afgerond (done). Replaces the Slack canvas "⏳ Wachten op". |
 | **Chat** | `g c`, `i` | Slack addressed to you, plus Vraag Claude (ask Claude) about all sources. |
 | **⌘K** | `⌘K` `/` | Search and commands. Keywords: `@feenstra type:mail when:week is:reageren`. |
+
+## Agenda colours and layers
+
+The colours follow Robert's Google Calendar:
+
+| Colour | Calendar |
+|---|---|
+| Yellow | HomeZero (robert@homezero.nl) |
+| Blue | robertverveen@gmail.com |
+| Green | Vakanties & Vrij |
+| Purple | everything from Lou |
+
+Lou's items (sport, dinner, appointments) and colleagues' calendars show **only in the Agenda**. They never appear in Dagstart, Planning or the tracker. The connector does not expose calendar colours, so these are defaults per calendar and can be changed in the layers panel.
+
+## Jira
+
+Sprint data comes live from Atlassian (`searchJiraIssuesUsingJql`, project HOM, `sprint in openSprints()`), refreshed every 10 minutes. Story points are `customfield_10016` and sprint dates come from `customfield_10020`. A second query (`Tester = currentUser()`) marks the stories you have to test. `o` on a story opens it in Jira.
+
+## Brand
+
+The app uses the HomeZero website identity. The same rules are published as the design system "HomeZero Website" (https://claude.ai/artifact/J9pm73jfwMAzDwGtgsHSxD), next to Pico and Configurator.
+
+- **Type:** Inter Variable, embedded.
+- **Colours:** the page is `#fbfbf8`, ink `#292f38`, blue-500 `#0022c4` for actions and focus, yellow-500 `#f9b20b` for accents. Dark mode is navy (grey-900).
+- **Felt planes:** brand blocks get a flat colour, the 256px grain tile on top (overlay, 0.8; 0.55 on blue) and the brand shapes behind the content. Examples are the Dagstart header (yellow-200, with a quarter disc and a ring) and the plan session (blue-500, with a ring, a disc and a dot).
+- **No drop shadows;** radii are 8/12/24.
+- **Agenda colours** are the one exception: they follow Google.
 
 ## Routines: landing in two places
 
