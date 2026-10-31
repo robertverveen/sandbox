@@ -1,0 +1,1395 @@
+<title>Home Zero Workspace</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: macOS-style three panes — sidebar (bronnen, views, partners) | werkvlak | contextpaneel. ⌘K-palet zweeft erboven. */
+:root {
+  --bg: #F4F6F3;
+  --panel: #FFFFFF;
+  --sidebar: #ECEFEA;
+  --fg: #18211C;
+  --muted: #59645D;
+  --faint: #879189;
+  --line: #DCE1DA;
+  --hover: #E5E9E3;
+  --accent: #1D6A4C;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #DDEFE5;
+  --warn: #A85A0B;
+  --warn-soft: #FBEBD6;
+  --add: #E3F4E8;
+  --del: #FBE4E1;
+  --c-mail: #C2410C;
+  --c-slack: #7B3A82;
+  --c-meeting: #2F5FD0;
+  --c-context: #1D6A4C;
+  --c-task: #A86B12;
+  --c-file: #0E7490;
+  --shadow: 0 24px 60px -12px rgba(20, 35, 27, .28), 0 0 0 1px rgba(20, 35, 27, .06);
+  --font-ui: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101412; --panel: #161B18; --sidebar: #0C0F0D; --fg: #E5EBE6; --muted: #9DA7A0; --faint: #6E7972;
+    --line: #262E29; --hover: #1E2521; --accent: #5BC394; --accent-fg: #0C1410; --accent-soft: #183327;
+    --warn: #F0A848; --warn-soft: #33250F; --add: #16301F; --del: #3A1C19;
+    --c-mail: #F08A5D; --c-slack: #C98BD0; --c-meeting: #7FA2F2; --c-context: #5BC394; --c-task: #E4B355; --c-file: #4CC3DB;
+    --shadow: 0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.07);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101412; --panel: #161B18; --sidebar: #0C0F0D; --fg: #E5EBE6; --muted: #9DA7A0; --faint: #6E7972;
+  --line: #262E29; --hover: #1E2521; --accent: #5BC394; --accent-fg: #0C1410; --accent-soft: #183327;
+  --warn: #F0A848; --warn-soft: #33250F; --add: #16301F; --del: #3A1C19;
+  --c-mail: #F08A5D; --c-slack: #C98BD0; --c-meeting: #7FA2F2; --c-context: #5BC394; --c-task: #E4B355; --c-file: #4CC3DB;
+  --shadow: 0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.07);
+  color-scheme: dark;
+}
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; overflow: hidden; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* App shell */
+.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); height: 100%; }
+.app.has-inspector { grid-template-columns: 236px minmax(0, 1fr) 360px; }
+
+.sidebar { background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: 10px; padding-block: 14px 10px; }
+.brand { display: flex; align-items: center; gap: 9px; padding: 2px 8px 14px; }
+.brand-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-weight: 700; font-size: 12px; letter-spacing: -.02em; }
+.brand b { font-weight: 600; font-size: 14px; }
+.brand div span { display: block; font-size: 11px; color: var(--faint); }
+.searchbtn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 9px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; color: var(--faint); margin-bottom: 14px; }
+.searchbtn:hover { color: var(--muted); }
+.searchbtn > span:not(.kbd) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.searchbtn .kbd { margin-left: auto; }
+.kbd { font-family: var(--font-mono); font-size: 11px; color: var(--faint); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; background: var(--bg); line-height: 18px; }
+.nav { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.nav-group { display: flex; flex-direction: column; gap: 1px; }
+.nav-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); padding: 0 9px 4px; display: flex; justify-content: space-between; }
+.nav-item { display: flex; align-items: center; gap: 9px; padding: 5px 9px; border-radius: 7px; color: var(--muted); text-align: left; width: 100%; }
+.nav-item:hover { background: var(--hover); color: var(--fg); }
+.nav-item.active { background: var(--panel); color: var(--fg); box-shadow: 0 0 0 1px var(--line); font-weight: 500; }
+.nav-item .count { margin-left: auto; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.nav-item .count.hot { color: var(--warn); font-weight: 600; }
+.nav-item .q { font-family: var(--font-mono); font-size: 10.5px; color: var(--faint); margin-left: auto; max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.sources { border-top: 1px solid var(--line); padding: 10px 9px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 11px; color: var(--faint); }
+.sources .sd { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+.main { min-width: 0; min-height: 0; overflow-y: auto; background: var(--bg); }
+.topbar { display: none; }
+.page { padding-block: 26px 60px; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); max-width: 1180px; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.eyebrow { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); }
+h1 { font-size: 24px; font-weight: 600; letter-spacing: -.02em; margin: 2px 0 0; text-wrap: balance; }
+h2 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -.005em; }
+h3 { font-size: 15px; font-weight: 600; margin: 0; }
+.sub { color: var(--muted); }
+
+.inspector { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; min-height: 0; padding-block: 18px 40px; padding-left: 20px; padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+
+/* Shared bits */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.card-body { padding: 12px 14px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-weight: 500; font-size: 13px; white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.sm { padding: 3px 8px; font-size: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--hover); color: var(--muted); white-space: nowrap; }
+.chip.entity { background: var(--accent-soft); color: var(--accent); font-weight: 500; cursor: pointer; }
+.chip.entity:hover { filter: brightness(.97); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); font-weight: 500; }
+.chip.ok { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.chip.plan { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+.src { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; }
+.src-mail { color: var(--c-mail); } .src-slack { color: var(--c-slack); } .src-meeting { color: var(--c-meeting); }
+.src-context { color: var(--c-context); } .src-task { color: var(--c-task); } .src-file { color: var(--c-file); }
+.ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; background: var(--hover); }
+.ic.mail { color: var(--c-mail); } .ic.slack { color: var(--c-slack); } .ic.meeting { color: var(--c-meeting); }
+.ic.context { color: var(--c-context); } .ic.task { color: var(--c-task); } .ic.file { color: var(--c-file); }
+.row { display: flex; align-items: flex-start; gap: 11px; padding: 9px 10px; border-radius: 9px; cursor: pointer; text-align: left; width: 100%; }
+.row:hover, .row.sel { background: var(--hover); }
+.row-main { min-width: 0; flex: 1; }
+.row-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-title.unread::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--c-meeting); margin-right: 7px; vertical-align: 1px; }
+.row-sub { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-meta { color: var(--faint); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; padding-top: 1px; }
+.list { display: flex; flex-direction: column; gap: 1px; }
+.group-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); padding: 14px 10px 4px; display: flex; align-items: center; gap: 8px; }
+.group-label:first-child { padding-top: 4px; }
+.empty { color: var(--faint); padding: 20px 10px; text-align: center; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.stack { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; color: #fff; }
+
+/* Vandaag */
+.banner { display: flex; align-items: center; gap: 14px; padding: 13px 16px; border-radius: 12px; background: var(--warn-soft); color: var(--fg); margin-bottom: 18px; flex-wrap: wrap; }
+.banner .ic { background: var(--panel); color: var(--warn); }
+.banner .row-main { min-width: 200px; }
+.timeline { position: relative; padding: 6px 14px 12px 58px; }
+.tl-hour { position: relative; height: 46px; border-top: 1px solid var(--line); }
+.tl-hour span { position: absolute; left: -46px; top: -8px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; width: 38px; text-align: right; }
+.tl-event { position: absolute; left: 58px; right: 14px; border-radius: 8px; padding: 6px 10px; cursor: pointer; overflow: hidden; display: flex; flex-direction: column; gap: 2px; border-left: 3px solid var(--c-meeting); background: color-mix(in srgb, var(--c-meeting) 10%, var(--panel)); }
+.tl-event:hover { background: color-mix(in srgb, var(--c-meeting) 16%, var(--panel)); }
+.tl-event.past { opacity: .78; }
+.tl-event.short { flex-direction: row; align-items: center; gap: 10px; padding-block: 2px; }
+.tl-event b { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-event .t { font-size: 11.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.now-line { position: absolute; left: 50px; right: 6px; height: 0; border-top: 2px solid var(--c-mail); z-index: 2; }
+.now-line::before { content: ""; position: absolute; left: -4px; top: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--c-mail); }
+.brief li { margin-bottom: 6px; }
+.brief { margin: 0; padding-left: 18px; color: var(--fg); }
+
+/* Agenda */
+.week { display: grid; grid-template-columns: 48px repeat(5, minmax(120px, 1fr)); min-width: 680px; }
+.week-wrap { overflow-x: auto; }
+.wk-head { padding: 10px 8px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.wk-head b { display: block; font-size: 18px; color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wk-head.today b { color: var(--accent); }
+.wk-col { position: relative; border-left: 1px solid var(--line); }
+.wk-hours { position: relative; }
+.wk-hl { height: 44px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--faint); text-align: right; padding-right: 6px; font-variant-numeric: tabular-nums; }
+.wk-ev { position: absolute; left: 4px; right: 4px; border-radius: 7px; padding: 4px 7px; font-size: 12px; cursor: pointer; overflow: hidden; border-left: 3px solid var(--c-meeting); background: color-mix(in srgb, var(--c-meeting) 11%, var(--panel)); }
+.wk-ev b { font-weight: 500; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-ev .state { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.wk-ev.pending { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); }
+.wk-ev.done { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Meeting page */
+.meta-line { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; color: var(--muted); font-size: 13px; margin-top: 8px; }
+.people { display: flex; gap: 6px; flex-wrap: wrap; }
+.person { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 2px 9px 2px 2px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); }
+.person .avatar { width: 20px; height: 20px; font-size: 9px; }
+.wb-section { padding: 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.wb-section:first-child { border-top: 0; }
+.check { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; }
+.check input { margin-top: 3px; accent-color: var(--accent); }
+.check .who { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.diff { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.diff-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 10px; background: var(--bg); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.diff pre { margin: 0; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
+.diff .ln { display: block; padding: 0 10px; white-space: pre; }
+.diff .ln.add { background: var(--add); }
+.diff .ln.del { background: var(--del); text-decoration: line-through; color: var(--muted); }
+.diff .ln.ctx { color: var(--muted); }
+.committed { display: flex; gap: 12px; align-items: center; padding: 14px; background: var(--accent-soft); border-radius: 12px; color: var(--fg); flex-wrap: wrap; }
+.committed .ic { background: var(--panel); color: var(--accent); }
+.answer-q { background: var(--bg); border-radius: 9px; padding: 9px 11px; font-size: 13px; }
+
+/* Entity */
+.entity-hero { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.entity-logo { width: 52px; height: 52px; border-radius: 13px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 20px; font-weight: 700; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 13px; }
+.facts dt { color: var(--faint); }
+.facts dd { margin: 0; }
+.counts { display: flex; gap: 8px; flex-wrap: wrap; }
+.count-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; cursor: pointer; }
+.count-pill b { font-variant-numeric: tabular-nums; }
+.repo-path { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+
+/* Chat */
+.chat { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100%; min-height: 0; }
+.chat-list { border-right: 1px solid var(--line); overflow-y: auto; padding: 16px 8px; background: var(--bg); }
+.chat-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); }
+.chat-head { padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.msgs { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.msg { display: flex; gap: 10px; max-width: 760px; }
+.msg-body { min-width: 0; }
+.msg-meta { font-size: 12px; color: var(--faint); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.msg-meta b { color: var(--fg); font-size: 13.5px; font-weight: 600; }
+.msg-text { margin-top: 2px; overflow-wrap: anywhere; }
+.msg.ai .avatar { background: var(--accent); color: var(--accent-fg); }
+.msg.ai .msg-text { background: var(--accent-soft); padding: 10px 12px; border-radius: 4px 12px 12px 12px; }
+.msg.ai .msg-text ul { margin: 6px 0; padding-left: 18px; }
+.sources-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.composer { border-top: 1px solid var(--line); padding: 12px 20px 16px; display: flex; flex-direction: column; gap: 8px; }
+.composer-box { display: flex; gap: 8px; align-items: flex-end; border: 1px solid var(--line); border-radius: 10px; padding: 8px 8px 8px 12px; background: var(--bg); }
+.composer-box textarea { flex: 1; border: 0; background: transparent; resize: none; outline: none; min-height: 22px; max-height: 120px; }
+.seg { display: inline-flex; background: var(--hover); border-radius: 8px; padding: 2px; }
+.seg button { padding: 3px 10px; border-radius: 6px; font-size: 12px; color: var(--muted); }
+.seg button.on { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 500; }
+.mention { color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 3px; font-weight: 500; cursor: pointer; }
+
+/* Query bar + list view */
+.qbar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; margin-bottom: 16px; }
+.qbar input { flex: 1; border: 0; outline: none; background: transparent; font-family: var(--font-mono); font-size: 13px; min-width: 0; }
+.tok { font-family: var(--font-mono); font-size: 12px; }
+.tok-key { color: var(--accent); }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; margin: -6px 0 14px; }
+
+/* Activity */
+.quickadd { display: flex; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; align-items: center; margin-bottom: 8px; }
+.quickadd input { flex: 1; border: 0; outline: none; background: transparent; min-width: 0; }
+.hint { font-size: 12px; color: var(--faint); margin: 0 0 18px; }
+
+/* Inspector */
+.insp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.insp-title { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin: 6px 0 4px; text-wrap: balance; }
+.insp-body { white-space: pre-wrap; color: var(--fg); background: var(--bg); border-radius: 10px; padding: 12px; margin: 12px 0; font-size: 13px; overflow-wrap: anywhere; }
+.insp-body.md { font-family: var(--font-mono); font-size: 12px; }
+.insp-section { margin-top: 18px; }
+.insp-section h2 { margin-bottom: 6px; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.iconbtn { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
+.iconbtn:hover { background: var(--hover); color: var(--fg); }
+
+/* Palette */
+.scrim { position: fixed; inset: 0; background: rgba(12, 20, 16, .32); z-index: 50; display: flex; justify-content: center; align-items: flex-start; padding-top: max(10vh, env(safe-area-inset-top, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.palette { width: 100%; max-width: 680px; background: var(--panel); border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 76vh; overflow: hidden; animation: pop .14s ease-out; }
+@keyframes pop { from { transform: translateY(-6px) scale(.985); opacity: .4; } }
+.pal-input { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.pal-input input { flex: 1; border: 0; outline: none; background: transparent; font-size: 16px; min-width: 0; }
+.pal-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 16px 0; }
+.pal-chips:empty { display: none; }
+.pal-results { overflow-y: auto; padding: 6px 8px 8px; }
+.pal-item { display: flex; gap: 11px; align-items: center; padding: 8px 10px; border-radius: 9px; cursor: pointer; }
+.pal-item.active { background: var(--hover); }
+.pal-item .row-main { min-width: 0; }
+.pal-item .enter { margin-left: auto; opacity: 0; }
+.pal-item.active .enter { opacity: 1; }
+.pal-entity { margin: 4px 2px 6px; padding: 12px; border-radius: 11px; border: 1px solid var(--line); display: flex; gap: 12px; align-items: center; cursor: pointer; }
+.pal-entity.active { border-color: var(--accent); background: var(--accent-soft); }
+.pal-entity .entity-logo { width: 40px; height: 40px; font-size: 15px; border-radius: 10px; }
+.pal-foot { display: flex; gap: 14px; align-items: center; padding: 9px 16px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--faint); flex-wrap: wrap; }
+.pal-foot span { display: inline-flex; gap: 5px; align-items: center; }
+.pal-foot .save { margin-left: auto; color: var(--accent); font-weight: 500; }
+.syntax { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; padding: 4px 10px 8px; font-size: 12px; color: var(--muted); }
+.syntax code { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); }
+
+.toast { position: fixed; bottom: max(20px, env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 60; box-shadow: var(--shadow); display: flex; gap: 8px; align-items: center; max-width: calc(100% - 32px); }
+.demo-tag { font-size: 10.5px; color: var(--faint); border: 1px dashed var(--line); border-radius: 5px; padding: 0 5px; }
+
+/* Responsive */
+@media (max-width: 1180px) {
+  .app.has-inspector { grid-template-columns: 236px minmax(0, 1fr); }
+  .inspector { position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 100%); z-index: 40; box-shadow: var(--shadow); padding-top: max(18px, env(safe-area-inset-top, 0px)); }
+}
+@media (max-width: 900px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .app, .app.has-inspector { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: 264px; z-index: 45; transform: translateX(-100%); transition: transform .18s ease; padding-top: max(14px, env(safe-area-inset-top, 0px)); }
+  .app.nav-open .sidebar { transform: none; box-shadow: var(--shadow); }
+  .topbar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .topbar .searchbtn { margin: 0; flex: 1; }
+  .page { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 48px; }
+  .chat { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .chat-list { border-right: 0; border-bottom: 1px solid var(--line); display: flex; overflow-x: auto; gap: 4px; padding: 8px; }
+  .chat-list .nav-label { display: none; }
+  .chat-list .nav-item { width: auto; white-space: nowrap; }
+  .chat-list .nav-group { flex-direction: row; }
+  .main.is-chat { display: flex; flex-direction: column; }
+  .main.is-chat > .chat { flex: 1; height: auto; }
+  .msgs, .chat-head, .composer { padding-left: 16px; padding-right: 16px; }
+  .scrim { padding-top: max(16px, env(safe-area-inset-top, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main" id="main"></main>
+  <aside class="inspector" id="inspector" hidden></aside>
+</div>
+<div id="overlay"></div>
+
+<script>
+/* ============================================================
+   Home Zero Workspace — prototype
+   Alle data hieronder is demo-data. In de echte app komt dit
+   uit Gmail, Slack, Google Calendar, Google Tasks, Google Drive
+   en de contextlaag (GitHub-repo met bedrijfscontext).
+   ============================================================ */
+
+const NOW = new Date('2026-10-30T14:10:00');
+const TODAY = '2026-10-30';
+
+/* ---------- Icons ---------- */
+const P = {
+  search: '<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',
+  sun: '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/>',
+  meeting: '<rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/>',
+  mail: '<rect x="1.8" y="3.2" width="12.4" height="9.6" rx="2"/><path d="m2.5 4.5 5.5 4 5.5-4"/>',
+  slack: '<path d="M6 2.5 4.8 13.5M11.2 2.5 10 13.5M2.5 5.8h11M2 10.2h11"/>',
+  context: '<path d="M8 1.8 14 5 8 8.2 2 5z"/><path d="m2 8 6 3.2L14 8"/><path d="m2 11 6 3.2 6-3.2"/>',
+  task: '<circle cx="8" cy="8" r="6"/><path d="m5.4 8.2 1.8 1.8 3.4-3.6"/>',
+  file: '<path d="M4 1.8h5l3.2 3.2v9.2H4z"/><path d="M9 1.8V5h3.2"/>',
+  activity: '<path d="M1.5 8.5h3l2-5 3 9 2-4h3"/>',
+  chat: '<path d="M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  x: '<path d="m4 4 8 8M12 4l-8 8"/>',
+  commit: '<circle cx="8" cy="8" r="2.6"/><path d="M1.5 8h3.9M10.6 8h3.9"/>',
+  spark: '<path d="M8 1.8c.4 3.2 1.9 4.8 5.2 5.2-3.3.4-4.8 2-5.2 5.2C7.6 9 6.1 7.4 2.8 7c3.3-.4 4.8-2 5.2-5.2z"/>',
+  arrow: '<path d="M3 8h10M9 4l4 4-4 4"/>',
+  enter: '<path d="M13 3v5H4M7 5 4 8l3 3"/>',
+  menu: '<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>',
+  chevL: '<path d="m10 3-5 5 5 5"/>',
+  chevR: '<path d="m6 3 5 5-5 5"/>',
+  link: '<path d="M6.8 9.2a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-.8.8"/><path d="M9.2 6.8a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l.8-.8"/>',
+  bookmark: '<path d="M4 2h8v12l-4-3-4 3z"/>',
+  users: '<circle cx="6" cy="5.5" r="2.3"/><path d="M1.8 13.2c.5-2.3 2.2-3.6 4.2-3.6s3.7 1.3 4.2 3.6"/><path d="M10.5 3.4a2.2 2.2 0 0 1 0 4.3M12 9.8c1.2.5 2 1.6 2.2 3.4"/>',
+  mic: '<rect x="5.5" y="1.8" width="5" height="8" rx="2.5"/><path d="M3.2 7.5a4.8 4.8 0 0 0 9.6 0M8 12.3v2"/>',
+  send: '<path d="M2 8 14 2.5 10.5 14 8 9z"/><path d="m8 9 6-6.5"/>',
+};
+const ic = (n, extra = '') => `<svg class="i" viewBox="0 0 16 16" ${extra}>${P[n] || ''}</svg>`;
+
+const SRC = {
+  meeting: { label: 'Agenda', plural: 'Meetings', icon: 'meeting' },
+  mail:    { label: 'Mail', plural: 'Mail', icon: 'mail' },
+  slack:   { label: 'Slack', plural: 'Slack', icon: 'slack' },
+  context: { label: 'Contextlaag', plural: 'Contextlaag', icon: 'context' },
+  task:    { label: 'Taak', plural: 'Taken', icon: 'task' },
+  file:    { label: 'Drive', plural: 'Drive', icon: 'file' },
+};
+const TYPE_ORDER = ['context', 'meeting', 'mail', 'slack', 'task', 'file'];
+
+/* ---------- Demo data ---------- */
+const PEOPLE = {
+  robert:  { name: 'Robert Verveen', org: 'Home Zero', color: '#1D6A4C' },
+  lisanne: { name: 'Lisanne', org: 'Home Zero', color: '#7B3A82' },
+  mark:    { name: 'Mark de Wit', org: 'Home Zero', color: '#2F5FD0' },
+  dominique: { name: 'Dominique', org: 'This Agency', color: '#0E7490' },
+  jeroen:  { name: 'Jeroen Veenstra', org: 'Veenstra', color: '#A86B12' },
+  sanne:   { name: 'Sanne de Boer', org: 'Veenstra', color: '#C2410C' },
+  pieter:  { name: 'Pieter Hoekstra', org: 'Warmteplan Noord', color: '#4B6B2A' },
+  anouk:   { name: 'Anouk Smit', org: 'Klimaatgroep Delta', color: '#8A3B5B' },
+  calendar:{ name: 'Google Agenda', org: 'Google', color: '#5A6B85' },
+};
+const initials = id => PEOPLE[id].name.split(' ').filter(w => /^[A-Z]/.test(w)).map(w => w[0]).slice(0, 2).join('');
+
+const ENTITIES = {
+  veenstra: {
+    name: 'Veenstra Installatietechniek', short: 'Veenstra', kind: 'Partner', status: 'Live', aliases: ['veenstra'],
+    repo: 'partners/veenstra', channel: '#veenstra-hz', people: ['jeroen', 'sanne'],
+    summary: 'Installateur van warmtepompen en zonnepanelen in Friesland, ±40 medewerkers. Gebruikt Pico voor leadopvolging, planning en offertes, met de lead agent op de website.',
+    facts: [['Fase', 'Live sinds april 2026'], ['Contract', 'Jaarcontract t/m 31-03-2027'], ['Producten', 'Pico · lead agent · offertes'], ['Agenda', 'Outlook (geen Google Agenda)'], ['Eigenaar', 'Robert'], ['Slack', '#veenstra-hz']],
+    afspraken: ['Agenda-sync Pico ↔ Outlook live vóór 15 november', 'Home Zero vernieuwt het offerte-sjabloon hybride warmtepomp', 'Maandelijkse check-in, laatste vrijdag van de maand'],
+    open: ['Wil Veenstra de lead agent ook voor zonnepanelen?', 'Leadrapport oktober nog niet gedeeld'],
+  },
+  warmteplan: {
+    name: 'Warmteplan Noord', short: 'Warmteplan', kind: 'Partner', status: 'Onboarding', aliases: ['warmteplan', 'noord'],
+    repo: 'partners/warmteplan-noord', channel: '#warmteplan-noord-hz', people: ['pieter'],
+    summary: 'Warmtepompspecialist in Groningen met 12 monteurs. Plant nu in Excel en stapt over op Pico. Onboarding gestart op 14 oktober.',
+    facts: [['Fase', 'Onboarding · week 3 van 6'], ['Go-live', 'gepland 1 december 2026'], ['Producten', 'Pico planning + offertes'], ['Eigenaar', 'Robert'], ['Slack', '#warmteplan-noord-hz']],
+    afspraken: ['Klantbestand wordt aangeleverd als Excel', 'Onboarding-checklist gaat vóór de tweede sessie naar Pieter'],
+    open: ['Welke velden uit het klantbestand zijn verplicht?', 'Wie bij Warmteplan wordt key user?'],
+  },
+  delta: {
+    name: 'Klimaatgroep Delta', short: 'Delta', kind: 'Prospect', status: 'Offertefase', aliases: ['delta', 'klimaatgroep'],
+    repo: 'partners/klimaatgroep-delta', channel: '#klanten', people: ['anouk'],
+    summary: 'Installatiebedrijf in Zeeland, 25 medewerkers. Zag op 27 oktober een demo van de offerteflow. Beslissing verwacht begin november.',
+    facts: [['Fase', 'Offertefase'], ['Interesse', 'Offerteflow + lead agent'], ['Beslissing', 'begin november'], ['Eigenaar', 'Robert']],
+    afspraken: ['Voorstel met prijsindicatie vóór 2 november'],
+    open: ['Koppeling met hun boekhoudpakket nodig?'],
+  },
+  pico: {
+    name: 'Pico', short: 'Pico', kind: 'Product', status: 'Sprint 64', aliases: ['pico', 'sprint'],
+    repo: 'product/pico', channel: '#dev', people: ['mark', 'lisanne'],
+    summary: 'Het Home Zero-platform voor installateurs: leads, planning, offertes en de lead agent.',
+    facts: [['Sprint', '64 · 19 okt – 1 nov'], ['Focus', 'Agenda-sync en offertesjablonen'], ['Team', 'Mark, Lisanne']],
+    afspraken: ['Release notes per sprint naar partners'], open: [],
+  },
+};
+
+let ITEMS = [
+  // ---- Meetings (Google Agenda) ----
+  { id: 'm1', type: 'meeting', title: 'Veenstra · maandelijkse check-in', start: '2026-10-30T10:00', end: '2026-10-30T11:00', entities: ['veenstra'],
+    people: ['jeroen', 'sanne', 'robert', 'lisanne'], where: 'Google Meet', writeback: 'pending', transcript: 'Wispr Flow · 58 min',
+    body: 'Maandelijkse check-in met Veenstra. Agenda: agenda-sync, offerte-sjabloon, uitbreiding lead agent.' },
+  { id: 'm2', type: 'meeting', title: 'Sprint review Pico', start: '2026-10-30T13:00', end: '2026-10-30T13:45', entities: ['pico'],
+    people: ['robert', 'mark', 'lisanne'], where: 'Kantoor Leeuwarden', writeback: 'done', commit: '8c1e04d', transcript: 'Wispr Flow · 41 min', file: 'product/pico/sprints/sprint-64.md',
+    body: 'Review sprint 64: agenda-sync fix, offertesjablonen, performance planning.' },
+  { id: 'm3', type: 'meeting', title: 'Warmteplan Noord · onboarding sessie 2', start: '2026-10-30T15:00', end: '2026-10-30T16:00', entities: ['warmteplan'],
+    people: ['pieter', 'robert'], where: 'Google Meet', writeback: 'planned',
+    body: 'Tweede onboardingsessie: import klantbestand, planningsregels, rollen.' },
+  { id: 'm4', type: 'meeting', title: 'Weekstart Home Zero', start: '2026-10-26T09:00', end: '2026-10-26T09:30', entities: ['pico'],
+    people: ['robert', 'mark', 'lisanne'], where: 'Kantoor', writeback: 'done', commit: '2b7f9a0', file: 'team/weekstart/2026-w44.md', body: 'Weekdoelen week 44.' },
+  { id: 'm5', type: 'meeting', title: 'Klimaatgroep Delta · demo offerteflow', start: '2026-10-27T14:00', end: '2026-10-27T15:00', entities: ['delta'],
+    people: ['anouk', 'robert'], where: 'Teams', writeback: 'done', commit: 'e41d77b', transcript: 'Wispr Flow · 52 min', file: 'partners/klimaatgroep-delta/meetings/2026-10-27-demo.md',
+    body: 'Demo van de offerteflow en lead agent voor Klimaatgroep Delta.' },
+  { id: 'm7', type: 'meeting', title: 'Design sync This Agency', start: '2026-10-28T11:00', end: '2026-10-28T12:00', entities: ['pico'],
+    people: ['dominique', 'robert'], where: 'Google Meet', writeback: 'pending', transcript: 'Wispr Flow · 47 min',
+    body: 'Doorloop nieuwe offerte-PDF en de onboarding-schermen.' },
+  { id: 'm10', type: 'meeting', title: '1-op-1 Lisanne', start: '2026-10-29T16:00', end: '2026-10-29T16:30', entities: [],
+    people: ['robert', 'lisanne'], where: 'Kantoor', writeback: 'done', commit: '91aa3c2', file: 'team/1-op-1/lisanne.md', body: 'Wekelijkse 1-op-1.' },
+  { id: 'm11', type: 'meeting', title: 'Warmteplan Noord · intake', start: '2026-10-14T10:00', end: '2026-10-14T11:30', entities: ['warmteplan'],
+    people: ['pieter', 'robert'], where: 'Groningen', writeback: 'done', commit: '5d0c2e8', file: 'partners/warmteplan-noord/meetings/2026-10-14-intake.md', body: 'Intake en planning onboarding.' },
+  { id: 'm6', type: 'meeting', title: 'Veenstra · kick-off lead agent', start: '2026-10-08T10:00', end: '2026-10-08T11:00', entities: ['veenstra'],
+    people: ['jeroen', 'sanne', 'robert'], where: 'Drachten', writeback: 'done', commit: 'a3f9c21', file: 'partners/veenstra/meetings/2026-10-08-kick-off.md', body: 'Kick-off van de lead agent op de website van Veenstra.' },
+  { id: 'm8', type: 'meeting', title: 'Klimaatgroep Delta · voorstel bespreken', start: '2026-11-02T11:00', end: '2026-11-02T12:00', entities: ['delta'],
+    people: ['anouk', 'robert'], where: 'Teams', writeback: 'planned', body: 'Voorstel en prijsindicatie doorlopen.' },
+  { id: 'm12', type: 'meeting', title: 'Weekstart Home Zero', start: '2026-11-02T09:00', end: '2026-11-02T09:30', entities: ['pico'],
+    people: ['robert', 'mark', 'lisanne'], where: 'Kantoor', writeback: 'planned', body: 'Weekdoelen week 45.' },
+  { id: 'm13', type: 'meeting', title: 'Pico roadmap Q1', start: '2026-11-04T13:30', end: '2026-11-04T15:00', entities: ['pico'],
+    people: ['robert', 'mark', 'lisanne'], where: 'Kantoor', writeback: 'planned', body: 'Roadmap Q1 2027 vaststellen.' },
+  { id: 'm9', type: 'meeting', title: 'Veenstra · Q4 planning', start: '2026-11-10T10:00', end: '2026-11-10T11:00', entities: ['veenstra'],
+    people: ['jeroen', 'sanne', 'robert'], where: 'Drachten', writeback: 'planned', body: 'Planning Q4 en uitbreiding lead agent.' },
+
+  // ---- Mail ----
+  { id: 'e5', type: 'mail', title: 'Bedankt voor vanochtend', from: 'jeroen', time: '2026-10-30T11:24', entities: ['veenstra'], unread: true,
+    body: 'Hoi Robert,\n\nDank voor de check-in van vanochtend. Goed om te horen dat de agenda-sync bijna live is. Wij willen de lead agent graag vanaf januari ook voor zonnepanelen-leads inzetten. Kun je laten weten wat daarvoor nodig is?\n\nGroet,\nJeroen' },
+  { id: 'e6', type: 'mail', title: 'Uitnodiging: Veenstra · Q4 planning (di 10 nov)', from: 'sanne', time: '2026-10-30T11:30', entities: ['veenstra'], unread: false, invite: 'm9',
+    body: 'Sanne de Boer heeft je uitgenodigd voor Veenstra · Q4 planning op dinsdag 10 november 10:00–11:00 in Drachten.' },
+  { id: 'e3', type: 'mail', title: 'Checklist onboarding + vragen over import klantbestand', from: 'pieter', time: '2026-10-30T08:31', entities: ['warmteplan'], unread: true,
+    body: 'Hoi Robert,\n\nVoor de sessie van vanmiddag: ons klantbestand staat klaar (ca. 3.400 adressen). Moeten telefoonnummers en e-mailadressen allebei gevuld zijn? En kunnen we de bestaande onderhoudscontracten meenemen?\n\nGroet,\nPieter' },
+  { id: 'e1', type: 'mail', title: 'Re: Koppeling Pico-agenda met Outlook', from: 'sanne', time: '2026-10-29T16:42', entities: ['veenstra', 'pico'], unread: false,
+    body: 'Hoi Mark en Robert,\n\nIk heb de fix op acceptatie getest met vijf afspraken zonder adres. Ze komen nu goed door in Outlook. Van mij mag hij naar productie.\n\nSanne' },
+  { id: 'e4', type: 'mail', title: 'Terugkoppeling demo offerteflow', from: 'anouk', time: '2026-10-28T17:05', entities: ['delta'], unread: false,
+    body: 'Hoi Robert,\n\nHet team was enthousiast over de offerteflow. Wel de vraag of Pico koppelt met Exact Online. Kun je dat meenemen in het voorstel?\n\nAnouk' },
+  { id: 'e2', type: 'mail', title: 'Offerte-sjabloon hybride warmtepomp', from: 'jeroen', time: '2026-10-27T09:15', entities: ['veenstra'], unread: false, attachment: 'f1',
+    body: 'Robert,\n\nIn de bijlage ons huidige sjabloon voor hybride warmtepompen. Kunnen jullie dit in de Pico-stijl zetten? Prijzen per merk staan op tabblad 2.\n\nJeroen' },
+
+  // ---- Slack ----
+  { id: 's1', type: 'slack', channel: '#veenstra-hz', from: 'sanne', time: '2026-10-29T09:12', entities: ['veenstra'], title: 'De leads van gisteravond staan niet in de planning, kan iemand kijken?' },
+  { id: 's2', type: 'slack', channel: '#veenstra-hz', from: 'mark', time: '2026-10-29T09:40', entities: ['veenstra', 'pico'], title: 'Gevonden: de agenda-sync sloeg afspraken zonder adres over. Fix staat op acceptatie. @Sanne kun je vandaag testen?' },
+  { id: 's3', type: 'slack', channel: '#veenstra-hz', from: 'sanne', time: '2026-10-29T10:05', entities: ['veenstra'], title: 'Top, ik test het na de lunch.' },
+  { id: 's10', type: 'slack', channel: 'Mark de Wit', dm: true, from: 'mark', time: '2026-10-29T17:30', entities: ['veenstra'], title: 'Kun je morgen in de check-in vragen of Veenstra ook Google Agenda gebruikt? Dan weten we of we die koppeling moeten bouwen.' },
+  { id: 's6', type: 'slack', channel: '#klanten', from: 'lisanne', time: '2026-10-28T15:30', entities: ['delta'], title: 'Klimaatgroep Delta was enthousiast over de offerteflow, beslissing verwacht begin november.' },
+  { id: 's7', type: 'slack', channel: '#warmteplan-noord-hz', from: 'pieter', time: '2026-10-30T08:45', entities: ['warmteplan'], title: 'We hebben het klantbestand klaarstaan als Excel. Welk format willen jullie?' },
+  { id: 's8', type: 'slack', channel: '#warmteplan-noord-hz', from: 'robert', time: '2026-10-30T09:02', entities: ['warmteplan'], title: 'Excel is prima. We nemen het vanmiddag in de sessie door.' },
+  { id: 's5', type: 'slack', channel: 'Lisanne', dm: true, from: 'lisanne', time: '2026-10-30T11:05', entities: ['veenstra'], title: 'Zal ik de recap van Veenstra in #klanten zetten zodra jij de meeting hebt weggeschreven?' },
+  { id: 's4', type: 'slack', channel: '#dev', from: 'mark', time: '2026-10-30T12:20', entities: ['pico', 'veenstra'], title: 'Agenda-sync fix staat klaar voor productie, wacht op akkoord van Veenstra.' },
+  { id: 's9', type: 'slack', channel: '#dev', from: 'lisanne', time: '2026-10-30T13:50', entities: ['pico'], title: 'Sprint review notes staan in de contextlaag: product/pico/sprints/sprint-64.md' },
+
+  // ---- Contextlaag (GitHub) ----
+  { id: 'c1', type: 'context', title: 'partners/veenstra/README.md', time: '2026-10-08T12:10', commit: 'a3f9c21', from: 'robert', entities: ['veenstra'],
+    body: '# Veenstra Installatietechniek\n\nInstallateur warmtepompen + zonnepanelen, Friesland (±40 fte).\n\n## Status\n- Fase: Live sinds april 2026\n- Contract: t/m 31-03-2027\n- Agenda: Outlook\n\n## Contactpersonen\n- Jeroen Veenstra — directeur\n- Sanne de Boer — planning' },
+  { id: 'c2', type: 'context', title: 'partners/veenstra/afspraken.md', time: '2026-10-08T12:10', commit: 'a3f9c21', from: 'robert', entities: ['veenstra'],
+    body: '# Lopende afspraken\n\n- [ ] Agenda-sync Pico ↔ Outlook live vóór 15 november\n- [ ] Offerte-sjabloon hybride vernieuwen (Home Zero)\n- [x] Lead agent live op website (8 okt)' },
+  { id: 'c3', type: 'context', title: 'partners/veenstra/meetings/2026-10-08-kick-off.md', time: '2026-10-08T12:08', commit: 'a3f9c21', from: 'robert', entities: ['veenstra'], meeting: 'm6',
+    body: '# Kick-off lead agent\n\nLead agent staat live op veenstra-installatie.nl. Sanne beheert de doorzetting naar planning.' },
+  { id: 'c4', type: 'context', title: 'partners/warmteplan-noord/README.md', time: '2026-10-14T13:02', commit: '5d0c2e8', from: 'robert', entities: ['warmteplan'],
+    body: '# Warmteplan Noord\n\nWarmtepompspecialist Groningen, 12 monteurs.\nPlant nu in Excel.\n\n## Onboarding\n- Start: 14 okt\n- Go-live: 1 dec' },
+  { id: 'c5', type: 'context', title: 'partners/klimaatgroep-delta/README.md', time: '2026-10-27T15:40', commit: 'e41d77b', from: 'robert', entities: ['delta'],
+    body: '# Klimaatgroep Delta\n\nProspect, Zeeland. Demo offerteflow gehad op 27 okt.\nVraag: koppeling Exact Online?' },
+  { id: 'c6', type: 'context', title: 'product/pico/sprints/sprint-64.md', time: '2026-10-30T13:52', commit: '8c1e04d', from: 'lisanne', entities: ['pico', 'veenstra'],
+    body: '# Sprint 64 review\n\n- Agenda-sync: afspraken zonder adres worden nu meegenomen (Veenstra)\n- Offertesjablonen: nieuwe opmaak klaar voor review\n- Planning laadt 40% sneller' },
+
+  // ---- Taken (Google Tasks) ----
+  { id: 't1', type: 'task', title: 'Agenda-sync fix testen met Sanne', due: '2026-10-30', done: true, entities: ['veenstra'], time: '2026-10-29T10:10' },
+  { id: 't2', type: 'task', title: 'Onboarding-checklist naar Pieter sturen', due: '2026-10-30', done: false, entities: ['warmteplan'], time: '2026-10-14T13:00' },
+  { id: 't3', type: 'task', title: 'Offerte-sjabloon hybride naar Dominique', due: '2026-11-02', done: false, entities: ['veenstra'], time: '2026-10-27T09:30' },
+  { id: 't4', type: 'task', title: 'Voorstel Klimaatgroep Delta afronden (incl. Exact Online)', due: '2026-11-02', done: false, entities: ['delta'], time: '2026-10-28T17:20' },
+  { id: 't5', type: 'task', title: 'Release notes sprint 64 reviewen', due: '2026-10-29', done: true, entities: ['pico'], time: '2026-10-27T08:00' },
+
+  // ---- Drive ----
+  { id: 'f1', type: 'file', title: 'Offerte hybride warmtepomp v3.docx', time: '2026-10-27T09:15', from: 'jeroen', entities: ['veenstra'], body: 'Word-document · 3 pagina\'s · gedeeld door Jeroen Veenstra' },
+  { id: 'f2', type: 'file', title: 'Warmteplan Noord · onboarding.pdf', time: '2026-10-29T11:00', from: 'robert', entities: ['warmteplan'], body: 'PDF · 6 pagina\'s · onboarding-checklist en planning' },
+  { id: 'f3', type: 'file', title: 'Pico roadmap Q4', time: '2026-10-22T16:00', from: 'robert', entities: ['pico'], body: 'Google Presentaties · 14 dia\'s' },
+  { id: 'f4', type: 'file', title: 'Klimaatgroep Delta · voorstel', time: '2026-10-28T18:00', from: 'robert', entities: ['delta'], body: 'Google Docs · concept' },
+];
+
+/* Wat de AI uit het transcript haalt en voorstelt om weg te schrijven */
+const WRITEBACK = {
+  m1: {
+    summary: 'De fix voor de agenda-sync (afspraken zonder adres) is getest door Sanne en mag naar productie. Veenstra wil de lead agent vanaf januari ook voor zonnepanelen-leads inzetten. Het nieuwe offerte-sjabloon hybride is qua opmaak akkoord, de prijzen per merk volgen nog.',
+    decisions: ['Agenda-sync gaat naar productie na akkoord Sanne (gegeven)', 'Lead agent uitbreiden naar zonnepanelen vanaf januari 2027', 'Veenstra gebruikt alleen Outlook, geen koppeling met Google Agenda nodig'],
+    actions: [
+      { text: 'Agenda-sync naar productie zetten', who: 'Mark', due: '2026-11-06' },
+      { text: 'Offerte-sjabloon hybride met prijzen delen met Sanne', who: 'Robert', due: '2026-11-04' },
+      { text: 'Leadrapport oktober sturen naar Jeroen', who: 'Lisanne', due: '2026-11-03' },
+      { text: 'Voorstel lead agent zonnepanelen voorbereiden voor Q4 planning', who: 'Robert', due: '2026-11-09' },
+    ],
+    answered: [{ q: 'Mark (Slack, 29 okt): gebruikt Veenstra ook Google Agenda?', a: 'Nee, alleen Outlook. Google-koppeling is niet nodig.', ref: 's10' }],
+    links: ['e5', 'e6', 's1', 's4', 's5', 't3'],
+    files: [
+      { path: 'partners/veenstra/meetings/2026-10-30-check-in.md', state: 'nieuw', lines: [
+        ['+', '---'], ['+', 'datum: 2026-10-30'], ['+', 'type: check-in'], ['+', 'deelnemers: [Jeroen Veenstra, Sanne de Boer, Robert, Lisanne]'],
+        ['+', 'bron: wispr-flow/transcript-58min'], ['+', 'agenda: google-calendar/evt_veenstra_checkin_okt'], ['+', '---'],
+        ['+', '# Maandelijkse check-in oktober'], ['+', ''], ['+', '## Besluiten'],
+        ['+', '- Agenda-sync naar productie (akkoord Sanne)'], ['+', '- Lead agent ook voor zonnepanelen vanaf jan 2027'], ['+', '- Alleen Outlook, geen Google Agenda'],
+        ['+', ''], ['+', '## Afspraken'], ['+', '- [ ] Mark: agenda-sync naar productie (6 nov)'], ['+', '- [ ] Robert: sjabloon hybride + prijzen naar Sanne (4 nov)'], ['+', '- [ ] Lisanne: leadrapport oktober naar Jeroen (3 nov)'] ] },
+      { path: 'partners/veenstra/afspraken.md', state: 'gewijzigd', lines: [
+        [' ', '# Lopende afspraken'], [' ', ''],
+        ['-', '- [ ] Agenda-sync Pico ↔ Outlook live vóór 15 november'],
+        ['+', '- [x] Agenda-sync getest op acceptatie (30 okt)'],
+        ['+', '- [ ] Agenda-sync naar productie — Mark, 6 nov'],
+        [' ', '- [ ] Offerte-sjabloon hybride vernieuwen (Home Zero)'],
+        ['+', '- [ ] Lead agent zonnepanelen — voorstel in Q4 planning (10 nov)'],
+        [' ', '- [x] Lead agent live op website (8 okt)'] ] },
+      { path: 'partners/veenstra/README.md', state: 'gewijzigd', lines: [
+        [' ', '## Status'], ['-', '- Fase: Live sinds april 2026'], ['+', '- Fase: Live sinds april 2026 · uitbreiding zonnepanelen jan 2027'],
+        [' ', '- Contract: t/m 31-03-2027'], ['-', '- Agenda: Outlook'], ['+', '- Agenda: alleen Outlook (bevestigd 30 okt)'] ] },
+    ],
+  },
+  m7: {
+    summary: 'Dominique liet de nieuwe offerte-PDF zien. Opmaak akkoord met twee aanpassingen: groter logo van de partner en de btw-regel apart tonen. Onboarding-schermen volgen volgende week.',
+    decisions: ['Partnerlogo groter in de offerte-header', 'Btw-regel als aparte regel in het totaalblok'],
+    actions: [{ text: 'Aangepaste offerte-PDF opleveren', who: 'Dominique', due: '2026-11-04' }, { text: 'Offerte-sjabloon hybride van Veenstra doorsturen', who: 'Robert', due: '2026-11-02' }],
+    answered: [], links: ['t3', 'f1'],
+    files: [{ path: 'product/pico/design/2026-10-28-design-sync.md', state: 'nieuw', lines: [
+      ['+', '# Design sync This Agency — 28 okt'], ['+', ''], ['+', '## Besluiten'], ['+', '- Partnerlogo groter in offerte-header'], ['+', '- Btw-regel apart in totaalblok'],
+      ['+', ''], ['+', '## Afspraken'], ['+', '- [ ] Dominique: offerte-PDF v2 (4 nov)'] ] }],
+  },
+};
+
+const BUILTIN_VIEWS = [
+  { id: 'inbox', name: 'Inbox', icon: 'mail', q: 'type:mail' },
+  { id: 'taken', name: 'Taken', icon: 'task', q: 'type:task is:open' },
+  { id: 'drive', name: 'Drive', icon: 'file', q: 'type:file' },
+  { id: 'context', name: 'Contextlaag', icon: 'context', q: 'type:context' },
+];
+const DEFAULT_SAVED = [
+  { id: 'v-wacht', name: 'Wacht op wegschrijven', q: 'type:meeting is:pending' },
+  { id: 'v-veenstra', name: 'Alles over Veenstra', q: '@veenstra' },
+  { id: 'v-ongelezen', name: 'Ongelezen mail', q: 'type:mail is:unread' },
+  { id: 'v-partnerslack', name: 'Partnerkanalen', q: 'type:slack in:-hz when:week' },
+];
+
+/* ---------- State ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('hzws:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('hzws:' + k, JSON.stringify(v)); } catch {} },
+};
+const S = {
+  route: { view: 'vandaag' },
+  selected: null,
+  saved: store.get('saved', DEFAULT_SAVED),
+  recent: store.get('recent', ['veenstra', 'type:mail is:unread', '@warmteplan type:meeting', 'from:sanne']),
+  chatChannel: 'all',
+  chatMode: 'slack',
+  aiThread: [],
+  weekOffset: 0,
+  palette: null,
+  wbChecks: {},
+  clock: new Date(NOW),
+};
+
+/* ---------- Helpers ---------- */
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const DAYS = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
+const MONTHS = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
+const d = s => new Date(s.length === 10 ? s + 'T00:00' : s);
+const ymd = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+const hm = dt => `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+const dayLabel = dt => {
+  const diff = Math.round((d(ymd(dt)) - d(TODAY)) / 864e5);
+  if (diff === 0) return 'Vandaag';
+  if (diff === -1) return 'Gisteren';
+  if (diff === 1) return 'Morgen';
+  return `${DAYS[dt.getDay()].slice(0, 2)} ${dt.getDate()} ${MONTHS[dt.getMonth()].slice(0, 3)}`;
+};
+const longDay = dt => `${DAYS[dt.getDay()]} ${dt.getDate()} ${MONTHS[dt.getMonth()]}`;
+const when = it => d(it.start || it.time || (it.due + 'T09:00'));
+const relTime = it => {
+  const t = when(it);
+  const dl = dayLabel(t);
+  if (it.type === 'task') return it.done ? 'Klaar' : dayLabel(d(it.due));
+  return dl === 'Vandaag' ? hm(t) : dl;
+};
+const byId = id => ITEMS.find(i => i.id === id);
+const entityName = id => ENTITIES[id]?.short || id;
+const isPast = m => d(m.end) <= S.clock;
+const short = (s, n = 90) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+const fmtDue = s => { const t = d(s); return `${t.getDate()} ${MONTHS[t.getMonth()].slice(0, 3)}`; };
+
+function itemSub(it) {
+  switch (it.type) {
+    case 'mail': return `${PEOPLE[it.from].name} · ${short(it.body.replace(/\s+/g, ' ').replace(/^(Hoi|Hallo|Beste)[^,]*,\s*/, '').replace(/^\w+,\s*/, ''), 80)}`;
+    case 'slack': return `${it.dm ? 'DM ' : ''}${it.channel} · ${PEOPLE[it.from].name}`;
+    case 'meeting': return `${hm(d(it.start))}–${hm(d(it.end))} · ${it.where} · ${it.people.length} deelnemers`;
+    case 'context': return `commit ${it.commit} · ${PEOPLE[it.from].name}`;
+    case 'task': return `${it.done ? 'Afgerond' : 'Deadline ' + fmtDue(it.due)}${it.entities.length ? ' · ' + it.entities.map(entityName).join(', ') : ''}`;
+    case 'file': return it.body;
+  }
+  return '';
+}
+function wbChip(m) {
+  if (m.writeback === 'done') return `<span class="chip ok">${ic('context')}Weggeschreven</span>`;
+  if (m.writeback === 'pending') return `<span class="chip warn">${ic('context')}Wacht op wegschrijven</span>`;
+  return `<span class="chip plan">${ic('spark')}Briefing klaar</span>`;
+}
+function rowHTML(it, opts = {}) {
+  const title = it.type === 'slack' ? short(it.title, 110) : it.title;
+  const trailing = it.type === 'meeting' && opts.wb !== false ? wbChip(it) : '';
+  return `<button class="row${S.selected === it.id ? ' sel' : ''}" data-open="${it.id}">
+    <span class="ic ${it.type}">${ic(SRC[it.type].icon)}</span>
+    <span class="row-main">
+      <span class="row-title${it.unread ? ' unread' : ''}" style="display:block">${it.type === 'task' && it.done ? '<s>' + esc(title) + '</s>' : esc(title)}</span>
+      <span class="row-sub" style="display:block">${esc(itemSub(it))}</span>
+    </span>
+    ${trailing}<span class="row-meta">${relTime(it)}</span>
+  </button>`;
+}
+const entityChip = id => `<span class="chip entity" data-entity="${id}">${esc(ENTITIES[id].short)}</span>`;
+const avatar = (id, size) => `<span class="avatar" style="background:${PEOPLE[id].color}${size ? `;width:${size}px;height:${size}px` : ''}">${initials(id)}</span>`;
+const srcLabel = t => `<span class="src src-${t}">${ic(SRC[t].icon)}${SRC[t].label}</span>`;
+
+/* ---------- Query engine: zoekbalk + views ---------- */
+const TYPE_ALIAS = { mail: 'mail', email: 'mail', inbox: 'mail', slack: 'slack', chat: 'slack', meeting: 'meeting', meetings: 'meeting', afspraak: 'meeting', agenda: 'meeting',
+  context: 'context', ctx: 'context', github: 'context', taak: 'task', taken: 'task', task: 'task', tasks: 'task', drive: 'file', file: 'file', doc: 'file', bestand: 'file' };
+
+function parseQuery(q) {
+  const out = { types: [], entities: [], from: [], in: [], when: null, is: [], text: [] };
+  for (const raw of q.trim().split(/\s+/).filter(Boolean)) {
+    const tok = raw.toLowerCase();
+    let m;
+    if (tok.startsWith('@') && tok.length > 1) out.entities.push(tok.slice(1));
+    else if ((m = tok.match(/^(type|bron|from|van|in|when|wanneer|is|partner):(.+)$/))) {
+      const [, k, v] = m;
+      if (k === 'type' || k === 'bron') { const t = TYPE_ALIAS[v]; if (t) out.types.push(t); }
+      else if (k === 'from' || k === 'van') out.from.push(v);
+      else if (k === 'in') out.in.push(v);
+      else if (k === 'when' || k === 'wanneer') out.when = v;
+      else if (k === 'is') out.is.push(v);
+      else if (k === 'partner') out.entities.push(v);
+    } else out.text.push(tok);
+  }
+  return out;
+}
+function matchEntityToken(tok) {
+  return Object.keys(ENTITIES).filter(id => id.startsWith(tok) || ENTITIES[id].aliases.some(a => a.startsWith(tok)) || ENTITIES[id].name.toLowerCase().includes(tok));
+}
+function haystack(it) {
+  return [it.title, it.body, it.channel, it.from && PEOPLE[it.from]?.name, ...(it.entities || []).map(e => ENTITIES[e].name + ' ' + ENTITIES[e].aliases.join(' ')),
+    ...(it.people || []).map(p => PEOPLE[p].name)].join(' ').toLowerCase();
+}
+function runQuery(q) {
+  const p = parseQuery(q);
+  const entIds = p.entities.flatMap(matchEntityToken);
+  const res = ITEMS.filter(it => {
+    if (p.types.length && !p.types.includes(it.type)) return false;
+    if (p.entities.length && !(it.entities || []).some(e => entIds.includes(e))) return false;
+    if (p.from.length && !p.from.some(f => it.from && PEOPLE[it.from].name.toLowerCase().includes(f) || (it.people || []).some(pp => PEOPLE[pp].name.toLowerCase().includes(f)))) return false;
+    if (p.in.length && !(it.channel && p.in.some(c => it.channel.toLowerCase().includes(c.replace(/^#/, ''))))) return false;
+    if (p.when) {
+      const t = when(it), today = d(TODAY);
+      const diff = (d(ymd(t)) - today) / 864e5;
+      if ((p.when === 'vandaag' || p.when === 'today') && diff !== 0) return false;
+      if ((p.when === 'week' || p.when === 'deze-week') && (diff < -4 || diff > 2)) return false;
+      if ((p.when === 'maand' || p.when === 'month') && t.getMonth() !== today.getMonth()) return false;
+      if (p.when === 'gisteren' && diff !== -1) return false;
+      if (p.when === 'komend' && t < S.clock) return false;
+    }
+    for (const flag of p.is) {
+      if (flag === 'open' && !(it.type === 'task' ? !it.done : it.type === 'meeting' ? it.writeback === 'pending' : true)) return false;
+      if (flag === 'unread' && !it.unread) return false;
+      if (flag === 'pending' && it.writeback !== 'pending') return false;
+      if ((flag === 'done' || flag === 'klaar') && !(it.done || it.writeback === 'done')) return false;
+    }
+    if (p.text.length) { const h = haystack(it); if (!p.text.every(w => h.includes(w))) return false; }
+    return true;
+  });
+  res.sort((a, b) => when(b) - when(a));
+  const entityHits = [...new Set([...entIds, ...p.text.flatMap(t => t.length >= 3 ? matchEntityToken(t) : [])])];
+  return { items: res, entityHits, parsed: p };
+}
+function grouped(items) {
+  const g = {};
+  for (const it of items) (g[it.type] ||= []).push(it);
+  return TYPE_ORDER.filter(t => g[t]).map(t => [t, g[t]]);
+}
+function queryChips(q) {
+  return q.trim().split(/\s+/).filter(Boolean).map(t => {
+    const m = t.match(/^([a-z]+):(.+)$/i);
+    if (m) return `<span class="chip"><span class="tok"><span class="tok-key">${esc(m[1])}:</span>${esc(m[2])}</span></span>`;
+    if (t.startsWith('@')) { const e = matchEntityToken(t.slice(1).toLowerCase())[0]; return e ? entityChip(e) : `<span class="chip tok">${esc(t)}</span>`; }
+    return `<span class="chip">“${esc(t)}”</span>`;
+  }).join('');
+}
+
+/* ---------- Routing ---------- */
+function routeFromHash() {
+  const h = location.hash.slice(1);
+  if (!h || h === 'vandaag') return { view: 'vandaag' };
+  if (['agenda', 'chat', 'activiteit'].includes(h)) return { view: h };
+  if (h.startsWith('e-') && ENTITIES[h.slice(2)]) return { view: 'entity', id: h.slice(2) };
+  if (h.startsWith('m-') && byId(h.slice(2))) return { view: 'meeting', id: h.slice(2) };
+  const b = BUILTIN_VIEWS.find(v => v.id === h);
+  if (b) return { view: 'list', q: b.q, title: b.name, key: b.id };
+  const s = S.saved.find(v => v.id === h);
+  if (s) return { view: 'list', q: s.q, title: s.name, key: s.id, saved: true };
+  return { view: 'vandaag' };
+}
+function hashFor(r) {
+  if (r.view === 'entity') return 'e-' + r.id;
+  if (r.view === 'meeting') return 'm-' + r.id;
+  if (r.view === 'list') return r.key || '';
+  return r.view;
+}
+function go(r) {
+  S.route = r;
+  const h = hashFor(r);
+  if (h && location.hash.slice(1) !== h) { S.skipHash = h; try { location.hash = h; } catch {} }
+  document.getElementById('app').classList.remove('nav-open');
+  render();
+  document.getElementById('main').scrollTop = 0;
+}
+window.addEventListener('hashchange', () => {
+  if (location.hash.slice(1) === S.skipHash) { S.skipHash = null; return; }
+  S.route = routeFromHash(); render();
+});
+
+/* ---------- Sidebar ---------- */
+function renderSidebar() {
+  const r = S.route;
+  const active = (cond) => cond ? ' active' : '';
+  const pending = ITEMS.filter(i => i.type === 'meeting' && i.writeback === 'pending').length;
+  const unread = ITEMS.filter(i => i.unread).length;
+  const openTasks = ITEMS.filter(i => i.type === 'task' && !i.done).length;
+  const counts = { inbox: unread, taken: openTasks };
+  document.getElementById('sidebar').innerHTML = `
+    <div class="brand"><span class="brand-mark">HZ</span><div><b>Home Zero</b><span>Workspace · prototype</span></div></div>
+    <button class="searchbtn" data-action="palette">${ic('search')}<span>Zoek overal</span><span class="kbd">⌘K</span></button>
+    <nav class="nav">
+      <div class="nav-group">
+        <button class="nav-item${active(r.view === 'vandaag')}" data-go="vandaag">${ic('sun')}Vandaag${pending ? `<span class="count hot">${pending}</span>` : ''}</button>
+        <button class="nav-item${active(r.view === 'agenda')}" data-go="agenda">${ic('meeting')}Agenda</button>
+        <button class="nav-item${active(r.view === 'chat')}" data-go="chat">${ic('chat')}Chat<span class="count">${ITEMS.filter(i => i.type === 'slack').length}</span></button>
+        <button class="nav-item${active(r.view === 'activiteit')}" data-go="activiteit">${ic('activity')}Activiteit</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Bronnen</div>
+        ${BUILTIN_VIEWS.map(v => `<button class="nav-item${active(r.key === v.id)}" data-go="${v.id}">${ic(v.icon)}${v.name}${counts[v.id] ? `<span class="count">${counts[v.id]}</span>` : ''}</button>`).join('')}
+      </div>
+      <div class="nav-group">
+        <div class="nav-label"><span>Views</span></div>
+        ${S.saved.map(v => `<button class="nav-item${active(r.key === v.id)}" data-go="${v.id}" title="${esc(v.q)}">${ic('bookmark')}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name)}</span></button>`).join('')}
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Partners & product</div>
+        ${Object.entries(ENTITIES).map(([id, e]) => `<button class="nav-item${active(r.view === 'entity' && r.id === id)}" data-go="e-${id}"><span class="dot" style="background:${e.status === 'Live' ? 'var(--accent)' : e.kind === 'Product' ? 'var(--c-meeting)' : 'var(--warn)'}"></span>${esc(e.short)}<span class="count">${e.status}</span></button>`).join('')}
+      </div>
+    </nav>
+    <div class="sources"><span class="sd"></span>Gmail · Slack · Agenda · Tasks · Drive · GitHub</div>`;
+}
+
+/* ---------- Views ---------- */
+function topbar() {
+  return `<div class="topbar"><button class="iconbtn" data-action="nav" aria-label="Menu">${ic('menu')}</button><button class="searchbtn" data-action="palette">${ic('search')}<span>Zoeken</span><span class="kbd">⌘K</span></button></div>`;
+}
+
+function viewVandaag() {
+  const todays = ITEMS.filter(i => i.type === 'meeting' && i.start.startsWith(TODAY)).sort((a, b) => when(a) - when(b));
+  const pending = ITEMS.filter(i => i.type === 'meeting' && i.writeback === 'pending').sort((a, b) => when(b) - when(a));
+  const next = ITEMS.filter(i => i.type === 'meeting' && d(i.start) > S.clock).sort((a, b) => when(a) - when(b))[0];
+  const tasks = ITEMS.filter(i => i.type === 'task' && (i.due <= ymd(new Date(+d(TODAY) + 3 * 864e5)))).sort((a, b) => (a.done - b.done) || a.due.localeCompare(b.due));
+  const recent = ITEMS.filter(i => ['mail', 'slack', 'context'].includes(i.type) && when(i) <= S.clock).sort((a, b) => when(b) - when(a)).slice(0, 6);
+  const H0 = 8, H1 = 18, PX = 46;
+  const nowTop = ((S.clock.getHours() + S.clock.getMinutes() / 60) - H0) * PX + 6;
+  return `<div class="page">
+    <div class="page-head"><div><div class="eyebrow">Goedemiddag Robert</div><h1>${longDay(d(TODAY)).replace(/^./, c => c.toUpperCase())}</h1></div>
+      <button class="btn" data-action="palette">${ic('search')}Zoek in alles<span class="kbd">⌘K</span></button></div>
+    ${pending.length ? `<div class="banner"><span class="ic">${ic('context')}</span>
+      <div class="row-main"><b>${pending.length} ${pending.length === 1 ? 'meeting wacht' : 'meetings wachten'} op wegschrijven naar de contextlaag</b>
+      <div class="sub" style="font-size:13px">${pending.map(m => esc(m.title)).join(' · ')}. Transcript, besluiten en afspraken staan klaar om te controleren.</div></div>
+      <button class="btn primary" data-go="m-${pending[0].id}">Controleren en wegschrijven ${ic('arrow')}</button></div>` : ''}
+    <div class="grid2">
+      <div class="card">
+        <div class="card-head"><h2>Agenda vandaag</h2><span class="legend"><span><span class="dot" style="background:var(--accent)"></span>weggeschreven</span><span><span class="dot" style="background:var(--warn)"></span>wacht</span></span></div>
+        <div class="timeline" style="height:${(H1 - H0) * PX + 18}px">
+          ${Array.from({ length: H1 - H0 }, (_, i) => `<div class="tl-hour"><span>${String(H0 + i).padStart(2, '0')}:00</span></div>`).join('')}
+          ${todays.map(m => {
+            const s = d(m.start), e = d(m.end);
+            const top = ((s.getHours() + s.getMinutes() / 60) - H0) * PX + 6;
+            const h = Math.max(((e - s) / 36e5) * PX - 3, 28);
+            const col = m.writeback === 'done' ? 'var(--accent)' : m.writeback === 'pending' ? 'var(--warn)' : 'var(--c-meeting)';
+            return `<div class="tl-event${isPast(m) ? ' past' : ''}${h < 44 ? ' short' : ''}" data-go="m-${m.id}" style="top:${top}px;height:${h}px;border-left-color:${col};background:color-mix(in srgb, ${col} 11%, var(--panel))">
+              <b>${esc(m.title)}</b><span class="t">${hm(s)}–${hm(e)} ${m.entities.map(entityChip).join('')} ${h > 40 ? wbChip(m) : ''}</span></div>`;
+          }).join('')}
+          <div class="now-line" style="top:${nowTop}px" title="Nu ${hm(S.clock)}"></div>
+        </div>
+      </div>
+      <div class="stack">
+        ${next ? briefCard(next) : ''}
+        <div class="card"><div class="card-head"><h2>Taken</h2><button class="btn sm" data-go="taken">Alle taken</button></div>
+          <div class="card-body" style="padding:6px"><div class="list">${tasks.map(t => rowHTML(t)).join('')}</div></div></div>
+        <div class="card"><div class="card-head"><h2>Net binnen</h2><button class="btn sm" data-go="activiteit">Activiteit</button></div>
+          <div class="card-body" style="padding:6px"><div class="list">${recent.map(t => rowHTML(t)).join('')}</div></div></div>
+      </div>
+    </div></div>`;
+}
+
+function related(entityIds, excludeId, limit = 8) {
+  return ITEMS.filter(i => i.id !== excludeId && (i.entities || []).some(e => entityIds.includes(e))).sort((a, b) => when(b) - when(a)).slice(0, limit);
+}
+
+function briefCard(m) {
+  const e = ENTITIES[m.entities[0]];
+  const mins = Math.round((d(m.start) - S.clock) / 6e4);
+  return `<div class="card">
+    <div class="card-head"><div><div class="eyebrow">Volgende · ${mins < 120 && mins > 0 ? 'over ' + mins + ' min' : dayLabel(d(m.start)) + ' ' + hm(d(m.start))}</div><h3 style="margin-top:2px">${esc(m.title)}</h3></div>
+      <button class="btn sm" data-go="m-${m.id}">Open</button></div>
+    <div class="card-body">
+      ${e ? `<div class="eyebrow" style="margin-bottom:6px;display:flex;gap:6px;align-items:center">${ic('context')} Uit de contextlaag</div>
+      <ul class="brief">${e.afspraken.slice(0, 2).map(a => `<li>${esc(a)}</li>`).join('')}${e.open.slice(0, 2).map(a => `<li><span class="sub">Open vraag:</span> ${esc(a)}</li>`).join('')}</ul>` : ''}
+      <div class="sub" style="font-size:12.5px;margin-top:8px">${related(m.entities, m.id, 40).filter(i => i.type !== 'meeting' && when(i) > new Date(+S.clock - 3 * 864e5)).length} nieuwe items sinds de vorige afspraak</div>
+    </div></div>`;
+}
+
+function viewAgenda() {
+  const base = new Date(d('2026-10-26').getTime() + S.weekOffset * 7 * 864e5);
+  const days = Array.from({ length: 5 }, (_, i) => new Date(+base + i * 864e5));
+  const H0 = 8, H1 = 18, PX = 44;
+  const wk = Math.ceil(((base - new Date(base.getFullYear(), 0, 1)) / 864e5 + new Date(base.getFullYear(), 0, 1).getDay() + 1) / 7);
+  return `<div class="page">
+    <div class="page-head"><div><div class="eyebrow">Google Agenda · week ${wk}</div><h1>${days[0].getDate()} – ${days[4].getDate()} ${MONTHS[days[4].getMonth()]}</h1></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div class="legend"><span><span class="dot" style="background:var(--accent)"></span>Weggeschreven</span><span><span class="dot" style="background:var(--warn)"></span>Wacht op wegschrijven</span><span><span class="dot" style="background:var(--c-meeting)"></span>Briefing klaar</span></div>
+        <button class="iconbtn" data-action="week" data-dir="-1" aria-label="Vorige week">${ic('chevL')}</button>
+        <button class="btn sm" data-action="week" data-dir="0">Deze week</button>
+        <button class="iconbtn" data-action="week" data-dir="1" aria-label="Volgende week">${ic('chevR')}</button>
+      </div></div>
+    <div class="card week-wrap"><div class="week">
+      <div class="wk-head"></div>
+      ${days.map(dt => `<div class="wk-head${ymd(dt) === TODAY ? ' today' : ''}">${DAYS[dt.getDay()].slice(0, 2)}<b>${dt.getDate()}</b></div>`).join('')}
+      <div class="wk-hours">${Array.from({ length: H1 - H0 }, (_, i) => `<div class="wk-hl">${H0 + i}:00</div>`).join('')}</div>
+      ${days.map(dt => {
+        const evs = ITEMS.filter(i => i.type === 'meeting' && i.start.startsWith(ymd(dt)));
+        return `<div class="wk-col">${Array.from({ length: H1 - H0 }, () => `<div class="wk-hl"></div>`).join('')}
+          ${evs.map(m => {
+            const s = d(m.start), e = d(m.end);
+            const top = ((s.getHours() + s.getMinutes() / 60) - H0) * PX;
+            const h = Math.max(((e - s) / 36e5) * PX - 3, 24);
+            const label = m.writeback === 'done' ? 'Weggeschreven' : m.writeback === 'pending' ? 'Wacht op wegschrijven' : 'Briefing klaar';
+            return `<div class="wk-ev ${m.writeback}" data-go="m-${m.id}" style="top:${top}px;height:${h}px" title="${esc(m.title)}"><b>${esc(m.title)}</b>${h > 34 ? `<span class="state">${hm(s)} · ${label}</span>` : ''}</div>`;
+          }).join('')}
+          ${ymd(dt) === TODAY ? `<div class="now-line" style="left:0;right:0;top:${((S.clock.getHours() + S.clock.getMinutes() / 60) - H0) * PX}px"></div>` : ''}
+        </div>`;
+      }).join('')}
+    </div></div>
+    <p class="hint" style="margin-top:12px">Klik op een afspraak om de context te zien: vooraf de briefing uit de contextlaag, achteraf wat er is weggeschreven.</p>
+  </div>`;
+}
+
+function viewMeeting(id) {
+  const m = byId(id);
+  const e = ENTITIES[m.entities[0]];
+  const past = isPast(m);
+  const wb = WRITEBACK[id];
+  const rel = related(m.entities, m.id, 12).filter(i => i.type !== 'meeting');
+  const lastMeeting = ITEMS.filter(i => i.type === 'meeting' && i.id !== m.id && i.entities.some(x => m.entities.includes(x)) && d(i.start) < d(m.start) && i.writeback === 'done').sort((a, b) => when(b) - when(a))[0];
+  let body = '';
+  if (m.writeback === 'pending' && wb) body = writebackPanel(m, wb);
+  else if (m.writeback === 'pending') body = `<div class="card"><div class="card-body">Transcript wordt verwerkt…</div></div>`;
+  else if (m.writeback === 'done') body = `<div class="committed"><span class="ic">${ic('commit')}</span><div class="row-main"><b>Weggeschreven naar de contextlaag</b>
+      <div class="mono sub">${esc(m.file || '')} · commit ${esc(m.commit)}</div></div>
+      ${m.file ? `<button class="btn sm" data-open="${(ITEMS.find(i => i.type === 'context' && i.title === m.file) || {}).id || ''}">Bekijk</button>` : ''}</div>
+      ${m.justCommitted ? `<div class="card" style="margin-top:14px"><div class="card-head"><h2>Wat er nu is gebeurd</h2></div><div class="card-body"><ul class="brief">${m.justCommitted.map(x => `<li>${x}</li>`).join('')}</ul></div></div>` : ''}`;
+  else body = '';
+
+  const briefing = e ? `<div class="card"><div class="card-head"><h2 style="display:flex;gap:7px;align-items:center">${ic('context')}Briefing uit de contextlaag</h2><span class="mono sub">${esc(e.repo)}/</span></div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+      <div>${esc(e.summary)}</div>
+      ${e.afspraken.length ? `<div><div class="eyebrow" style="margin-bottom:4px">Lopende afspraken</div><ul class="brief">${e.afspraken.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+      ${e.open.length ? `<div><div class="eyebrow" style="margin-bottom:4px">Open vragen om te stellen</div><ul class="brief">${e.open.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+      ${lastMeeting ? `<div><div class="eyebrow" style="margin-bottom:4px">Vorige afspraak</div>${rowHTML(lastMeeting)}</div>` : ''}
+    </div></div>` : `<div class="card"><div class="card-body sub">Geen partner of product gekoppeld. Koppel er een via ⌘K om context te laden.</div></div>`;
+
+  return `<div class="page">
+    <div class="page-head" style="align-items:flex-start"><div style="min-width:0">
+      <div class="eyebrow" style="display:flex;gap:8px;align-items:center">${srcLabel('meeting')} · ${longDay(d(m.start))}</div>
+      <h1>${esc(m.title)}</h1>
+      <div class="meta-line"><span>${hm(d(m.start))}–${hm(d(m.end))} · ${esc(m.where)}</span>${m.entities.map(entityChip).join('')}${wbChip(m)}${m.transcript ? `<span class="chip">${ic('mic')}${esc(m.transcript)}</span>` : ''}</div>
+      <div class="people" style="margin-top:10px">${m.people.map(p => `<span class="person">${avatar(p)}${esc(PEOPLE[p].name)}</span>`).join('')}</div>
+    </div>
+    <button class="btn" data-action="palette-q" data-q="@${m.entities[0] || ''} ">${ic('search')}Zoek in deze context</button></div>
+    <div class="grid2">
+      <div class="stack">${past ? body : ''}${past && m.writeback !== 'planned' ? '' : ''}${!past ? briefing : ''}${past && m.writeback === 'done' && !m.justCommitted ? briefing : ''}${!past ? `<div class="card"><div class="card-body sub" style="display:flex;gap:10px;align-items:center">${ic('mic')}Na afloop haalt de workspace het transcript op (Wispr Flow / tl;dv) en stelt voor wat er naar de contextlaag moet.</div></div>` : ''}</div>
+      <div class="stack">
+        ${past && m.writeback === 'pending' ? briefing.replace('Briefing uit de contextlaag', 'Briefing (vooraf)') : ''}
+        <div class="card"><div class="card-head"><h2>Gekoppeld aan ${e ? esc(e.short) : 'deze meeting'}</h2><span class="sub" style="font-size:12px">${rel.length} items</span></div>
+          <div class="card-body" style="padding:6px"><div class="list">${rel.map(i => rowHTML(i)).join('') || '<div class="empty">Nog niets gekoppeld</div>'}</div></div></div>
+      </div>
+    </div></div>`;
+}
+
+function writebackPanel(m, wb) {
+  const ck = S.wbChecks[m.id] ||= Object.fromEntries(wb.actions.map((_, i) => [i, true]));
+  return `<div class="card">
+    <div class="card-head"><div><div class="eyebrow" style="display:flex;gap:6px;align-items:center">${ic('spark')}Voorstel uit transcript · ${esc(m.transcript)}</div><h3 style="margin-top:2px">Wegschrijven naar de contextlaag</h3></div><span class="chip warn">Concept</span></div>
+    <div class="wb-section"><h2>Samenvatting</h2><div>${esc(wb.summary)}</div></div>
+    <div class="wb-section"><h2>Besluiten</h2><ul class="brief">${wb.decisions.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div class="wb-section"><h2>Afspraken → Google Tasks</h2>
+      ${wb.actions.map((a, i) => `<label class="check"><input type="checkbox" id="wb-${m.id}-${i}" data-wb="${m.id}" data-i="${i}" ${ck[i] ? 'checked' : ''}><span class="row-main">${esc(a.text)}</span><span class="who">${esc(a.who)} · ${fmtDue(a.due)}</span></label>`).join('')}
+    </div>
+    ${wb.answered.length ? `<div class="wb-section"><h2>Beantwoorde vragen uit Slack</h2>${wb.answered.map(x => `<div class="answer-q"><div class="sub" style="font-size:12px">${esc(x.q)}</div><div>${esc(x.a)}</div><div class="actions"><button class="btn sm" data-open="${x.ref}">${ic('slack')}Bekijk vraag</button><span class="sub" style="font-size:12px;align-self:center">Antwoord wordt in de thread gezet bij wegschrijven</span></div></div>`).join('')}</div>` : ''}
+    <div class="wb-section"><h2>Wijzigingen in de contextlaag <span class="sub" style="font-weight:400">· ${wb.files.length} bestanden</span></h2>
+      ${wb.files.map(f => `<div class="diff"><div class="diff-head"><span class="mono">${esc(f.path)}</span><span class="chip ${f.state === 'nieuw' ? 'ok' : ''}">${f.state}</span></div>
+        <pre>${f.lines.map(([t, s]) => `<span class="ln ${t === '+' ? 'add' : t === '-' ? 'del' : 'ctx'}">${t === ' ' ? '  ' : t + ' '}${esc(s)}</span>`).join('')}</pre></div>`).join('')}
+    </div>
+    <div class="wb-section" style="flex-direction:row;flex-wrap:wrap;gap:8px;align-items:center">
+      <button class="btn primary" data-action="commit" data-id="${m.id}">${ic('commit')}Wegschrijven naar contextlaag</button>
+      <button class="btn" data-action="toast" data-msg="In de echte app open je hier de editor om het voorstel aan te passen">Aanpassen</button>
+      <span class="sub" style="font-size:12px">Commit naar <span class="mono">homezero/context</span> · taken naar Google Tasks</span>
+    </div></div>`;
+}
+
+function commitWriteback(id) {
+  const m = byId(id), wb = WRITEBACK[id];
+  const hash = Math.random().toString(16).slice(2, 9);
+  S.clock = new Date(+S.clock + 60e3);
+  const t = ymd(S.clock) + 'T' + hm(S.clock);
+  m.writeback = 'done'; m.commit = hash; m.file = wb.files[0].path;
+  const ck = S.wbChecks[id] || {};
+  const newTasks = wb.actions.filter((_, i) => ck[i] !== false);
+  wb.files.forEach((f, i) => {
+    const existing = ITEMS.find(x => x.type === 'context' && x.title === f.path);
+    const body = f.lines.filter(([k]) => k !== '-').map(([, s]) => s).join('\n');
+    if (existing) { existing.time = t; existing.commit = hash; existing.from = 'robert'; existing.body = body; }
+    else ITEMS.push({ id: 'c-' + hash + i, type: 'context', title: f.path, time: t, commit: hash, from: 'robert', entities: m.entities, body, meeting: id });
+  });
+  newTasks.forEach((a, i) => ITEMS.push({ id: 't-' + hash + i, type: 'task', title: `${a.text} (${a.who})`, due: a.due, done: false, entities: m.entities, time: t }));
+  wb.answered.forEach((x, i) => { const q = byId(x.ref); ITEMS.push({ id: 's-' + hash + i, type: 'slack', channel: q.channel, dm: q.dm, from: 'robert', time: t, entities: m.entities, title: x.a }); });
+  if (id === 'm1') {
+    const e = ENTITIES.veenstra;
+    e.afspraken = ['Agenda-sync naar productie (Mark, 6 nov)', 'Home Zero vernieuwt het offerte-sjabloon hybride warmtepomp', 'Lead agent zonnepanelen: voorstel in Q4 planning (10 nov)', 'Maandelijkse check-in, laatste vrijdag van de maand'];
+    e.open = ['Prijzen per merk voor sjabloon hybride nog aanleveren'];
+    e.facts[0] = ['Fase', 'Live · uitbreiding zonnepanelen jan 2027'];
+    e.facts[3] = ['Agenda', 'Alleen Outlook (bevestigd 30 okt)'];
+  }
+  m.justCommitted = [
+    `${wb.files.length} bestanden gecommit naar <span class="mono">homezero/context</span> (commit <span class="mono">${hash}</span>)`,
+    `${newTasks.length} taken aangemaakt in Google Tasks`,
+    ...(wb.answered.length ? [`Antwoord geplaatst in Slack (${esc(byId(wb.answered[0].ref).channel)})`] : []),
+    `Briefing voor de volgende afspraak is bijgewerkt`,
+  ];
+  toast(`${ic('commit')}Weggeschreven · commit ${hash}`);
+  render();
+}
+
+function viewEntity(id) {
+  const e = ENTITIES[id];
+  const all = ITEMS.filter(i => (i.entities || []).includes(id)).sort((a, b) => when(b) - when(a));
+  const cnt = t => all.filter(i => i.type === t).length;
+  const upcoming = all.filter(i => i.type === 'meeting' && d(i.start) > S.clock).sort((a, b) => when(a) - when(b));
+  const openTasks = all.filter(i => i.type === 'task' && !i.done);
+  const ctxFiles = all.filter(i => i.type === 'context');
+  const timeline = all.filter(i => i.type !== 'task' && when(i) <= S.clock);
+  const byDay = {};
+  timeline.forEach(i => (byDay[ymd(when(i))] ||= []).push(i));
+  return `<div class="page">
+    <div class="page-head" style="align-items:flex-start">
+      <div class="entity-hero"><div class="entity-logo">${esc(e.short.slice(0, 2).toUpperCase())}</div>
+        <div><div class="eyebrow">${esc(e.kind)} · ${esc(e.status)}</div><h1>${esc(e.name)}</h1>
+        <div class="repo-path mono" style="margin-top:4px">${ic('context')}homezero/context/${esc(e.repo)}/</div></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-action="palette-q" data-q="@${id} ">${ic('search')}Zoek binnen ${esc(e.short)}</button>
+        <button class="btn" data-action="ask" data-q="Wat is de stand van zaken bij ${esc(e.short)}?">${ic('spark')}Vraag de contextlaag</button>
+      </div>
+    </div>
+    <div class="counts" style="margin-bottom:18px">${TYPE_ORDER.filter(cnt).map(t => `<button class="count-pill" data-action="palette-q" data-q="@${id} type:${t === 'file' ? 'drive' : t} "><span class="src src-${t}">${ic(SRC[t].icon)}</span><b>${cnt(t)}</b>${SRC[t].plural}</button>`).join('')}</div>
+    <div class="grid2">
+      <div class="stack">
+        <div class="card"><div class="card-head"><h2>Tijdlijn</h2><span class="sub" style="font-size:12px">alle bronnen</span></div>
+          <div class="card-body" style="padding:6px">${Object.entries(byDay).map(([day, its]) => `<div class="group-label">${dayLabel(d(day))}</div><div class="list">${its.map(i => rowHTML(i)).join('')}</div>`).join('')}</div></div>
+      </div>
+      <div class="stack">
+        <div class="card"><div class="card-head"><h2 style="display:flex;gap:7px;align-items:center">${ic('context')}Contextlaag</h2><span class="sub" style="font-size:12px">bijgewerkt ${ctxFiles[0] ? dayLabel(when(ctxFiles[0])).toLowerCase() : '–'}</span></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+            <div>${esc(e.summary)}</div>
+            <dl class="facts">${e.facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+            ${e.people.length ? `<div class="people">${e.people.map(p => `<span class="person">${avatar(p)}${esc(PEOPLE[p].name)}</span>`).join('')}</div>` : ''}
+            <div><div class="eyebrow" style="margin-bottom:4px">Lopende afspraken</div><ul class="brief">${e.afspraken.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>
+            ${e.open.length ? `<div><div class="eyebrow" style="margin-bottom:4px">Open vragen</div><ul class="brief">${e.open.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+            <div class="list">${ctxFiles.slice(0, 4).map(i => rowHTML(i)).join('')}</div>
+          </div></div>
+        ${upcoming.length ? `<div class="card"><div class="card-head"><h2>Komende afspraken</h2></div><div class="card-body" style="padding:6px"><div class="list">${upcoming.map(i => rowHTML(i)).join('')}</div></div></div>` : ''}
+        ${openTasks.length ? `<div class="card"><div class="card-head"><h2>Open taken</h2></div><div class="card-body" style="padding:6px"><div class="list">${openTasks.map(i => rowHTML(i)).join('')}</div></div></div>` : ''}
+      </div>
+    </div></div>`;
+}
+
+function viewList(r) {
+  return `<div class="page">
+    <div class="page-head"><div><div class="eyebrow">${r.saved ? 'Opgeslagen view' : r.key ? 'Bron' : 'Zoekresultaten'}</div><h1>${esc(r.title || 'Zoeken')}</h1></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${r.saved ? `<button class="btn" data-action="delete-view" data-id="${r.key}">Verwijder view</button>` : !r.key || r.adhoc ? `<button class="btn primary" data-action="save-view">${ic('bookmark')}Bewaar als view</button>` : ''}
+      </div></div>
+    <label class="qbar" for="qbar">${ic('search')}<input id="qbar" value="${esc(r.q)}" spellcheck="false" autocomplete="off" placeholder="bijv. @veenstra type:mail when:week"></label>
+    <div id="list-results"></div></div>`;
+}
+function renderListResults() {
+  const el = document.getElementById('list-results'); if (!el) return;
+  const { items, entityHits } = runQuery(S.route.q);
+  el.innerHTML = `<div class="filters">${queryChips(S.route.q)}<span class="sub" style="font-size:12px;align-self:center">${items.length} resultaten</span></div>
+    ${entityHits.length && !/type:/.test(S.route.q) ? `<div class="counts" style="margin-bottom:12px">${entityHits.map(id => `<button class="count-pill" data-go="e-${id}"><span class="dot" style="background:var(--accent)"></span><b>${esc(ENTITIES[id].name)}</b>open overzicht ${ic('arrow')}</button>`).join('')}</div>` : ''}
+    <div class="card"><div class="card-body" style="padding:6px">${items.length ? grouped(items).map(([t, its]) => `<div class="group-label">${srcLabel(t)}<span>${its.length}</span></div><div class="list">${its.map(i => rowHTML(i)).join('')}</div>`).join('') : '<div class="empty">Niets gevonden. Probeer minder filters.</div>'}</div></div>`;
+}
+
+function viewActiviteit() {
+  const items = ITEMS.filter(i => when(i) <= new Date(+S.clock + 60e3) && i.type !== 'meeting' || (i.type === 'meeting' && isPast(i))).sort((a, b) => when(b) - when(a));
+  const byDay = {};
+  items.forEach(i => (byDay[ymd(when(i))] ||= []).push(i));
+  return `<div class="page">
+    <div class="page-head"><div><div class="eyebrow">Alle bronnen</div><h1>Activiteit</h1></div></div>
+    <form class="quickadd" id="quickadd">${ic('plus')}<input id="qa" placeholder="Nieuwe activiteit, bijv. ‘@veenstra Jeroen bellen over zonnepanelen morgen’" autocomplete="off"><button class="btn sm primary" type="submit">Toevoegen</button></form>
+    <p class="hint">Met <span class="mono">@partner</span> koppel je de taak meteen aan de context. <span class="mono">vandaag</span>, <span class="mono">morgen</span> of <span class="mono">maandag</span> zet de deadline.</p>
+    <div class="card"><div class="card-body" style="padding:6px">${Object.entries(byDay).map(([day, its]) => `<div class="group-label">${dayLabel(d(day))}</div><div class="list">${its.map(i => rowHTML(i)).join('')}</div>`).join('')}</div></div>
+  </div>`;
+}
+function quickAdd(text) {
+  const ents = [...text.matchAll(/@(\w+)/g)].flatMap(m => matchEntityToken(m[1].toLowerCase())).slice(0, 2);
+  let due = TODAY;
+  if (/\bmorgen\b/i.test(text)) due = ymd(new Date(+d(TODAY) + 864e5));
+  if (/\bmaandag\b/i.test(text)) due = '2026-11-02';
+  const title = text.replace(/@\w+/g, m => ENTITIES[matchEntityToken(m.slice(1).toLowerCase())[0]]?.short || m).replace(/\b(vandaag|morgen|maandag)\b/i, '').replace(/\s+/g, ' ').trim();
+  ITEMS.push({ id: 't-' + Date.now(), type: 'task', title: title.replace(/^./, c => c.toUpperCase()), due, done: false, entities: ents, time: ymd(S.clock) + 'T' + hm(S.clock) });
+  toast(`${ic('task')}Taak toegevoegd aan Google Tasks${ents.length ? ' · gekoppeld aan ' + ents.map(entityName).join(', ') : ''}`);
+  render();
+}
+
+/* ---------- Chat: laag over Slack + vraag de contextlaag ---------- */
+function viewChat() {
+  const slack = ITEMS.filter(i => i.type === 'slack');
+  const chans = [...new Set(slack.filter(s => !s.dm).map(s => s.channel))];
+  const dms = [...new Set(slack.filter(s => s.dm).map(s => s.channel))];
+  const ch = S.chatChannel;
+  const isAI = ch === 'ai';
+  const msgs = isAI ? [] : slack.filter(s => ch === 'all' || s.channel === ch).sort((a, b) => when(a) - when(b));
+  const chanEnts = [...new Set(msgs.flatMap(m => m.entities))];
+  const item = (key, label, iconName, n) => `<button class="nav-item${ch === key ? ' active' : ''}" data-chat="${esc(key)}">${ic(iconName)}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</span>${n ? `<span class="count">${n}</span>` : ''}</button>`;
+  return `<div class="chat">
+    <div class="chat-list">
+      <div class="nav-group">
+        ${item('ai', 'Vraag Home Zero', 'spark')}
+        ${item('all', 'Alle Slack', 'chat', slack.length)}
+      </div>
+      <div class="nav-group" style="margin-top:12px"><div class="nav-label">Kanalen</div>${chans.map(c => item(c, c.replace('#', ''), 'slack', slack.filter(s => s.channel === c).length)).join('')}</div>
+      <div class="nav-group" style="margin-top:12px"><div class="nav-label">Direct</div>${dms.map(c => item(c, c, 'users')).join('')}</div>
+    </div>
+    <div class="chat-main">
+      <div class="chat-head"><div><h3>${isAI ? 'Vraag Home Zero' : ch === 'all' ? 'Alle Slack' : esc(ch)}</h3>
+        <div class="sub" style="font-size:12px">${isAI ? 'Antwoorden uit de contextlaag, mail, Slack en agenda, met bronnen' : ch === 'all' ? 'Alle kanalen en DM’s in één stroom' : 'Slack'}</div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${chanEnts.map(entityChip).join('')}</div></div>
+      <div class="msgs" id="msgs">${isAI ? aiMessages() : msgs.map(msgHTML).join('')}</div>
+      <form class="composer" id="composer">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="seg"><button type="button" class="${!isAI ? 'on' : ''}" data-mode="slack">Bericht in Slack</button><button type="button" class="${isAI ? 'on' : ''}" data-mode="ai">${'Vraag de contextlaag'}</button></div>
+          ${!isAI && ch === 'all' ? '<span class="sub" style="font-size:12px">Kies een kanaal om te sturen</span>' : '<span class="demo-tag">demo · er wordt niets verstuurd</span>'}
+        </div>
+        <div class="composer-box"><textarea id="composer-input" rows="1" placeholder="${isAI ? 'Bijv. wat hebben we met Veenstra afgesproken?' : ch === 'all' ? 'Kies eerst een kanaal…' : 'Bericht aan ' + esc(ch)}" ${!isAI && ch === 'all' ? 'disabled' : ''}></textarea>
+          <button class="btn sm primary" type="submit" aria-label="Verstuur">${ic('send')}</button></div>
+      </form>
+    </div></div>`;
+}
+function msgHTML(m) {
+  let text = esc(m.title).replace(/@(\w+)/g, '<span class="mention">@$1</span>');
+  for (const id of m.entities) { const n = ENTITIES[id].short; text = text.replace(new RegExp(`\\b(${n})\\b(?![^<]*>)`), `<span class="mention" data-entity="${id}">$1</span>`); }
+  return `<div class="msg">${avatar(m.from)}<div class="msg-body"><div class="msg-meta"><b>${esc(PEOPLE[m.from].name)}</b>${S.chatChannel === 'all' ? `<span>${esc(m.channel)}</span>` : ''}<span>${dayLabel(when(m))} ${hm(when(m))}</span></div>
+    <div class="msg-text">${text}</div></div></div>`;
+}
+function aiMessages() {
+  if (!S.aiThread.length) {
+    const sugg = ['Wat hebben we met Veenstra afgesproken?', 'Wat moet ik weten voor Warmteplan Noord om 15:00?', 'Welke vragen staan nog open bij Klimaatgroep Delta?'];
+    return `<div class="msg ai"><span class="avatar">${ic('spark')}</span><div class="msg-body"><div class="msg-meta"><b>Home Zero</b></div>
+      <div class="msg-text">Ik zoek door de contextlaag, mail, Slack, agenda, taken en Drive. Waar wil je meer over weten?
+      <div class="sources-row">${sugg.map(s => `<button class="btn sm" data-action="ask" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div></div></div></div>`;
+  }
+  return S.aiThread.map(m => m.role === 'user'
+    ? `<div class="msg">${avatar('robert')}<div class="msg-body"><div class="msg-meta"><b>Robert</b></div><div class="msg-text">${esc(m.text)}</div></div></div>`
+    : `<div class="msg ai"><span class="avatar">${ic('spark')}</span><div class="msg-body"><div class="msg-meta"><b>Home Zero</b><span class="demo-tag">demo-antwoord</span></div><div class="msg-text">${m.html}
+       <div class="sources-row">${m.sources.map(id => { const it = byId(id); return `<button class="chip" data-open="${id}" style="cursor:pointer">${ic(SRC[it.type].icon)}${esc(short(it.title, 34))}</button>`; }).join('')}</div></div></div></div>`).join('');
+}
+function answer(q) {
+  const ql = q.toLowerCase();
+  const ents = Object.keys(ENTITIES).filter(id => ENTITIES[id].aliases.some(a => ql.includes(a)) || ql.includes(ENTITIES[id].name.toLowerCase()));
+  if (!ents.length) {
+    const { items } = runQuery(ql.split(/\s+/).filter(w => w.length > 3).slice(0, 2).join(' '));
+    return { html: items.length ? `Ik vond ${items.length} items die hierover gaan. De meest recente staan hieronder.` : 'Daar vind ik niets over in de gekoppelde bronnen. Noem een partner of onderwerp, dan zoek ik gerichter.', sources: items.slice(0, 4).map(i => i.id) };
+  }
+  const id = ents[0], e = ENTITIES[id];
+  const rel = related([id], null, 30);
+  const next = rel.filter(i => i.type === 'meeting' && d(i.start) > S.clock).sort((a, b) => when(a) - when(b))[0];
+  const last = rel.find(i => i.type === 'meeting' && isPast(i));
+  const tasks = rel.filter(i => i.type === 'task' && !i.done);
+  const html = `<b>${esc(e.name)}</b> · ${esc(e.status)}<br>${esc(e.summary)}
+    <ul>${e.afspraken.map(a => `<li>${esc(a)}</li>`).join('')}</ul>
+    ${e.open.length ? `Nog open: ${e.open.map(esc).join('; ')}.<br>` : ''}
+    ${last ? `Laatste afspraak: ${esc(last.title)} (${dayLabel(d(last.start)).toLowerCase()})${last.writeback === 'pending' ? ', <b>nog niet weggeschreven</b>' : ''}.<br>` : ''}
+    ${next ? `Volgende: ${esc(next.title)}, ${dayLabel(d(next.start)).toLowerCase()} om ${hm(d(next.start))}.` : ''}
+    ${tasks.length ? `<br>${tasks.length} open ${tasks.length === 1 ? 'taak' : 'taken'}.` : ''}`;
+  const sources = [rel.find(i => i.type === 'context'), last, rel.find(i => i.type === 'mail'), rel.find(i => i.type === 'slack'), tasks[0]].filter(Boolean).map(i => i.id);
+  return { html, sources };
+}
+function ask(q) {
+  S.chatChannel = 'ai';
+  S.aiThread.push({ role: 'user', text: q });
+  S.aiThread.push({ role: 'ai', ...answer(q) });
+  if (S.route.view !== 'chat') go({ view: 'chat' }); else render();
+  requestAnimationFrame(() => { const m = document.getElementById('msgs'); if (m) m.scrollTop = m.scrollHeight; });
+}
+
+/* ---------- Inspector (contextpaneel rechts) ---------- */
+function renderInspector() {
+  const el = document.getElementById('inspector');
+  const app = document.getElementById('app');
+  const it = S.selected && byId(S.selected);
+  if (!it) { el.hidden = true; app.classList.remove('has-inspector'); return; }
+  el.hidden = false; app.classList.add('has-inspector');
+  const rel = related(it.entities || [], it.id, 7);
+  let meta = '', actions = '';
+  if (it.type === 'mail') { meta = `${esc(PEOPLE[it.from].name)} · ${esc(PEOPLE[it.from].org)} · ${dayLabel(when(it))} ${hm(when(it))}`; actions = `<button class="btn sm" data-action="toast" data-msg="Concept geopend in Gmail (demo)">Beantwoorden</button><button class="btn sm" data-action="mk-task" data-id="${it.id}">${ic('task')}Maak taak</button>${it.invite ? `<button class="btn sm" data-go="m-${it.invite}">${ic('meeting')}Open afspraak</button>` : ''}${it.attachment ? `<button class="btn sm" data-open="${it.attachment}">${ic('file')}Bijlage</button>` : ''}`; }
+  if (it.type === 'slack') { meta = `${esc(it.channel)} · ${esc(PEOPLE[it.from].name)} · ${dayLabel(when(it))} ${hm(when(it))}`; actions = `<button class="btn sm" data-chat-open="${esc(it.channel)}">${ic('chat')}Open gesprek</button><button class="btn sm" data-action="mk-task" data-id="${it.id}">${ic('task')}Maak taak</button>`; }
+  if (it.type === 'context') { meta = `<span class="mono">homezero/context</span> · commit <span class="mono">${esc(it.commit)}</span> · ${esc(PEOPLE[it.from].name)} · ${dayLabel(when(it))}`; actions = it.meeting ? `<button class="btn sm" data-go="m-${it.meeting}">${ic('meeting')}Bron-meeting</button>` : ''; }
+  if (it.type === 'task') { meta = `Google Tasks · ${it.done ? 'afgerond' : 'deadline ' + fmtDue(it.due)}`; actions = `<button class="btn sm" data-action="toggle-task" data-id="${it.id}">${ic('task')}${it.done ? 'Heropen' : 'Afvinken'}</button>`; }
+  if (it.type === 'file') { meta = `Google Drive · ${esc(PEOPLE[it.from].name)} · ${dayLabel(when(it))}`; }
+  if (it.type === 'meeting') { meta = `${longDay(d(it.start))} · ${hm(d(it.start))}–${hm(d(it.end))}`; actions = `<button class="btn sm primary" data-go="m-${it.id}">Open meeting</button>`; }
+  el.innerHTML = `
+    <div class="insp-head">${srcLabel(it.type)}<button class="iconbtn" data-action="close-insp" aria-label="Sluiten">${ic('x')}</button></div>
+    <div class="insp-title${it.type === 'context' ? ' mono' : ''}" style="${it.type === 'context' ? 'font-size:13.5px' : ''}">${esc(it.title)}</div>
+    <div class="sub" style="font-size:12.5px">${meta}</div>
+    ${it.body && it.type !== 'meeting' ? `<div class="insp-body${it.type === 'context' ? ' md' : ''}">${esc(it.body)}</div>` : it.type === 'meeting' ? `<div style="margin:10px 0">${wbChip(it)}</div>` : ''}
+    <div class="actions">${actions}</div>
+    ${(it.entities || []).length ? `<div class="insp-section"><h2>Gekoppeld aan</h2><div style="display:flex;gap:6px;flex-wrap:wrap">${it.entities.map(entityChip).join('')}</div></div>` : `<div class="insp-section"><h2>Gekoppeld aan</h2><button class="btn sm" data-action="toast" data-msg="Kies een partner via ⌘K om te koppelen (demo)">${ic('link')}Koppel aan context</button></div>`}
+    ${rel.length ? `<div class="insp-section"><h2>Uit dezelfde context</h2><div class="list">${rel.map(r => rowHTML(r, { wb: false })).join('')}</div></div>` : ''}`;
+}
+
+/* ---------- ⌘K palette ---------- */
+const COMMANDS = [
+  { label: 'Schrijf laatste meeting weg', hint: 'contextlaag', icon: 'context', run: () => { const m = ITEMS.filter(i => i.type === 'meeting' && i.writeback === 'pending').sort((a, b) => when(b) - when(a))[0]; m ? go({ view: 'meeting', id: m.id }) : toast('Alles is weggeschreven'); } },
+  { label: 'Ga naar Agenda', hint: 'G A', icon: 'meeting', run: () => go({ view: 'agenda' }) },
+  { label: 'Vraag de contextlaag…', hint: 'chat', icon: 'spark', run: (q) => q ? ask(q) : (S.chatChannel = 'ai', go({ view: 'chat' })) },
+  { label: 'Nieuwe taak…', hint: 'Google Tasks', icon: 'task', run: (q) => q ? quickAdd(q) : go({ view: 'activiteit' }) },
+  { label: 'Open Slack-overzicht', hint: 'chat', icon: 'chat', run: () => { S.chatChannel = 'all'; go({ view: 'chat' }); } },
+  { label: 'Wissel licht/donker', hint: 'thema', icon: 'sun', run: () => { const r = document.documentElement; const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; r.dataset.theme = dark ? 'light' : 'dark'; } },
+];
+const SUGGESTED = [
+  { q: 'veenstra', label: 'Alles over Veenstra' },
+  { q: '@veenstra type:mail', label: 'Mail van Veenstra' },
+  { q: 'type:meeting is:pending', label: 'Meetings die nog weggeschreven moeten worden' },
+  { q: 'type:slack in:-hz when:week', label: 'Partnerkanalen deze week' },
+  { q: 'type:task is:open', label: 'Open taken' },
+];
+
+function openPalette(q = '') {
+  S.palette = { q, active: 0 };
+  document.getElementById('overlay').innerHTML = `<div class="scrim" data-action="close-pal">
+    <div class="palette" role="dialog" aria-label="Zoeken">
+      <div class="pal-input">${ic('search')}<input id="pal-q" placeholder="Zoek in mail, Slack, agenda, taken, Drive en de contextlaag…  (> voor commando’s)" autocomplete="off" spellcheck="false"><span class="kbd">esc</span></div>
+      <div class="pal-chips" id="pal-chips"></div>
+      <div class="pal-results" id="pal-res"></div>
+      <div class="pal-foot" id="pal-foot"></div>
+    </div></div>`;
+  const inp = document.getElementById('pal-q');
+  inp.value = q; inp.focus(); inp.setSelectionRange(q.length, q.length);
+  inp.addEventListener('input', () => { S.palette.q = inp.value; S.palette.active = 0; renderPalette(); });
+  inp.addEventListener('keydown', palKeys);
+  renderPalette();
+}
+function closePalette() { S.palette = null; document.getElementById('overlay').innerHTML = ''; }
+function palEntries() {
+  const q = S.palette.q.trim();
+  const out = [];
+  if (q.startsWith('>')) {
+    const rest = q.slice(1).trim().toLowerCase();
+    const arg = q.slice(1).trim();
+    COMMANDS.forEach(c => {
+      const base = c.label.replace('…', '').toLowerCase();
+      if (!rest || base.includes(rest) || c.label.endsWith('…')) out.push({ kind: 'cmd', c, arg: c.label.endsWith('…') && rest && !base.includes(rest) ? arg : '' });
+    });
+    return out;
+  }
+  if (!q) {
+    SUGGESTED.forEach(s => out.push({ kind: 'query', q: s.q, label: s.label }));
+    S.recent.slice(0, 4).forEach(r => out.push({ kind: 'recent', q: r }));
+    COMMANDS.slice(0, 3).forEach(c => out.push({ kind: 'cmd', c, arg: '' }));
+    return out;
+  }
+  const { items, entityHits } = runQuery(q);
+  entityHits.slice(0, 2).forEach(id => out.push({ kind: 'entity', id }));
+  grouped(items).forEach(([t, its]) => its.slice(0, t === 'context' ? 4 : 5).forEach(it => out.push({ kind: 'item', it })));
+  out.push({ kind: 'all', count: items.length });
+  if (/\?$/.test(q) || q.split(' ').length > 3) out.splice(entityHits.length ? 1 : 0, 0, { kind: 'ask', q });
+  return out;
+}
+function renderPalette() {
+  if (!S.palette) return;
+  const q = S.palette.q.trim();
+  const entries = palEntries();
+  S.palette.entries = entries;
+  if (S.palette.active >= entries.length) S.palette.active = Math.max(0, entries.length - 1);
+  document.getElementById('pal-chips').innerHTML = q && !q.startsWith('>') ? queryChips(q) : '';
+  let html = '', lastGroup = null;
+  const groupOf = en => en.kind === 'item' ? en.it.type : en.kind;
+  const groupTitle = { query: 'Views opbouwen met keywords', recent: 'Recent gezocht', cmd: 'Commando’s', entity: 'Context', ask: 'Vraag', all: '' };
+  entries.forEach((en, i) => {
+    const g = groupOf(en);
+    if (g !== lastGroup) {
+      const title = en.kind === 'item' ? srcLabel(en.it.type) : groupTitle[g];
+      if (title) html += `<div class="group-label">${title}${en.kind === 'item' ? `<span>${runQuery(q).items.filter(x => x.type === en.it.type).length}</span>` : ''}</div>`;
+      if (g === 'query' && lastGroup === null) html = `<div class="syntax"><span><code>@veenstra</code> partner</span><span><code>type:mail</code> bron</span><span><code>from:sanne</code> afzender</span><span><code>in:#dev</code> kanaal</span><span><code>when:week</code> periode</span><span><code>is:open</code> status</span></div>` + html;
+      lastGroup = g;
+    }
+    const a = i === S.palette.active ? ' active' : '';
+    if (en.kind === 'entity') {
+      const e = ENTITIES[en.id];
+      const all = ITEMS.filter(x => (x.entities || []).includes(en.id));
+      const c = t => all.filter(x => x.type === t).length;
+      html += `<div class="pal-entity${a}" data-pi="${i}"><div class="entity-logo">${esc(e.short.slice(0, 2).toUpperCase())}</div><div class="row-main"><div style="font-weight:600">${esc(e.name)} <span class="sub" style="font-weight:400">· ${esc(e.kind)} · ${esc(e.status)}</span></div>
+        <div class="sub" style="font-size:12.5px">${TYPE_ORDER.filter(c).map(t => `${c(t)} ${SRC[t].plural.toLowerCase()}`).join(' · ')}</div>
+        <div class="mono sub" style="font-size:11px;margin-top:2px">contextlaag: ${esc(e.repo)}/</div></div><span class="enter kbd">↵</span></div>`;
+    } else if (en.kind === 'item') {
+      const it = en.it;
+      html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic ${it.type}">${ic(SRC[it.type].icon)}</span><div class="row-main"><div class="row-title">${esc(short(it.title, 80))}</div><div class="row-sub">${esc(itemSub(it))}</div></div><span class="row-meta">${relTime(it)}</span></div>`;
+    } else if (en.kind === 'query' || en.kind === 'recent') {
+      html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic">${ic(en.kind === 'recent' ? 'search' : 'bookmark')}</span><div class="row-main"><div class="row-title">${en.label ? esc(en.label) : ''}${en.label ? '' : `<span class="mono">${esc(en.q)}</span>`}</div>${en.label ? `<div class="row-sub mono" style="font-size:11.5px">${esc(en.q)}</div>` : ''}</div><span class="enter kbd">↵</span></div>`;
+    } else if (en.kind === 'cmd') {
+      html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic">${ic(en.c.icon)}</span><div class="row-main"><div class="row-title">${esc(en.c.label.replace('…', ''))}${en.arg ? `: <span class="sub">${esc(en.arg)}</span>` : en.c.label.endsWith('…') ? '…' : ''}</div></div><span class="row-meta">${esc(en.c.hint)}</span></div>`;
+    } else if (en.kind === 'ask') {
+      html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic context">${ic('spark')}</span><div class="row-main"><div class="row-title">Vraag de contextlaag: “${esc(en.q)}”</div><div class="row-sub">Antwoord met bronnen uit alle gekoppelde apps</div></div><span class="enter kbd">↵</span></div>`;
+    } else if (en.kind === 'all') {
+      html += `<div class="pal-item${a}" data-pi="${i}" style="margin-top:4px"><span class="ic">${ic('arrow')}</span><div class="row-main"><div class="row-title">Toon alle ${en.count} resultaten als view</div></div><span class="enter kbd">↵</span></div>`;
+    }
+  });
+  if (q && !q.startsWith('>') && entries.length === 1) html = `<div class="empty">Niets gevonden voor “${esc(q)}”.</div>` + html;
+  const res = document.getElementById('pal-res');
+  res.innerHTML = html;
+  res.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+  document.getElementById('pal-foot').innerHTML = `<span><span class="kbd">↑↓</span>navigeer</span><span><span class="kbd">↵</span>open</span><span><span class="kbd">&gt;</span>commando’s</span>${q && !q.startsWith('>') ? `<button class="save" data-action="pal-save">${ic('bookmark')} Bewaar als view <span class="kbd">⌘↵</span></button>` : ''}`;
+}
+function palKeys(ev) {
+  const P_ = S.palette;
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); P_.active = Math.min(P_.active + 1, P_.entries.length - 1); renderPalette(); }
+  else if (ev.key === 'ArrowUp') { ev.preventDefault(); P_.active = Math.max(P_.active - 1, 0); renderPalette(); }
+  else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); if (P_.q.trim()) saveView(P_.q.trim()); }
+  else if (ev.key === 'Enter') { ev.preventDefault(); palPick(P_.active); }
+  else if (ev.key === 'Escape') { ev.preventDefault(); closePalette(); }
+  else if (ev.key === 'Tab' && P_.entries[P_.active]?.kind === 'entity') { ev.preventDefault(); const inp = document.getElementById('pal-q'); inp.value = '@' + P_.entries[P_.active].id + ' '; P_.q = inp.value; renderPalette(); }
+}
+function remember(q) { if (!q) return; S.recent = [q, ...S.recent.filter(x => x !== q)].slice(0, 6); store.set('recent', S.recent); }
+function palPick(i) {
+  const en = S.palette.entries[i]; if (!en) return;
+  const q = S.palette.q.trim();
+  if (en.kind === 'query' || en.kind === 'recent') { const inp = document.getElementById('pal-q'); inp.value = en.q + ' '; S.palette.q = inp.value; S.palette.active = 0; renderPalette(); inp.focus(); return; }
+  closePalette();
+  if (en.kind === 'cmd') return en.c.run(en.arg);
+  remember(q);
+  if (en.kind === 'entity') return go({ view: 'entity', id: en.id });
+  if (en.kind === 'ask') return ask(q);
+  if (en.kind === 'all') return go({ view: 'list', q, title: 'Zoeken', adhoc: true });
+  if (en.kind === 'item') return openItem(en.it.id, q);
+}
+function openItem(id, q) {
+  const it = byId(id);
+  if (it.type === 'meeting') return go({ view: 'meeting', id });
+  if (q && S.route.view !== 'list') go({ view: 'list', q, title: 'Zoeken', adhoc: true });
+  S.selected = id; renderInspector(); renderMainHighlights();
+}
+function saveView(q) {
+  const p = parseQuery(q);
+  const ent = p.entities.flatMap(matchEntityToken)[0] || p.text.flatMap(t => matchEntityToken(t))[0];
+  const typeName = p.types.map(t => SRC[t].plural).join(' + ');
+  const name = [typeName, ent && ENTITIES[ent].short, p.is.includes('unread') && 'ongelezen', p.is.includes('open') && 'open', p.when && p.when].filter(Boolean).join(' · ') || q;
+  const v = { id: 'v-' + Date.now().toString(36), name: name.replace(/^./, c => c.toUpperCase()), q };
+  S.saved.push(v); store.set('saved', S.saved);
+  closePalette();
+  toast(`${ic('bookmark')}View “${esc(v.name)}” bewaard in de zijbalk`);
+  go({ view: 'list', q, title: v.name, key: v.id, saved: true });
+}
+
+/* ---------- Render ---------- */
+function renderMainHighlights() {
+  document.querySelectorAll('#main [data-open]').forEach(el => el.classList.toggle('sel', el.dataset.open === S.selected));
+}
+function render() {
+  renderSidebar();
+  const r = S.route, main = document.getElementById('main');
+  let html = '';
+  if (r.view === 'vandaag') html = viewVandaag();
+  else if (r.view === 'agenda') html = viewAgenda();
+  else if (r.view === 'meeting') html = viewMeeting(r.id);
+  else if (r.view === 'entity') html = viewEntity(r.id);
+  else if (r.view === 'list') html = viewList(r);
+  else if (r.view === 'activiteit') html = viewActiviteit();
+  else if (r.view === 'chat') html = viewChat();
+  main.classList.toggle('is-chat', r.view === 'chat');
+  main.style.overflowY = r.view === 'chat' ? 'hidden' : '';
+  main.innerHTML = topbar() + html;
+  if (r.view === 'list') {
+    renderListResults();
+    const qb = document.getElementById('qbar');
+    qb.addEventListener('input', () => { S.route.q = qb.value; renderListResults(); renderMainHighlights(); });
+  }
+  if (r.view === 'chat') { const m = document.getElementById('msgs'); if (m) m.scrollTop = m.scrollHeight; }
+  renderInspector();
+  renderMainHighlights();
+}
+
+let toastTimer;
+function toast(html) {
+  document.querySelector('.toast')?.remove();
+  const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = html; document.body.appendChild(t);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 2800);
+}
+
+/* ---------- Events ---------- */
+document.addEventListener('keydown', ev => {
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') { ev.preventDefault(); S.palette ? closePalette() : openPalette(); }
+  else if (ev.key === 'Escape' && !S.palette && S.selected) { S.selected = null; renderInspector(); renderMainHighlights(); }
+  else if (ev.key === '/' && !S.palette && !/input|textarea/i.test(document.activeElement.tagName)) { ev.preventDefault(); openPalette(); }
+});
+document.addEventListener('click', ev => {
+  const t = ev.target;
+  const pi = t.closest('[data-pi]'); if (pi) { palPick(+pi.dataset.pi); return; }
+  const a = t.closest('[data-action]');
+  if (a) {
+    const act = a.dataset.action;
+    if (act === 'close-pal') { if (t === a) closePalette(); return; }
+    if (act === 'palette') { openPalette(); return; }
+    if (act === 'palette-q') { openPalette(a.dataset.q); return; }
+    if (act === 'pal-save') { saveView(S.palette.q.trim()); return; }
+    if (act === 'nav') { document.getElementById('app').classList.toggle('nav-open'); return; }
+    if (act === 'close-insp') { S.selected = null; renderInspector(); renderMainHighlights(); return; }
+    if (act === 'commit') { commitWriteback(a.dataset.id); return; }
+    if (act === 'toast') { toast(esc(a.dataset.msg)); return; }
+    if (act === 'ask') { ask(a.dataset.q); return; }
+    if (act === 'week') { const dir = +a.dataset.dir; S.weekOffset = dir === 0 ? 0 : S.weekOffset + dir; render(); return; }
+    if (act === 'save-view') { saveView(S.route.q.trim()); return; }
+    if (act === 'delete-view') { S.saved = S.saved.filter(v => v.id !== a.dataset.id); store.set('saved', S.saved); go({ view: 'vandaag' }); toast('View verwijderd'); return; }
+    if (act === 'toggle-task') { const it = byId(a.dataset.id); it.done = !it.done; render(); toast(it.done ? `${ic('task')}Afgevinkt in Google Tasks` : 'Taak heropend'); return; }
+    if (act === 'mk-task') { const it = byId(a.dataset.id); ITEMS.push({ id: 't-' + Date.now(), type: 'task', title: 'Opvolgen: ' + short(it.title, 60), due: ymd(new Date(+d(TODAY) + 864e5)), done: false, entities: it.entities, time: ymd(S.clock) + 'T' + hm(S.clock) }); render(); toast(`${ic('task')}Taak aangemaakt voor morgen`); return; }
+  }
+  const ent = t.closest('[data-entity]'); if (ent) { ev.stopPropagation(); go({ view: 'entity', id: ent.dataset.entity }); return; }
+  const g = t.closest('[data-go]');
+  if (g) {
+    const k = g.dataset.go;
+    if (k.startsWith('e-')) return go({ view: 'entity', id: k.slice(2) });
+    if (k.startsWith('m-')) return go({ view: 'meeting', id: k.slice(2) });
+    location.hash === '#' + k ? (S.route = routeFromHash(), render()) : (location.hash = k);
+    document.getElementById('app').classList.remove('nav-open');
+    return;
+  }
+  const o = t.closest('[data-open]'); if (o && o.dataset.open) { openItem(o.dataset.open); return; }
+  const ch = t.closest('[data-chat]'); if (ch) { S.chatChannel = ch.dataset.chat; render(); return; }
+  const co = t.closest('[data-chat-open]'); if (co) { S.chatChannel = co.dataset.chatOpen; S.selected = null; go({ view: 'chat' }); return; }
+  const md = t.closest('[data-mode]'); if (md) { if (md.dataset.mode === 'ai') S.chatChannel = 'ai'; else if (S.chatChannel === 'ai') S.chatChannel = 'all'; render(); return; }
+  if (document.getElementById('app').classList.contains('nav-open') && !t.closest('.sidebar')) document.getElementById('app').classList.remove('nav-open');
+});
+document.addEventListener('change', ev => {
+  const c = ev.target.closest('[data-wb]');
+  if (c) { (S.wbChecks[c.dataset.wb] ||= {})[c.dataset.i] = c.checked; }
+});
+document.addEventListener('submit', ev => {
+  ev.preventDefault();
+  if (ev.target.id === 'quickadd') { const v = document.getElementById('qa').value.trim(); if (v) quickAdd(v); }
+  if (ev.target.id === 'composer') {
+    const inp = document.getElementById('composer-input'); const v = inp.value.trim(); if (!v) return;
+    if (S.chatChannel === 'ai') ask(v);
+    else if (S.chatChannel !== 'all') {
+      const ents = Object.keys(ENTITIES).filter(id => ENTITIES[id].aliases.some(al => v.toLowerCase().includes(al)));
+      const prev = ITEMS.find(i => i.type === 'slack' && i.channel === S.chatChannel);
+      ITEMS.push({ id: 's-' + Date.now(), type: 'slack', channel: S.chatChannel, dm: prev?.dm, from: 'robert', time: ymd(S.clock) + 'T' + hm(S.clock), entities: ents.length ? ents : (prev?.entities || []), title: v });
+      render(); toast('Bericht toegevoegd (demo, niet naar Slack verstuurd)');
+    }
+  }
+});
+document.addEventListener('keydown', ev => {
+  if (ev.target.id === 'composer-input' && ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ev.target.form.requestSubmit(); }
+});
+
+S.route = routeFromHash();
+render();
+</script>
