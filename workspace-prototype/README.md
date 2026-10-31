@@ -10,10 +10,17 @@ Live version (private): https://claude.ai/artifact/4CzejHBSKjJNrvBNESpYw4. Opene
 |---|---|---|
 | **Dagstart** (day start) | `g d` | Built on `/morning-briefing`. **Te plannen** (to plan) is the inbox: everything that needs a decision, ranked by urgency. That covers Slack waiting on you, 📣-marked messages, mail sent to you, overdue and undated Google Tasks, unplanned or late commitments, Wachten op (waiting for) items whose reminder date has passed, invites, external meetings without prep, and Wispr meetings without a recap. Next to it: today (max 10), the agenda with prep and recap status, Wachten op, week goals, and Ter info (FYI). |
 | **Planning** | `g p` | Late · Vandaag (today) · Morgen (tomorrow) · Later deze week (later this week, per-day load) · Volgende week (next week) · Zonder datum (no date) · Backlog. Google Tasks and the tracker side by side. |
-| **Agenda** | `g a`, `[` `]` | Google Calendar week view. Invites, external meetings, open commitments per organisation. |
+| **Plan session** | `s` | Card by card (Tinder style): week goals and roadmap first (`g` on track, `o` at risk, `r` blocked, `x` done, `n` note), then everything that needs a decision (`1`–`5` plan, `e`, `w`, `b`, `x`). `s` skip, `u` back. |
+| **Agenda** | `g a`, `[` `]` | All your Google calendars in one view (work, private, family, holidays and imports; colleagues' calendars can be switched on). Times always shown in Dutch time. |
 | **Tracker** | `g t`, `n`, `⇧1–7` | Alles (all) · Ik beloofde (I promised) · Wachten op (waiting for) · Bespreken bij contact (raise at next contact) · Voornemens (intentions) · Google Tasks · Afgerond (done). Replaces the Slack canvas "⏳ Wachten op" (already copied over; "Neem canvas over" picks up new rows). |
 | **Chat** | `g c`, `i` | Slack addressed to you, plus Vraag Claude (ask Claude) about all sources. |
 | **⌘K** | `⌘K` `/` | Search and commands. Keywords: `@feenstra type:mail when:week is:reageren`. |
+
+## Routines: landing in two places
+
+The routines **Ochtendbriefing** (morning briefing, Tue–Fri 07:14) and **Zondag weekprep** (Sunday 19:45) still send to Telegram as before. They now also write to the workspace: the briefing goes into `briefings/<date>` (shown at the top of Dagstart), and the week goals go into the tracker as `weekdoel` items with a daily health check in the plan session. Once that has proven itself for a few weeks, a morning app notification can replace Telegram.
+
+Personal context layer: see `../personal-context/README.md` (Obsidian vault + index + MCP server).
 
 ## Keyboard
 

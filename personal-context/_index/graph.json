@@ -1,0 +1,126 @@
+{
+ "generated": "2026-10-31T11:32:15.043Z",
+ "count": 5,
+ "nodes": {
+  "design/decisions/2026-10-28-offerte-header": {
+   "id": "design/decisions/2026-10-28-offerte-header",
+   "path": "design/decisions/2026-10-28-offerte-header.md",
+   "type": "decision",
+   "title": "Partnerlogo groter in de offerte-header (fictief)",
+   "summary": "Voorbeeldbesluit uit een design weekly.",
+   "links": [
+    "design/offerte-pdf"
+   ],
+   "backlinks": [
+    "design/offerte-pdf",
+    "meetings/2026/2026-10-30-voorbeeldpartner",
+    "partners/voorbeeldpartner"
+   ],
+   "headings": [
+    "Partnerlogo groter in de offerte-header (fictief)"
+   ],
+   "status": null,
+   "share": "hz",
+   "review_by": null,
+   "updated": "2026-10-31",
+   "tokens": 92
+  },
+  "design/offerte-pdf": {
+   "id": "design/offerte-pdf",
+   "path": "design/offerte-pdf.md",
+   "type": "note",
+   "title": "Offerte-PDF (fictief)",
+   "summary": "Voorbeeld van een onderwerpnotitie met huidige stand en besluiten.",
+   "links": [
+    "design/decisions/2026-10-28-offerte-header"
+   ],
+   "backlinks": [
+    "design/decisions/2026-10-28-offerte-header"
+   ],
+   "headings": [
+    "Offerte-PDF",
+    "Huidige stand",
+    "Besluiten"
+   ],
+   "status": null,
+   "share": "none",
+   "review_by": null,
+   "updated": "2026-10-31",
+   "tokens": 68
+  },
+  "meetings/2026/2026-10-30-voorbeeldpartner": {
+   "id": "meetings/2026/2026-10-30-voorbeeldpartner",
+   "path": "meetings/2026/2026-10-30-voorbeeldpartner.md",
+   "type": "meeting",
+   "title": "Voorbeeldpartner · check-in (fictief)",
+   "summary": "Flowkeuze besproken; partner kiest combinatie van twee vragen.",
+   "links": [
+    "partners/voorbeeldpartner",
+    "people/voorbeeld-contact",
+    "design/decisions/2026-10-28-offerte-header"
+   ],
+   "backlinks": [
+    "partners/voorbeeldpartner"
+   ],
+   "headings": [
+    "Voorbeeldpartner · check-in · 2026-10-30",
+    "Besluiten"
+   ],
+   "status": null,
+   "share": "none",
+   "review_by": null,
+   "updated": "2026-10-31",
+   "tokens": 118
+  },
+  "partners/voorbeeldpartner": {
+   "id": "partners/voorbeeldpartner",
+   "path": "partners/voorbeeldpartner.md",
+   "type": "partner",
+   "title": "Voorbeeldpartner (fictief)",
+   "summary": "Voorbeeld van een partnernotitie; live, warmtepompflow in test.",
+   "links": [
+    "hz/partners/voorbeeldpartner",
+    "people/voorbeeld-contact",
+    "design/decisions/2026-10-28-offerte-header",
+    "meetings/2026/2026-10-30-voorbeeldpartner"
+   ],
+   "backlinks": [
+    "meetings/2026/2026-10-30-voorbeeldpartner",
+    "people/voorbeeld-contact"
+   ],
+   "headings": [
+    "Voorbeeldpartner (fictief)",
+    "Huidige stand",
+    "Open punten",
+    "Logboek"
+   ],
+   "status": "actief",
+   "share": "none",
+   "review_by": "2026-12-01",
+   "updated": "2026-10-31",
+   "tokens": 177
+  },
+  "people/voorbeeld-contact": {
+   "id": "people/voorbeeld-contact",
+   "path": "people/voorbeeld-contact.md",
+   "type": "person",
+   "title": "Voorbeeldcontact (fictief)",
+   "summary": "Planner bij Voorbeeldpartner; beslist over de flow.",
+   "links": [
+    "partners/voorbeeldpartner"
+   ],
+   "backlinks": [
+    "meetings/2026/2026-10-30-voorbeeldpartner",
+    "partners/voorbeeldpartner"
+   ],
+   "headings": [
+    "Voorbeeldcontact (fictief)"
+   ],
+   "status": null,
+   "share": "none",
+   "review_by": null,
+   "updated": "2026-10-31",
+   "tokens": 56
+  }
+ }
+}

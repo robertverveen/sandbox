@@ -430,6 +430,45 @@ a.ext-link:hover { text-decoration: underline; }
 .hk .kbd { justify-self: start; }
 @media (max-width: 1000px) { .triage-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) { .hintbar { display: none; } }
+
+/* ---------- Agenda, plansessie, briefing ---------- */
+.wk-hl { box-sizing: border-box; }
+.calchips { display: flex; gap: 6px; flex-wrap: wrap; margin: -4px 0 14px; }
+.calchip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--faint); background: transparent; }
+.calchip .dot { opacity: .35; }
+.calchip.on { color: var(--fg); background: var(--panel); }
+.calchip.on .dot { opacity: 1; }
+.checks-mini { display: inline-flex; gap: 1px; font-style: normal; }
+.checks-mini i { font-style: normal; font-size: 11px; }
+details.briefing { margin-bottom: 16px; }
+details.briefing > summary { cursor: pointer; list-style: none; }
+details.briefing > summary::-webkit-details-marker { display: none; }
+details.briefing:not([open]) > summary { border-bottom: 0; }
+.brief-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 20px; font-size: 13px; }
+.scrim.sw-scrim { align-items: center; padding-top: max(16px, env(safe-area-inset-top, 0px)); background: rgba(9, 14, 11, .82); }
+.swipe { width: 100%; max-width: 620px; display: flex; flex-direction: column; gap: 10px; }
+.sw-prog { height: 3px; border-radius: 2px; background: rgba(255,255,255,.18); overflow: hidden; }
+.sw-prog span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+.sw-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12px; color: #E9EFEA; align-items: center; }
+.sw-top .kbd { background: rgba(255,255,255,.1); color: #E9EFEA; border-color: rgba(255,255,255,.25); }
+.sw-card { background: var(--panel); border-radius: 18px; box-shadow: var(--shadow); padding: 22px 22px 18px; display: flex; flex-direction: column; gap: 10px; transition: transform .16s ease, opacity .16s ease; }
+.sw-card.out-left { transform: translateX(-60px) rotate(-3deg); opacity: 0; }
+.sw-card.out-right { transform: translateX(60px) rotate(3deg); opacity: 0; }
+.sw-card.out-up { transform: translateY(-40px); opacity: 0; }
+.sw-card.out-down { transform: translateY(40px); opacity: 0; }
+.sw-card.in-left, .sw-card.in-right, .sw-card.in-up, .sw-card.in-down { animation: swin .16s ease-out; }
+@keyframes swin { from { transform: scale(.97); opacity: .3; } }
+.sw-kind { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sw-title { font-size: 21px; line-height: 1.3; letter-spacing: -.015em; margin: 0; text-wrap: balance; overflow-wrap: anywhere; }
+.sw-ctx { font-size: 13px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.sw-body { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 13px; white-space: pre-wrap; max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
+.sw-rel { font-size: 12.5px; color: var(--fg); display: flex; flex-direction: column; gap: 2px; }
+.sw-checks { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.sw-note { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: var(--bg); resize: vertical; }
+.sw-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-top: 4px; }
+.sw-key { display: flex; gap: 8px; align-items: center; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; text-align: left; color: inherit; text-decoration: none; }
+.sw-key:hover { background: var(--hover); }
+.sw-end { text-align: center; align-items: center; padding: 34px 22px; }
 </style>
 
 <div class="app" id="app">
@@ -501,7 +540,7 @@ const SRC = {
   file:    { label: 'Drive', plural: 'Drive', icon: 'file' },
 };
 const TYPE_ORDER = ['commit', 'task', 'context', 'meeting', 'rec', 'mail', 'slack', 'file'];
-const STROOM = { mijn: 'Ik beloofde', aan_mij: 'Wachten op', voornemen: 'Eigen voornemen', bespreken: 'Bespreken bij contact' };
+const STROOM = { mijn: 'Ik beloofde', aan_mij: 'Wachten op', voornemen: 'Eigen voornemen', bespreken: 'Bespreken bij contact', weekdoel: 'Weekdoel', roadmap: 'Roadmap' };
 const STATUS = { open: 'Open', waarschijnlijk_klaar: 'Waarschijnlijk klaar', klaar: 'Klaar', te_laat: 'Te laat', overgedragen: 'Overgedragen' };
 const BUCKETS = { 1: 'Vandaag', 2: 'Morgen', 3: 'Later deze week', 4: 'Volgende week', 5: 'Backlog' };
 
@@ -538,6 +577,15 @@ const DEMO_COMMITS = [
   { id: 'dc3', wat: 'Rekenvoorbeeld thuisbatterij naar Feenstra sturen', stroom: 'mijn', aan: 'Marie-José', org: 'Feenstra', deadline: '2026-10-29', status: 'open', bron: { label: 'Meeting · Feenstra check-in' }, bewijsregel: { type: 'mail', keywords: ['rekenvoorbeeld'] }, created: '2026-10-27' },
   { id: 'dc4', wat: 'Isolatierekenmodel helemaal nalopen', stroom: 'voornemen', aan: '', org: '', deadline: null, status: 'open', bron: { label: 'Eigen invoer' }, bewijsregel: { type: 'geen' }, created: '2026-10-26' },
 ];
+const DEMO_BRIEFING = { date: '2026-10-30', title: '☀️ Briefing vr 30 okt — 3 acties, 3 meetings', createdAt: '2026-10-30T07:14:00+01:00', session: null, sections: [
+  { title: '🔴 Vandaag doen', items: [{ text: 'Mike vraagt: Peter van TonZon nog een keer bellen (voor 15:00)' }, { text: 'Rens: 2 besluiten partnerovereenkomst 3.0 (Clarity, ScanID) voor maandag' }] },
+  { title: '📅 Meetings vandaag', items: [{ text: '10:00 Feenstra Monthly · vorige keer: ZSB-flow, leadinstroom tijdelijk uit' }, { text: '15:00 TonZon x HomeZero · prep ✅ staat op vandaag' }] },
+  { title: '⏳ Wacht op anderen', items: [{ text: 'Marie-José (Feenstra): keuze ZSB-flow · sinds 26 okt, nudge?' }] },
+  { title: '🎯 Weekdoelen', items: [{ text: '🟢 Isolatieflow TonZon live op acceptatie' }] } ] };
+DEMO_COMMITS.push(
+  { id: 'dg1', wat: 'Isolatieflow TonZon live op acceptatie', stroom: 'weekdoel', week: '2026-W44', deadline: '2026-10-30', status: 'open', health: 'groen', lastCheck: '2026-10-29', checks: [{ d: '2026-10-28', h: 'groen' }, { d: '2026-10-29', h: 'groen' }], bron: { label: 'Weekdoelen 2026-W44' }, created: '2026-10-26' },
+  { id: 'dg2', wat: 'Qvantum: voorstel communicatietriggers installateursopvolging klaar', stroom: 'weekdoel', week: '2026-W44', deadline: '2026-10-30', status: 'open', health: 'oranje', lastCheck: '2026-10-29', checks: [{ d: '2026-10-29', h: 'oranje', note: 'Wacht op input Lisanne' }], bron: { label: 'Weekdoelen 2026-W44' }, created: '2026-10-26' },
+  { id: 'dr1', wat: 'Rekenmodellen in Pico (thuisbatterij, warmtepomp, isolatie)', stroom: 'roadmap', deadline: '2026-12-15', status: 'open', health: 'groen', lastCheck: '2026-10-20', checks: [{ d: '2026-10-20', h: 'groen' }], bron: { label: 'Roadmap Q4' }, created: '2026-09-01' });
 const WRITEBACK_DEMO = {
   summary: 'Marie-José kiest voor een combinatie van aantal personen en warmwatervraag in de ZSB-flow. De leadinstroom staat tijdelijk uit vanwege capaciteit; Feenstra laat weten wanneer die weer aan kan.',
   decisions: ['ZSB-flow vraagt zowel aantal personen als warmwatervraag', 'Leadinstroom blijft uit tot Feenstra capaciteit heeft'],
@@ -578,6 +626,8 @@ const S = {
   help: false,
   busy: {},
   fId: null, fIdx: 0,       // toetsenbordfocus in het werkvlak
+  calPrefs: store.get('calPrefs', {}),
+  swipe: null,
   gPending: false,
   clock: new Date(),
   lastSeen: store.get('lastSeen', 0),
@@ -587,7 +637,7 @@ store.set('lastSeen', Date.now());
 const CAP = { mcp: null, db: null, sample: null };
 const MODE = { live: false, checked: false };
 const ST = {};            // status per bron: 'loading' | 'ok' | {code, message, retry}
-const LV = { ranges: {}, mails: [], slack: { dm: [], mention: [], mine: [], mega: [], recaps: [] }, tasks: [], tasklists: [], wispr: [], commits: [], state: {}, selfEmail: null, updated: {} };
+const LV = { briefings: [], calendars: [], ranges: {}, mails: [], slack: { dm: [], mention: [], mine: [], mega: [], recaps: [] }, tasks: [], tasklists: [], wispr: [], commits: [], state: {}, selfEmail: null, updated: {} };
 let ORGS = {};
 let LIVE_ITEMS = [];
 
@@ -595,7 +645,12 @@ let LIVE_ITEMS = [];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const DAYS = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
 const MONTHS = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
-const pd = s => s instanceof Date ? s : new Date(String(s).length === 10 ? s + 'T00:00' : s);
+const TZ = 'Europe/Amsterdam';
+const _tzf = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+// Zet een moment om naar de 'wandklok' in Amsterdam, zodat getHours() e.d. altijd NL-tijd geven
+function wall(d) { const p = Object.fromEntries(_tzf.formatToParts(d).map(x => [x.type, x.value])); return new Date(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second); }
+const nowNL = () => wall(new Date());
+const pd = s => { if (s instanceof Date) return s; s = String(s); if (s.length === 10) return new Date(s + 'T00:00'); if (/(Z|[+-]\d\d:?\d\d)$/.test(s)) return wall(new Date(s)); return new Date(s); };
 const ymd = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 const hm = dt => `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
 const localISO = dt => `${ymd(dt)}T${hm(dt)}:00`;
@@ -657,6 +712,7 @@ function normOrg(s) { return String(s || '').toLowerCase().replace(/\.(nl|com|io
 
 /* ---------- Live: verbinden ---------- */
 async function boot() {
+  S.clock = nowNL();
   render();
   const has = typeof window.claude?.use === 'function';
   if (!has) return enterDemo('local');
@@ -666,13 +722,14 @@ async function boot() {
   MODE.live = true; MODE.checked = true;
   startWatches();
   if (db) subscribeDb(); else ST.commits = { code: 'nodb', message: 'Opslag niet beschikbaar in deze weergave.' };
-  setInterval(() => { S.clock = new Date(); scheduleRender(); }, 60000);
+  setInterval(() => { S.clock = nowNL(); scheduleRender(); }, 60000);
   scheduleRender();
 }
 function enterDemo(why) {
   MODE.live = false; MODE.checked = true; MODE.demoWhy = why;
   S.clock = new Date(NOW_DEMO);
   LV.commits = DEMO_COMMITS.map(c => ({ ...c }));
+  LV.briefings = [DEMO_BRIEFING];
   render();
 }
 
@@ -697,17 +754,47 @@ function watch(key, server, tool, input, onData, interval = 300000) {
   }, { cache: { staleTime: 60000, gcTime: 900000 }, refetchInterval: interval });
 }
 function weekStart(offset = 0, from = S.clock) { const t = startOfDay(from); const dow = (t.getDay() + 6) % 7; return addDays(t, -dow + offset * 7); }
-function ensureCalRange(from, days) {
-  const key = 'cal:' + ymd(from) + ':' + days;
-  if (LV.ranges[key]) return;
-  LV.ranges[key] = [];
-  watch(key, 'Google Calendar', 'list_events', { startTime: localISO(from), endTime: localISO(addDays(from, days)), orderBy: 'startTime', pageSize: 250 }, p => {
-    if (p?.summary && /@/.test(p.summary)) LV.selfEmail = p.summary.toLowerCase();
-    LV.ranges[key] = p ? (p.events || []) : [];
-  });
+// Welke agenda's standaard aan staan: je eigen werk- en privéagenda's, gedeelde groepsagenda's en geïmporteerde agenda's.
+// Agenda's van collega's en andere accounts staan uit tot je ze aanzet.
+function calDefaultOn(c) {
+  const id = c.id.toLowerCase();
+  if (c.primary || id === (LV.selfEmail || 'robert@homezero.nl')) return true;
+  if (/@homezero\.nl$/.test(id)) return false;
+  if (/@gmail\.com$/.test(id)) return /robertverveen/.test(id);
+  return true;
 }
+const calOn = id => { const pref = S.calPrefs[id]; if (pref !== undefined) return pref; const c = LV.calendars.find(x => x.id === id); return c ? calDefaultOn(c) : id === 'primary'; };
+const activeCals = () => LV.calendars.length ? LV.calendars.filter(c => calOn(c.id)).map(c => c.id) : ['primary'];
+function calName(id) { const c = LV.calendars.find(x => x.id === id); return c ? (c.summary || c.id) : id; }
+function ensureCalRange(from, days, oneShot) {
+  for (const calId of activeCals()) {
+    const key = 'cal:' + calId + ':' + ymd(from) + ':' + days;
+    if (LV.ranges[key]) continue;
+    // al gedekt door een bestaand bereik?
+    const covered = Object.entries(LV.ranges).some(([k, r]) => r.calId === calId && r.from <= ymd(from) && r.to >= ymd(addDays(from, days)));
+    if (covered) continue;
+    LV.ranges[key] = { calId, from: ymd(from), to: ymd(addDays(from, days)), events: [] };
+    const input = { calendarId: calId, startTime: localISO(from), endTime: localISO(addDays(from, days)), orderBy: 'startTime', pageSize: 250 };
+    const onData = p => {
+      if (calId === 'primary' && p?.summary && /@/.test(p.summary)) LV.selfEmail = p.summary.toLowerCase();
+      LV.ranges[key].events = p ? (p.events || []) : [];
+      LV.ranges[key].tz = p?.timeZone;
+    };
+    if (oneShot) {
+      ST[key] = 'loading';
+      CAP.mcp.callTool('Google Calendar', 'list_events', input, { cache: { staleTime: 300000, gcTime: 900000 } }).then(r => { onData(r.payload); ST[key] = 'ok'; scheduleRender(); })
+        .catch(e => { ST[key] = { code: e?.code || 'upstream_error', server: 'Google Calendar · ' + calName(calId), message: e?.message || '' }; scheduleRender(); });
+    } else watch(key, 'Google Calendar', 'list_events', input, onData);
+  }
+}
+function calRangeStart() { return addDays(weekStart(0), -7); }
 function startWatches() {
-  ensureCalRange(weekStart(0), 21);
+  watch('calendars', 'Google Calendar', 'list_calendars', {}, p => {
+    LV.calendars = p ? (p.calendars || p.items || []) : [];
+    const self = LV.calendars.find(c => c.primary) || LV.calendars.find(c => /@homezero\.nl$/i.test(c.id) && c.id.toLowerCase() === (LV.selfEmail || 'robert@homezero.nl'));
+    if (self) LV.selfEmail = self.id.toLowerCase();
+    ensureCalRange(calRangeStart(), 35);
+  }, 3600000);
   watch('gmail', 'Gmail', 'search_threads', { query: 'in:inbox is:unread newer_than:14d -category:promotions -category:social -category:forums', pageSize: 30, view: 'THREAD_VIEW_SUMMARY' }, p => { LV.mails = p ? (p.threads || []) : []; });
   const since = ymd(addDays(S.clock, -5));
   const base = { limit: 20, response_format: 'detailed', include_context: false, sort: 'timestamp', natural_language_query: '' };
@@ -730,6 +817,7 @@ function subscribeDb() {
   const t = setTimeout(() => { if (ST.commits === 'loading') { ST.commits = { code: 'timeout', message: 'De opslag reageert niet.' }; scheduleRender(); } }, 10000);
   CAP.db.collection('commitments').onSnapshot(s => { clearTimeout(t); LV.commits = s.docs.map(x => ({ id: x.id, ...x.data() })); ST.commits = 'ok'; scheduleRender(); },
     e => { clearTimeout(t); ST.commits = { code: e?.code || 'error', message: e?.message || '' }; scheduleRender(); });
+  CAP.db.collection('briefings').orderBy('date', 'desc').limit(3).onSnapshot(s => { LV.briefings = s.docs.map(x => ({ id: x.id, ...x.data() })); scheduleRender(); }, () => {});
   CAP.db.collection('itemstate').onSnapshot(s => { const m = {}; s.docs.forEach(x => m[x.id] = x.data()); LV.state = m; scheduleRender(); }, () => {});
 }
 
@@ -766,7 +854,14 @@ function liveItems() {
   const items = [];
   // Agenda
   const seen = new Map();
-  Object.values(LV.ranges).flat().forEach(ev => { if (ev && ev.id && !seen.has(ev.id)) seen.set(ev.id, ev); });
+  const selfCal = (LV.selfEmail || 'robert@homezero.nl');
+  // eigen agenda eerst, zodat jouw reactie (accepted/needsAction) leidend is
+  const ranges = Object.values(LV.ranges).filter(r => r && r.events && calOn(r.calId)).sort((a, b) => (b.calId === selfCal || b.calId === 'primary') - (a.calId === selfCal || a.calId === 'primary'));
+  for (const r of ranges) for (const ev of r.events) {
+    if (!ev || !ev.id) continue;
+    const k = ev.iCalUID ? ev.iCalUID + '|' + (ev.originalStartTime?.dateTime || ev.start?.dateTime || ev.start?.date) : ev.id;
+    if (!seen.has(k)) seen.set(k, { ...ev, _cal: r.calId });
+  }
   for (const ev of seen.values()) {
     if (ev.status === 'cancelled' || ev.eventType === 'WORKING_LOCATION') continue;
     const atts = (ev.attendees || []).map(a => ({ email: (a.email || '').toLowerCase(), name: a.displayName || nameFromEmail(a.email), status: a.responseStatus, self: !!a.self, organizer: !!a.organizer, optional: !!a.optionalAttendee }));
@@ -776,7 +871,7 @@ function liveItems() {
     const orgs = [...new Set(atts.map(a => registerOrg(orgSlugFromEmail(a.email))).filter(Boolean))];
     const allDay = !ev.start?.dateTime;
     items.push({
-      id: 'ev:' + ev.id, rawId: ev.id, type: 'meeting', live: true, title: ev.summary || '(geen titel)',
+      id: 'ev:' + ev.id, rawId: ev.id, calId: ev._cal, calName: calName(ev._cal), type: 'meeting', live: true, title: ev.summary || (ev.visibility === 'private' ? '(privé)' : '(geen titel)'),
       start: ev.start?.dateTime || ev.start?.date, end: ev.end?.dateTime || ev.end?.date, allDay,
       where: ev.location || (ev.conferenceUrl ? 'Google Meet' : ''), meet: ev.conferenceUrl, url: ev.htmlLink,
       attendees: atts, attendeeNames: atts.map(a => a.name), needsAction: me?.status === 'needsAction', myStatus: me?.status,
@@ -1004,7 +1099,7 @@ async function respondInvite(id, status) {
   if (!MODE.live) { const d = demoItem(id); if (d) d.needsAction = false; toast(`Demo: ${status === 'accepted' ? 'geaccepteerd' : status === 'declined' ? 'afgewezen' : 'misschien'}`); return render(); }
   S.busy[id] = true; render();
   try {
-    await call('Google Calendar', 'respond_to_event', { eventId: it.rawId, responseStatus: status });
+    await call('Google Calendar', 'respond_to_event', { eventId: it.rawId, responseStatus: status, ...(it.calId && it.calId !== 'primary' ? { calendarId: it.calId } : {}) });
     toast(`${ic('meeting')} ${status === 'accepted' ? 'Geaccepteerd' : status === 'declined' ? 'Afgewezen' : 'Misschien'}: ${esc(short(it.title, 40))}`);
     await CAP.mcp.invalidate('Google Calendar').catch(() => {});
   } catch (e) { toast(`Antwoorden lukte niet (${esc(e?.code || 'fout')}).`); }
@@ -1070,7 +1165,7 @@ async function commitSave(docId, patch) {
 }
 async function commitAdd(data) {
   const doc = { wat: data.wat, stroom: data.stroom || 'mijn', aan: data.aan || '', org: data.org || '', deadline: data.deadline || null, status: data.status || 'open',
-    plan: data.plan || null, backlog: !!data.backlog, reminder: data.reminder || null, gtask: data.gtask || null, src: data.src || null,
+    plan: data.plan || null, backlog: !!data.backlog, week: data.week || null, health: data.health || null, reminder: data.reminder || null, gtask: data.gtask || null, src: data.src || null,
     closedAt: data.closedAt || null, bron: data.bron || { label: 'Eigen invoer' }, bewijsregel: data.bewijsregel || { type: 'geen' }, citaat: data.citaat || '', created: data.created || today(), createdAt: Date.now() };
   if (!MODE.live || !CAP.db) { const id = 'dc' + Date.now() + Math.random().toString(36).slice(2, 5); LV.commits.push({ id, ...doc }); scheduleRender(); return id; }
   try { const ref = await CAP.db.collection('commitments').add(doc); return ref.id; } catch (e) { toast(`Opslaan lukte niet: ${esc(e?.code || e?.message || 'fout')}`); return null; }
@@ -1278,7 +1373,7 @@ async function runExtraction(kind, meetingId) {
       const r = await CAP.mcp.callTool('Wispr Flow', 'get_meeting', { meeting_id: meetingId });
       const p = r.payload || {};
       const m = LV.wispr.find(x => x.id === meetingId) || {};
-      sources = `[Meeting: ${m.title || p.title || ''} · ${m.start ? longDay(new Date(m.start)) : ''}]\n` + short(typeof p === 'string' ? p : JSON.stringify({ summary: p.summary, content: p.content, attendees: p.attendees }), 24000);
+      sources = `[Meeting: ${m.title || p.title || ''} · ${m.start ? longDay(pd(m.start)) : ''}]\n` + short(typeof p === 'string' ? p : JSON.stringify({ summary: p.summary, content: p.content, attendees: p.attendees }), 24000);
       S.sheet.bron = { label: 'Meeting · ' + (m.title || 'Wispr'), url: m.share_link || null, type: 'meeting', ref: meetingId };
     } else {
       const sl = allItems().filter(i => i.type === 'slack' && !i.bot).slice(0, 40).map(s => `[Slack ${s.channel} · ${s.fromMe ? 'Robert' : s.fromName} · ${s.time ? ymd(pd(s.time)) : ''}] ${short(s.title, 700)}`).join('\n');
@@ -1538,7 +1633,8 @@ function viewDagstart() {
   const todayList = plannedOn(T1).sort((a, b) => (a.type === 'task' ? 0 : 1) - (b.type === 'task' ? 0 : 1));
   const fd = focusDay();
   const waiting = openCommits().filter(c => c.stroom === 'aan_mij' && !c.backlog).sort((a, b) => String(a.reminder || '9').localeCompare(String(b.reminder || '9')));
-  const goals = allItems().filter(i => i.type === 'task' && i.weekgoal);
+  const goals = [...openCommits().filter(c => c.stroom === 'weekdoel'), ...allItems().filter(i => i.type === 'task' && i.weekgoal)];
+  const roadmap = openCommits().filter(c => c.stroom === 'roadmap');
   const ccm = allItems().filter(i => i.type === 'mail' && !i.direct && !i.read);
   const bots = allItems().filter(i => i.type === 'slack' && i.bot && !i.read && !i.fromMe);
   const nReply = box.filter(b => b.kind === 'reply' || b.kind === 'mega').length;
@@ -1552,8 +1648,9 @@ function viewDagstart() {
   return `<div class="page">
     ${modeBanner()}
     <div class="page-head greet" style="margin-bottom:0"><div style="min-width:0"><div class="eyebrow">${cap(longDay(S.clock))} · ${hm(S.clock)}</div><h1>${greeting()}</h1><div class="sub">${MODE.checked ? sum : 'Je bronnen worden geladen…'}</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="brief">${ic('spark')}Vat samen</button><button class="btn" data-action="help"><span class="kbd">?</span>Sneltoetsen</button></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-action="swipe">${ic('inbox')}Plansessie <span class="kbd" style="background:transparent;color:inherit;border-color:currentColor">s</span></button><button class="btn" data-action="brief">${ic('spark')}Vat samen</button><button class="btn" data-action="help"><span class="kbd">?</span></button></div></div>
     ${statusRow()}
+    ${briefingCard()}
     ${S.aiBrief ? `<div class="ai-card"><div class="eyebrow">${ic('spark')}Claude${S.aiBrief.state === 'loading' ? ' denkt mee…' : ''}</div><div id="ai-brief-text">${esc(S.aiBrief.text)}</div></div>` : ''}
     <div class="triage-grid">
       <section class="card">
@@ -1574,11 +1671,20 @@ function viewDagstart() {
               return `<button class="ma-row${isPast(m) ? ' past' : ''}${m.needsAction ? ' inv' : ''}" data-open="${esc(m.id)}" data-k="${esc(m.id)}" data-kind="${kindOf(m)}" style="width:100%;text-align:left"><span class="t">${hm(pd(m.start))}</span><span style="min-width:0"><span class="row-title" style="display:block">${esc(m.title)}</span><span class="row-sub" style="display:block">${m.external ? esc(m.entities.map(entityName).join(', ')) + ' · ' : ''}${m.needsAction ? 'nog niet geaccepteerd' : esc(flags || hm(pd(m.end)))}</span></span></button>`;
             }).join('') || (MODE.checked ? '<div class="empty">Geen afspraken de komende dagen.</div>' : '')}</div></section>
         ${waiting.length ? `<section class="card"><div class="card-head"><h2>Wachten op<span class="count-badge">${waiting.length}</span></h2><button class="btn sm" data-action="ctab" data-tab="aan_mij">Tracker</button></div><div class="card-body" style="padding:6px"><div class="list">${waiting.slice(0, 6).map(c => rowHTML(c, { why: `${c.aan || ''}${c.raw.org ? ' (' + c.raw.org + ')' : ''} · sinds ${c.raw.created ? fmtDate(c.raw.created) : '–'}${c.reminder ? ' · reminder ' + fmtDate(c.reminder) : ''}` })).join('')}</div></div></section>` : ''}
-        ${goals.length ? `<section class="card"><div class="card-head"><h2>Weekdoelen</h2></div><div class="card-body" style="padding:6px"><div class="list">${goals.map(g => rowHTML(g)).join('')}</div></div></section>` : ''}
+        <section class="card"><div class="card-head"><h2>Weekdoelen en roadmap</h2><button class="btn sm" data-action="ctab" data-tab="weekdoel">Tracker</button></div><div class="card-body" style="padding:6px">${goals.length || roadmap.length ? `<div class="list">${[...goals, ...roadmap].map(g => rowHTML(g, { why: g.type === 'commit' ? `${STROOM[g.stroom]}${g.raw.week ? ' ' + g.raw.week : ''} · ${g.raw.health ? HEALTH[g.raw.health][0] + ' ' + HEALTH[g.raw.health][1].toLowerCase() : 'nog geen status'}${g.raw.lastCheck ? ' · check ' + fmtDate(g.raw.lastCheck) : ''}${goalDue(g) ? ' · check vandaag' : ''}` : undefined })).join('')}</div>` : `<div class="empty">Nog geen weekdoelen. ${MODE.live ? '<button class="btn sm" data-action="import-goals">Haal op uit #02-intern</button>' : ''}</div>`}</div></section>
         ${ccm.length || bots.length ? `<section class="card"><div class="card-head"><h2>Ter info<span class="count-badge">${ccm.length + bots.length}</span></h2></div><div class="card-body" style="padding:6px"><div class="list">${[...ccm, ...bots].slice(0, 6).map(it => rowHTML(it)).join('')}</div></div></section>` : ''}
       </div>
     </div>
   </div>`;
+}
+
+function briefingCard() {
+  const b = LV.briefings[0];
+  if (!b) return '';
+  const fresh = b.date === today() || (MODE.live === false);
+  const t = b.createdAt ? hm(pd(b.createdAt)) : '';
+  return `<details class="card briefing"${fresh && !S.briefClosed ? ' open' : ''}><summary class="card-head"><h2>${esc(b.title || 'Ochtendbriefing')}<span class="count-badge">${fresh ? '' : 'van ' + fmtDate(b.date) + ' · '}${t ? t + ' · ' : ''}via routine, ook in Telegram</span></h2>${b.session ? extLink(b.session, ic('out') + 'Sessie', 'btn sm') : ''}</summary>
+    <div class="card-body brief-grid">${(b.sections || []).map(sec => `<div><div class="eyebrow" style="margin-bottom:4px">${esc(sec.title)}</div><ul class="brief">${(sec.items || []).map(i => `<li>${i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener" class="ext-link">${esc(i.text)}</a>` : esc(i.text)}</li>`).join('')}</ul></div>`).join('')}</div></details>`;
 }
 
 /* ---------- Planning ---------- */
@@ -1606,7 +1712,7 @@ function viewPlanning() {
 function viewToezeggingen() {
   const cs = commitItems().map(c => allItems().find(i => i.id === c.id) || c);
   const tasksFree = allItems().filter(i => i.type === 'task' && !i.commitId);
-  const tabs = [['alles', 'Alles'], ['mijn', 'Ik beloofde'], ['aan_mij', 'Wachten op'], ['bespreken', 'Bespreken bij contact'], ['voornemen', 'Voornemens'], ['taken', 'Google Tasks'], ['afgerond', 'Afgerond']];
+  const tabs = [['alles', 'Alles'], ['mijn', 'Ik beloofde'], ['aan_mij', 'Wachten op'], ['bespreken', 'Bespreken'], ['weekdoel', 'Weekdoelen'], ['roadmap', 'Roadmap'], ['voornemen', 'Voornemens'], ['taken', 'Google Tasks'], ['afgerond', 'Afgerond']];
   const sel = S.commitTab;
   const list = sel === 'taken' ? tasksFree : sel === 'afgerond' ? cs.filter(isDone) : sel === 'alles' ? [...cs.filter(c => !isDone(c)), ...tasksFree] : cs.filter(c => c.stroom === sel && !isDone(c));
   const order = { te_laat: 0, waarschijnlijk_klaar: 1, open: 2, klaar: 3, overgedragen: 4 };
@@ -1615,7 +1721,7 @@ function viewToezeggingen() {
   const ruleText = r => !r || r.type === 'geen' ? '<span class="rule none">geen bewijsregel · dit vink je zelf af</span>' : `<span class="rule">bewijs: ${esc(r.type)}${r.to ? ' → ' + esc(r.to) : ''}${r.keywords?.length ? ' · ' + esc(r.keywords.join(', ')) : ''}</span>`;
   const row = it => it.type === 'task' ? `<div class="commit-row" data-k="${esc(it.id)}" data-kind="task" data-open="${esc(it.id)}"><div style="min-width:0"><div class="wat">${esc(it.title)}</div><div class="meta"><span class="st st-open">Google Tasks</span><span>${esc(itemSub(it))}</span></div></div><div class="commit-acts"><span class="sub" style="font-size:12px">${esc(relTime(it))}</span></div></div>` : `<div class="commit-row" data-k="${esc(it.id)}" data-kind="${kindOf(it)}" data-open="${esc(it.id)}">
       <div style="min-width:0"><div class="wat">${esc(it.title)}</div>
-        <div class="meta"><span class="st st-${it.status}">${STATUS[it.status]}</span>${sel === 'alles' ? `<span>${STROOM[it.stroom]}</span>` : ''}${it.aan ? `<span>${it.stroom === 'aan_mij' ? 'van' : it.stroom === 'bespreken' ? 'met' : 'aan'} ${esc(it.aan)}</span>` : ''}${it.entities.map(entityChip).join('') || (it.raw.org ? `<span>${esc(it.raw.org)}</span>` : '')}
+        <div class="meta">${['weekdoel', 'roadmap'].includes(it.stroom) ? `<span class="st st-open">${it.raw.health ? HEALTH[it.raw.health][0] + ' ' + HEALTH[it.raw.health][1] : 'Nog geen status'}</span>${it.raw.week ? `<span>${esc(it.raw.week)}</span>` : ''}${(it.raw.checks || []).length ? `<span class="checks-mini">${it.raw.checks.slice(-7).map(c => `<i title="${fmtDate(c.d)}${c.note ? ': ' + esc(c.note) : ''}">${HEALTH[c.h]?.[0] || ''}</i>`).join('')}</span>` : ''}${it.raw.checks?.slice(-1)[0]?.note ? `<span>“${esc(short(it.raw.checks.slice(-1)[0].note, 80))}”</span>` : ''}` : ''}<span class="st st-${it.status}">${STATUS[it.status]}</span>${sel === 'alles' ? `<span>${STROOM[it.stroom]}</span>` : ''}${it.aan ? `<span>${it.stroom === 'aan_mij' ? 'van' : it.stroom === 'bespreken' ? 'met' : 'aan'} ${esc(it.aan)}</span>` : ''}${it.entities.map(entityChip).join('') || (it.raw.org ? `<span>${esc(it.raw.org)}</span>` : '')}
           ${it.stroom === 'aan_mij' ? `<span>sinds ${it.raw.created ? fmtDate(it.raw.created) : '–'}${it.reminder ? ` · reminder <b style="${it.reminder <= today() ? 'color:var(--danger)' : ''}">${fmtDate(it.reminder)}</b>` : ''}</span>` : it.stroom === 'bespreken' ? '' : `<span>${it.backlog ? 'backlog' : it.plan ? 'gepland ' + fmtDate(it.plan) : 'nog niet gepland'}${it.deadline ? ` · deadline <b style="${it.status === 'te_laat' ? 'color:var(--danger)' : ''}">${fmtDate(it.deadline)}</b>` : ''}${it.linkedTask ? ' · in Google Tasks' : ''}</span>`}
           ${it.raw.bron?.url ? extLink(it.raw.bron.url, esc(it.raw.bron.label || 'bron'), 'ext-link') : `<span>${esc(it.raw.bron?.label || '')}</span>`}</div>
         ${['mijn', 'voornemen'].includes(it.stroom) ? `<div class="meta">${it.raw.bewijs ? `<span class="rule" style="color:var(--c-commit)">✓ ${esc(it.raw.bewijs)}</span>` : ruleText(it.raw.bewijsregel)}</div>` : ''}
@@ -1627,15 +1733,143 @@ function viewToezeggingen() {
         <button class="iconbtn" data-action="c-del" data-id="${esc(it.docId)}" aria-label="Verwijder">${ic('trash')}</button></div></div>`;
   return `<div class="page">${modeBanner()}
     <div class="page-head"><div><div class="eyebrow">Commitment tracker · alles op één plek</div><h1>Tracker</h1><div class="sub" style="margin-top:4px;max-width:70ch">Wat jij toezegt, waar je op wacht, wat je bij het volgende contact bespreekt, en je Google Tasks. Wat je plant, staat ook in Google Tasks. Wachten op wordt nooit een taak.</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="extract-scan">${ic('spark')}Haal op uit Slack en mail</button><button class="btn" data-action="sweep" ${S.busy.sweep ? 'disabled' : ''}>${ic('check')}${S.busy.sweep ? 'Bewijs zoeken…' : 'Zoek bewijs'}</button><button class="btn" data-action="import-canvas" ${S.busy.canvas ? 'disabled' : ''}>${ic('refresh')}${S.busy.canvas ? 'Canvas lezen…' : 'Neem canvas Wachten op over'}</button></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="extract-scan">${ic('spark')}Haal op uit Slack en mail</button><button class="btn" data-action="sweep" ${S.busy.sweep ? 'disabled' : ''}>${ic('check')}${S.busy.sweep ? 'Bewijs zoeken…' : 'Zoek bewijs'}</button><button class="btn" data-action="import-canvas" ${S.busy.canvas ? 'disabled' : ''}>${ic('refresh')}${S.busy.canvas ? 'Canvas lezen…' : 'Canvas Wachten op'}</button><button class="btn" data-action="import-goals" ${S.busy.goals ? 'disabled' : ''}>🎯 ${S.busy.goals ? 'Ophalen…' : 'Weekdoelen uit #02-intern'}</button></div></div>
     ${statusRow()}${sectionNote(['commits'])}
     <form class="addform" id="addcommit"><input id="ac-wat" placeholder="Nieuw, bijv. ‘DNS-instructies naar Liselot sturen’   (n om hier te typen)" autocomplete="off" required>
-      <select id="ac-stroom" aria-label="Stroom"><option value="mijn">Ik beloofde</option><option value="aan_mij">Wachten op</option><option value="bespreken">Bespreken</option><option value="voornemen">Voornemen</option></select>
+      <select id="ac-stroom" aria-label="Stroom"><option value="mijn">Ik beloofde</option><option value="aan_mij">Wachten op</option><option value="bespreken">Bespreken</option><option value="weekdoel">Weekdoel</option><option value="roadmap">Roadmap</option><option value="voornemen">Voornemen</option></select>
+      <input id="ac-date" type="date" aria-label="Deadline of doeldatum">
       <input id="ac-org" placeholder="Partner" aria-label="Partner" style="max-width:120px;border:1px solid var(--line);border-radius:7px;padding:4px 6px;background:var(--bg);font-size:12.5px">
       <button class="btn sm primary" type="submit">${ic('plus')}Toevoegen</button></form>
     <div class="tabs" role="tablist">${tabs.map(([k, l], i) => `<button class="tab${sel === k ? ' on' : ''}" role="tab" data-ctab="${k}">${l}<span class="count-badge">${count(k)}</span><span class="kbd tab-kbd">${i + 1}</span></button>`).join('')}</div>
     <div class="card">${list.length ? list.map(row).join('') : `<div class="empty">${sel === 'afgerond' ? 'Nog niets afgerond.' : 'Niets in deze lijst.'}</div>`}</div>
     <p class="hint" style="margin-top:12px">Tabs wisselen met <span class="kbd">⇧</span>+<span class="kbd">1</span>–<span class="kbd">7</span>. Een toezegging telt als er een eigenaar is, iets controleerbaars te leveren, en iemand het merkt als het niet gebeurt. Wordt het een Jira-story, dan laat de tracker hem los.</p></div>`;
+}
+
+/* ---------- Plansessie: kaart voor kaart (swipe) ---------- */
+const HEALTH = { groen: ['🟢', 'Op koers'], oranje: ['🟠', 'Risico'], rood: ['🔴', 'Blokkade'], af: ['✅', 'Af'] };
+function goalDue(c) {
+  const T = today(), last = c.raw.lastCheck;
+  if (c.stroom === 'weekdoel') return last !== T;
+  return !last || dayDiff(pd(last)) <= -7 || (['oranje', 'rood'].includes(c.raw.health) && last !== T);
+}
+function swipeQueue() {
+  const goals = openCommits().filter(c => ['weekdoel', 'roadmap'].includes(c.stroom) && goalDue(c))
+    .sort((a, b) => (a.stroom === 'weekdoel' ? 0 : 1) - (b.stroom === 'weekdoel' ? 0 : 1))
+    .map(c => ({ id: c.id, kind: 'goal', why: c.stroom === 'weekdoel' ? `Weekdoel${c.raw.week ? ' ' + c.raw.week : ''} · hoe staat het ervoor?` : 'Roadmap · wekelijkse check' }));
+  return [...goals, ...inbox().map(b => ({ id: b.it.id, kind: b.kind, why: b.why }))];
+}
+function startSwipe() {
+  const q = swipeQueue();
+  if (!q.length) return toast('Niets te plannen. Alles heeft een plek.');
+  S.swipe = { q, i: 0, done: 0, anim: '' };
+  S.help = false; S.selected = null; renderInspector();
+  renderSwipe();
+}
+function stopSwipe() { S.swipe = null; document.getElementById('overlay').innerHTML = ''; render(); }
+function swipeCurrent() {
+  const sw = S.swipe; if (!sw) return null;
+  while (sw.i < sw.q.length) { const c = sw.q[sw.i]; const it = byId(c.id); if (it && !isDone(it)) return { ...c, it }; sw.i++; }
+  return null;
+}
+const SWIPE_KEYS = {
+  goal: [['g', '🟢 Op koers'], ['o', '🟠 Risico'], ['r', '🔴 Blokkade'], ['x', '✅ Af'], ['n', 'Notitie']],
+  invite: [['y', 'Ja'], ['m', 'Misschien'], ['n', 'Nee']],
+  waiting: [['x', 'Binnen'], ['1', 'Nudge vandaag'], ['2', 'Morgen'], ['3', 'Later'], ['4', 'Volg. week'], ['5', 'Parkeren']],
+  process: [['r', 'Recap met Claude'], ['t', 'Toezeggingen eruit'], ['1', 'Recap vandaag'], ['2', 'Morgen'], ['e', 'Verwerkt']],
+  prep: [['1', 'Prep vandaag'], ['2', 'Morgen'], ['3', 'Later'], ['5', 'Geen prep']],
+  default: [['1', 'Vandaag'], ['2', 'Morgen'], ['3', 'Later deze week'], ['4', 'Volgende week'], ['5', 'Backlog']],
+};
+const SWIPE_EXTRA = { reply: [['e', 'Gelezen'], ['w', 'Wachten op'], ['b', 'Bespreken']], mega: [['e', 'Afgehandeld']], task: [['x', 'Klaar']], commit: [['x', 'Klaar'], ['b', 'Bespreken']] };
+function renderSwipe() {
+  const ov = document.getElementById('overlay');
+  const sw = S.swipe; if (!sw) return;
+  const cur = swipeCurrent();
+  const T1 = bucketDate(1), load = loadOf(T1);
+  const prog = `<div class="sw-prog"><span style="width:${Math.min(100, sw.i / Math.max(1, sw.q.length) * 100)}%"></span></div>`;
+  if (!cur) {
+    ov.innerHTML = `<div class="scrim sw-scrim"><div class="swipe" role="dialog" aria-label="Plansessie">${prog}
+      <div class="sw-card sw-end"><div class="eyebrow">Plansessie klaar</div><h2 class="sw-title">Alles heeft een plek</h2>
+      <p class="sub">${sw.done} besluiten genomen. ${dayDiff(pd(T1)) === 0 ? 'Vandaag' : cap(dayLabel(pd(T1)))} staat op ${load}/${DAY_CAP}${load > DAY_CAP ? ', dat is meer dan je maximum' : ''}.</p>
+      <div class="actions" style="justify-content:center"><button class="btn primary" data-action="swipe-stop" data-go-after="planning">Bekijk planning <span class="kbd">p</span></button><button class="btn" data-action="swipe-stop">Sluiten <span class="kbd">esc</span></button></div></div></div></div>`;
+    return;
+  }
+  const it = cur.it, kind = cur.kind;
+  const keys = SWIPE_KEYS[kind] || [...SWIPE_KEYS.default, ...(SWIPE_EXTRA[kind] || [])];
+  const ctx = [];
+  if (it.entities?.length) ctx.push(it.entities.map(entityChip).join(' '));
+  if (it.type === 'meeting') ctx.push(`${cap(longDay(pd(it.start)))} ${hm(pd(it.start))}–${hm(pd(it.end))}${it.calName ? ' · ' + esc(it.calName) : ''}`);
+  if (it.type === 'commit' && it.aan) ctx.push(`${it.stroom === 'aan_mij' ? 'Van' : 'Met'} ${esc(it.aan)}`);
+  const related = it.entities?.length ? openCommits().filter(c => c.id !== it.id && ['mijn', 'aan_mij', 'bespreken'].includes(c.stroom) && c.entities.some(e => it.entities.includes(e))).slice(0, 3) : [];
+  const body = it.type === 'slack' ? it.title : it.type === 'mail' ? it.body : it.type === 'task' ? it.notes : it.type === 'rec' ? it.body : it.type === 'commit' ? (it.raw.citaat || '') : it.desc || '';
+  const checks = kind === 'goal' ? (it.raw.checks || []).slice(-6) : [];
+  ov.innerHTML = `<div class="scrim sw-scrim"><div class="swipe" role="dialog" aria-label="Plansessie">${prog}
+    <div class="sw-top"><span>${sw.i + 1} / ${sw.q.length}</span><span>${dayDiff(pd(T1)) === 0 ? 'Vandaag' : cap(dayLabel(pd(T1)))} ${capBar(load)} ${load}/${DAY_CAP}</span><span><span class="kbd">s</span> overslaan · <span class="kbd">u</span> terug · <span class="kbd">esc</span> stoppen</span></div>
+    <div class="sw-card ${sw.anim}" id="sw-card">
+      <div class="sw-kind">${kind === 'goal' ? `<span class="kind k-prep">${it.stroom === 'weekdoel' ? '🎯 Weekdoel' : '🗺 Roadmap'}</span>${it.raw.health ? `<span class="chip">${HEALTH[it.raw.health][0]} ${HEALTH[it.raw.health][1]}</span>` : ''}` : `<span class="kind ${KIND[kind]?.[0] || ''}">${KIND[kind]?.[1] || ''}</span>`}<span class="src src-${it.type}">${ic(SRC[it.type].icon)}${SRC[it.type].label}</span></div>
+      <h2 class="sw-title">${esc(short(it.title, 220))}</h2>
+      <div class="sub">${esc(cur.why || itemSub(it))}</div>
+      ${ctx.length ? `<div class="sw-ctx">${ctx.join(' · ')}</div>` : ''}
+      ${body && body !== it.title ? `<div class="sw-body">${esc(short(body, 600))}</div>` : ''}
+      ${checks.length ? `<div class="sw-checks">${checks.map(c => `<span title="${esc(c.note || '')}">${fmtDate(c.d)} ${HEALTH[c.h]?.[0] || ''}</span>`).join('')}</div>` : ''}
+      ${related.length ? `<div class="sw-rel"><div class="eyebrow">Ook open bij ${esc(it.entities.map(entityName).join(', '))}</div>${related.map(c => `<div>· ${esc(short(c.title, 90))} <span class="sub">(${STROOM[c.stroom]})</span></div>`).join('')}</div>` : ''}
+      ${kind === 'goal' ? `<textarea id="sw-note" class="sw-note" rows="2" placeholder="Notitie of volgende stap (n om te typen, ↵ om op te slaan met de status)"></textarea>` : ''}
+      <div class="sw-keys">${keys.map(([k, l]) => `<button class="sw-key" data-action="swipe-key" data-key="${k}"><span class="kbd">${k}</span>${l}</button>`).join('')}${it.url ? `<a class="sw-key" href="${esc(it.url)}" target="_blank" rel="noopener"><span class="kbd">o</span>Openen</a>` : ''}</div>
+    </div></div></div>`;
+  sw.anim = '';
+}
+async function swipeKey(k) {
+  const sw = S.swipe; const cur = swipeCurrent();
+  if (k === 'Escape') return stopSwipe();
+  if (!cur) { if (k === 'p') { stopSwipe(); go({ view: 'planning' }); } return; }
+  const it = cur.it;
+  const next = (dir = 'left', counted = true) => { if (counted) sw.done++; sw.i++; sw.anim = 'in-' + dir; const el = document.getElementById('sw-card'); if (el && !matchMedia('(prefers-reduced-motion: reduce)').matches) { el.classList.add('out-' + dir); setTimeout(renderSwipe, 160); } else renderSwipe(); };
+  if (k === 's' || k === 'ArrowRight') return next('left', false);
+  if (k === 'u' || k === 'ArrowLeft') { if (sw.i > 0) { sw.i--; sw.anim = 'in-right'; renderSwipe(); } return; }
+  if (k === 'o') { if (it.url) { let w = null; try { w = window.open(it.url, '_blank', 'noopener'); } catch {} if (!w) toast(`<a href="${esc(it.url)}" target="_blank" rel="noopener" style="color:inherit">Openen ${ic('out')}</a>`); } return; }
+  if (cur.kind === 'goal') {
+    const note = document.getElementById('sw-note')?.value.trim() || '';
+    if (k === 'n') { document.getElementById('sw-note')?.focus(); return; }
+    const h = { g: 'groen', o: 'oranje', r: 'rood', x: 'af' }[k];
+    if (!h) return;
+    const T = today();
+    const patch = { health: h, lastCheck: T, checks: [...(it.raw.checks || []).filter(c => c.d !== T).slice(-19), { d: T, h, note }] };
+    if (h === 'af') Object.assign(patch, { status: 'klaar', closedAt: T });
+    await commitSave(it.docId, patch);
+    toast(`${HEALTH[h][0]} ${esc(short(it.title, 50))}: ${HEALTH[h][1].toLowerCase()}`);
+    return next(h === 'rood' || h === 'oranje' ? 'down' : 'left');
+  }
+  const map = { x: 'x', e: 'e', E: 'E', w: 'w', b: 'b', c: 'c', r: 'r', t: 't', y: 'y', m: 'm', n: 'n' };
+  if (/^[1-5]$/.test(k) || map[k]) {
+    if (['y', 'm', 'n'].includes(k) && !(it.type === 'meeting' && it.needsAction)) return;
+    const ok = await keyAction(k, null, it);
+    if (ok !== false) next(/^[1-2]$/.test(k) ? 'up' : /^[3-5]$/.test(k) ? 'right' : 'left');
+  }
+}
+
+/* ---------- Weekdoelen ophalen uit #02-intern ---------- */
+const CH_INTERN = 'C056FUDC00L';
+const isoWeek = dt => { const t = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate() + 3 - ((dt.getDay() + 6) % 7))); const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 4)); return `${t.getUTCFullYear()}-W${String(1 + Math.round(((t - y) / 864e5 - 3 + ((y.getUTCDay() + 6) % 7)) / 7)).padStart(2, '0')}`; };
+async function importWeekgoals() {
+  if (!MODE.live) return toast('Demo: weekdoelen ophalen werkt alleen live.');
+  S.busy.goals = true; render();
+  try {
+    const res = await call('Slack', 'slack_search_public_and_private', { keywords: ['"Nieuwe week"'], filters: `in:<#${CH_INTERN}> after:${ymd(addDays(S.clock, -8))}`, include_bots: true, limit: 3, response_format: 'detailed', include_context: false, sort: 'timestamp', natural_language_query: '' });
+    const hit = parseSlack(res).find(m => /Nieuwe week/i.test(m.text));
+    if (!hit) throw { code: 'geen weekdoelen-thread gevonden' };
+    const th = await call('Slack', 'slack_read_thread', { channel_id: CH_INTERN, message_ts: hit.ts, response_format: 'concise', limit: 100 });
+    const txt = typeof th === 'string' ? th : (th?.messages || JSON.stringify(th || ''));
+    const mine = String(txt).split(/\n> /).find(p => /^Robert Verveen\b/.test(p) && /\n?\s*1[.)]\s/.test(p));
+    if (!mine) throw { code: 'nog geen reply van jou in de thread' };
+    const goals = mine.slice(mine.indexOf(':') + 1).split('\n').map(l => (l.match(/^\s*\d+[.)]\s+(.+)/) || [])[1]).filter(Boolean).map(cleanSlack);
+    const tdate = pd(hit.time);
+    const wkStart = tdate.getDay() === 0 ? addDays(startOfDay(tdate), 1) : weekStart(0, tdate);
+    const week = isoWeek(wkStart), friday = ymd(addDays(wkStart, 4));
+    const have = new Set(LV.commits.filter(c => c.stroom === 'weekdoel' && c.week === week).map(c => normOrg(c.wat).slice(0, 50)));
+    let n = 0;
+    for (const g of goals) { if (have.has(normOrg(g).slice(0, 50))) continue; await commitAdd({ wat: g, stroom: 'weekdoel', week, deadline: friday, bron: { label: `Weekdoelen ${week} · #02-intern`, url: hit.url } }); n++; }
+    toast(n ? `🎯 ${n} weekdoelen voor ${week} overgenomen` : `Weekdoelen ${week} stonden er al`);
+  } catch (e) { toast(`Weekdoelen ophalen lukte niet (${esc(e?.code || 'fout')}).`); }
+  delete S.busy.goals; render();
 }
 
 /* ---------- Toetsenbord: sneltoetsen per soort item ---------- */
@@ -1685,9 +1919,10 @@ function renderHelp() {
     <div class="pal-results help-grid">
       ${grp('Overal', [['⌘K /', 'zoeken en commando’s'], ['?', 'dit overzicht'], ['g d', 'Dagstart'], ['g p', 'Planning'], ['g a', 'Agenda'], ['g t', 'Tracker'], ['g c', 'Chat'], ['g m', 'Mail'], ['g k', 'Google Tasks'], ['Esc', 'sluiten']])}
       ${grp('Bewegen', [['j ↓', 'volgende'], ['k ↑', 'vorige'], ['↵', 'details rechts'], ['o', 'openen in Slack, Gmail, Tasks, Agenda'], ['[ ]', 'vorige / volgende week (Agenda)'], ['n', 'nieuw item (Tracker)'], ['⇧1–7', 'tab (Tracker)']])}
-      ${grp('Plannen', [['1', 'vandaag'], ['2', 'morgen'], ['3', 'later deze week'], ['4', 'volgende week'], ['5', 'backlog'], ['x', 'klaar / binnen']])}
+      ${grp('Plannen', [['s', 'plansessie: kaart voor kaart'], ['1', 'vandaag'], ['2', 'morgen'], ['3', 'later deze week'], ['4', 'volgende week'], ['5', 'backlog'], ['x', 'klaar / binnen']])}
       ${grp('Verwerken', [['e', 'gelezen (mail ook in Gmail)'], ['⇧E', 'gelezen + ✅ in Slack'], ['w', 'wachten op'], ['b', 'bespreken bij contact'], ['c', 'toezegging maken'], ['r', 'recap met Claude (/klant-recap)'], ['t', 'toezeggingen eruit (Claude)'], ['y m n', 'uitnodiging: ja, misschien, nee']])}
     </div>
+    <div class="help-grid" style="padding-top:0 !important">${grp('In de plansessie', [['1–5', 'plannen'], ['g o r', 'weekdoel/roadmap: op koers, risico, blokkade'], ['x', 'af / klaar'], ['n', 'notitie bij een doel'], ['s →', 'overslaan'], ['u ←', 'terug'], ['esc', 'stoppen']])}</div>
     <div class="pal-foot"><span>Max ${DAY_CAP} items per dag. Plannen schrijft de datum in Google Tasks; wachten op en bespreken blijven in de tracker.</span></div></div></div>`;
 }
 
@@ -1743,44 +1978,58 @@ function modeBanner() {
 }
 
 /* ---------- Agenda (week) ---------- */
+function layoutLanes(list) {
+  // groepeer overlappende afspraken en geef elk een kolom
+  const out = new Map(); let cluster = [], end = 0;
+  const flush = () => { const cols = []; for (const m of cluster) { let c = cols.findIndex(t => t <= pd(m.start)); if (c < 0) { c = cols.length; cols.push(0); } cols[c] = pd(m.end); out.set(m, { lane: c }); } cluster.forEach(m => out.get(m).lanes = cols.length); cluster = []; };
+  for (const m of list) { if (cluster.length && pd(m.start) >= end) flush(); cluster.push(m); end = Math.max(end, +pd(m.end)); }
+  if (cluster.length) flush();
+  return out;
+}
 function viewAgenda() {
   const weekend = [0, 6].includes(S.clock.getDay());
   const base = weekStart(S.weekOffset + (weekend ? 1 : 0));
-  if (MODE.live) ensureCalRange(base, 7);
+  if (MODE.live && LV.calendars.length) ensureCalRange(base, 7, true);
   const days = Array.from({ length: 5 }, (_, i) => addDays(base, i));
-  const H0 = 8, H1 = 19, PX = 44;
   const evs = allItems().filter(i => i.type === 'meeting');
+  const weekEvs = evs.filter(e => !e.allDay && days.some(d => ymd(pd(e.start)) === ymd(d)));
+  const H0 = Math.min(8, ...weekEvs.map(e => pd(e.start).getHours()));
+  const H1 = Math.max(19, ...weekEvs.map(e => { const t = pd(e.end); return t.getHours() + (t.getMinutes() ? 1 : 0); }).map(h => Math.min(24, h || 24)));
+  const PX = 44;
   const oc = openCommits();
   const wk = (() => { const t = new Date(Date.UTC(base.getFullYear(), base.getMonth(), base.getDate() + 3)); const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 4)); return 1 + Math.round(((t - y) / 864e5 - 3 + ((y.getUTCDay() + 6) % 7)) / 7); })();
+  const cals = LV.calendars;
+  const calColor = id => hashColor('cal' + id);
   return `<div class="page">${modeBanner()}
-    <div class="page-head"><div><div class="eyebrow">Google Agenda · week ${wk}</div><h1>${days[0].getDate()} ${days[0].getMonth() !== days[4].getMonth() ? MONTHS[days[0].getMonth()].slice(0, 3) + ' ' : ''}– ${days[4].getDate()} ${MONTHS[days[4].getMonth()]}</h1></div>
+    <div class="page-head"><div><div class="eyebrow">Google Agenda · week ${wk} · tijden in Nederlandse tijd</div><h1>${days[0].getDate()} ${days[0].getMonth() !== days[4].getMonth() ? MONTHS[days[0].getMonth()].slice(0, 3) + ' ' : ''}– ${days[4].getDate()} ${MONTHS[days[4].getMonth()]}</h1></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <div class="legend"><span><span class="dot" style="background:var(--c-mail)"></span>Extern</span><span><span class="dot" style="border:1.5px dashed var(--c-meeting)"></span>Nog niet geaccepteerd</span><span><b style="color:var(--c-commit)">●</b> open toezeggingen</span></div>
+        <div class="legend"><span><span class="dot" style="border:1.5px dashed var(--c-meeting)"></span>Nog niet geaccepteerd</span><span><b style="color:var(--c-mail)">●</b> extern</span><span><b style="color:var(--c-commit)">●</b> open toezeggingen</span></div>
         <button class="iconbtn" data-action="week" data-dir="-1" aria-label="Vorige week">${ic('chevL')}</button><button class="btn sm" data-action="week" data-dir="0">Deze week</button><button class="iconbtn" data-action="week" data-dir="1" aria-label="Volgende week">${ic('chevR')}</button>
       </div></div>
-    ${sectionNote(Object.keys(ST).filter(k => k.startsWith('cal:')))}
+    ${cals.length ? `<div class="calchips">${cals.map(c => `<button class="calchip${calOn(c.id) ? ' on' : ''}" data-action="cal-toggle" data-id="${esc(c.id)}" title="${esc(c.id)}"><span class="dot" style="background:${calColor(c.id)}"></span>${esc(short(c.summary || c.id, 28))}</button>`).join('')}</div>` : ''}
+    ${sectionNote(Object.keys(ST).filter(k => k.startsWith('cal')).slice(0, 3))}
     <div class="card week-wrap"><div class="week">
       <div class="wk-head"></div>${days.map(dt => `<div class="wk-head${ymd(dt) === today() ? ' today' : ''}">${DAYS[dt.getDay()].slice(0, 2)}<b>${dt.getDate()}</b></div>`).join('')}
-      <div class="wk-allday" style="border-right:0"></div>${days.map(dt => `<div class="wk-allday" style="border-left:1px solid var(--line)">${evs.filter(e => e.allDay && ymd(pd(e.start)) <= ymd(dt) && ymd(dt) < ymd(pd(e.end))).map(e => `<span data-open="${esc(e.id)}" title="${esc(e.title)}">${esc(e.title)}</span>`).join('')}</div>`).join('')}
-      <div class="wk-hours">${Array.from({ length: H1 - H0 }, (_, i) => `<div class="wk-hl">${H0 + i}:00</div>`).join('')}</div>
+      <div class="wk-allday" style="border-right:0"></div>${days.map(dt => `<div class="wk-allday" style="border-left:1px solid var(--line)">${evs.filter(e => e.allDay && ymd(pd(e.start)) <= ymd(dt) && ymd(dt) < ymd(pd(e.end))).map(e => `<span data-open="${esc(e.id)}" title="${esc(e.title)} · ${esc(e.calName || '')}" style="border-left:3px solid ${calColor(e.calId || '')}">${esc(e.title)}</span>`).join('')}</div>`).join('')}
+      <div class="wk-hours">${Array.from({ length: H1 - H0 }, (_, i) => `<div class="wk-hl">${String(H0 + i).padStart(2, '0')}:00</div>`).join('')}</div>
       ${days.map(dt => {
-        const list = evs.filter(e => !e.allDay && ymd(pd(e.start)) === ymd(dt)).sort((a, b) => when(a) - when(b));
+        const list = evs.filter(e => !e.allDay && ymd(pd(e.start)) === ymd(dt)).sort((a, b) => when(a) - when(b) || pd(b.end) - pd(a.end));
+        const lanes = layoutLanes(list);
         return `<div class="wk-col">${Array.from({ length: H1 - H0 }, () => '<div class="wk-hl"></div>').join('')}
-          ${list.map((m, idx) => {
+          ${list.map(m => {
             const s = pd(m.start), e = pd(m.end);
-            const top = Math.max(0, ((s.getHours() + s.getMinutes() / 60) - H0) * PX);
-            const h = Math.max(Math.min(((e - s) / 36e5) * PX, (H1 - H0) * PX - top) - 3, 20);
-            const overlap = list.filter(o => o !== m && pd(o.start) < e && pd(o.end) > s);
-            const lane = overlap.length ? list.filter(o => (o === m || overlap.includes(o))).indexOf(m) : 0;
-            const lanes = overlap.length + 1;
+            const top = ((s.getHours() + s.getMinutes() / 60) - H0) * PX;
+            const endH = ymd(e) !== ymd(s) ? 24 : e.getHours() + e.getMinutes() / 60;
+            const h = Math.max((endH - (s.getHours() + s.getMinutes() / 60)) * PX - 2, 18);
+            const { lane, lanes: n } = lanes.get(m);
             const nOpen = oc.filter(c => c.entities.some(x => m.entities.includes(x))).length;
-            const cls = [m.needsAction ? 'inv' : '', m.ooo ? 'ooo' : '', m.focusTime ? 'focus-t' : '', m.external ? 'ext' : ''].join(' ');
-            return `<div class="wk-ev ${cls}" data-open="${esc(m.id)}" data-k="${esc(m.id)}" data-kind="${kindOf(m)}" style="top:${top}px;height:${h}px;left:calc(${(lane / lanes) * 100}% + 3px);width:calc(${100 / lanes}% - 6px);right:auto" title="${esc(m.title)}"><b>${esc(m.title)}</b>${h > 34 ? `<span class="state">${hm(s)}${m.external ? ' · ' + esc(m.entities.map(entityName).join(', ')) : ''}${nOpen ? ` · <b style="display:inline;color:var(--c-commit)">${nOpen} open</b>` : ''}</span>` : nOpen ? `<span class="cb">${nOpen}</span>` : ''}</div>`;
+            const cls = [m.needsAction ? 'inv' : '', m.ooo ? 'ooo' : '', m.focusTime ? 'focus-t' : ''].join(' ');
+            return `<div class="wk-ev ${cls}" data-open="${esc(m.id)}" data-k="${esc(m.id)}" data-kind="${kindOf(m)}" style="top:${top}px;height:${h}px;left:calc(${(lane / n) * 100}% + 2px);width:calc(${100 / n}% - 4px);right:auto;border-left-color:${calColor(m.calId || '')}" title="${esc(m.title)} · ${hm(s)}–${hm(e)} · ${esc(m.calName || '')}"><b>${m.external ? '<span style="color:var(--c-mail)">●</span> ' : ''}${esc(m.title)}</b>${h > 30 ? `<span class="state">${hm(s)}–${hm(e)}${m.external ? ' · ' + esc(m.entities.map(entityName).join(', ')) : ''}${nOpen ? ` · <b style="display:inline;color:var(--c-commit)">${nOpen} open</b>` : ''}</span>` : nOpen ? `<span class="cb">${nOpen}</span>` : ''}</div>`;
           }).join('')}
           ${ymd(dt) === today() && S.clock.getHours() >= H0 && S.clock.getHours() < H1 ? `<div class="now-line" style="left:0;right:0;top:${((S.clock.getHours() + S.clock.getMinutes() / 60) - H0) * PX}px"></div>` : ''}</div>`;
       }).join('')}
     </div></div>
-    <p class="hint" style="margin-top:12px">Klik op een afspraak voor deelnemers, je reactie, open toezeggingen bij die organisatie en alles wat er recent over binnenkwam.</p></div>`;
+    <p class="hint" style="margin-top:12px">Agenda's van collega's staan standaard uit; zet ze aan met de knoppen hierboven. <span class="kbd">[</span> <span class="kbd">]</span> wisselt van week.</p></div>`;
 }
 
 /* ---------- Organisatie / partner ---------- */
@@ -1974,6 +2223,8 @@ const COMMANDS = [
   { label: 'Ga naar Tracker', hint: 'g t', icon: 'commit', run: () => go({ view: 'toezeggingen' }) },
   { label: 'Neem canvas Wachten op over in de tracker', hint: 'Slack', icon: 'refresh', run: () => importCanvas() },
   { label: 'Toon sneltoetsen', hint: '?', icon: 'search', run: () => { S.help = true; renderHelp(); } },
+  { label: 'Start plansessie', hint: 's', icon: 'inbox', run: () => startSwipe() },
+  { label: 'Haal weekdoelen op uit #02-intern', hint: 'Slack', icon: 'commit', run: () => importWeekgoals() },
   { label: 'Vraag Claude…', hint: 'chat', icon: 'spark', run: q => q ? ask(q) : (S.chatChannel = 'ai', go({ view: 'chat' })) },
   { label: 'Nieuwe toezegging…', hint: 'tracker', icon: 'plus', run: q => q ? (commitAdd({ wat: q }), toast('Toezegging toegevoegd'), go({ view: 'toezeggingen' })) : go({ view: 'toezeggingen' }) },
   { label: 'Haal toezeggingen op uit Slack en mail', hint: 'Claude', icon: 'spark', run: () => runExtraction('scan') },
@@ -2165,6 +2416,11 @@ document.addEventListener('keydown', async ev => {
   const k = ev.key;
   if ((ev.metaKey || ev.ctrlKey) && k.toLowerCase() === 'k') { ev.preventDefault(); S.help = false; S.palette ? closePalette() : openPalette(); return; }
   if (S.palette) return;                     // het palet regelt zijn eigen toetsen
+  if (S.swipe) {
+    if (ev.target.id === 'sw-note') { if (k === 'Enter' || k === 'Escape') { ev.preventDefault(); ev.target.blur(); } return; }
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    ev.preventDefault(); swipeKey(k); return;
+  }
   if (k === 'Escape') {
     if (S.help) { S.help = false; renderHelp(); return; }
     if (S.sheet) { closeSheet(); return; }
@@ -2180,13 +2436,14 @@ document.addEventListener('keydown', async ev => {
   if (S.gPending) { S.gPending = false; const v = GO_KEYS[k.toLowerCase()]; if (v) { ev.preventDefault(); if (['inbox', 'taken'].includes(v)) location.hash = v; else go({ view: v }); } return; }
   if (k === 'g') { S.gPending = true; setTimeout(() => S.gPending = false, 1200); return; }
   if (k === '/') { ev.preventDefault(); openPalette(); return; }
+  if (k === 's' && ['dagstart', 'planning', 'toezeggingen'].includes(S.route.view)) { ev.preventDefault(); startSwipe(); return; }
   if (k === 'j' || k === 'ArrowDown') { ev.preventDefault(); moveFocus(1); return; }
   if (k === 'k' || k === 'ArrowUp') { ev.preventDefault(); moveFocus(-1); return; }
   if (S.route.view === 'agenda' && (k === '[' || k === ']')) { S.weekOffset += k === ']' ? 1 : -1; render(); return; }
   if (S.route.view === 'toezeggingen') {
     if (k === 'n') { ev.preventDefault(); document.getElementById('ac-wat')?.focus(); return; }
-    const sh = { '!': 0, '@': 1, '#': 2, '$': 3, '%': 4, '^': 5, '&': 6 }[k];
-    if (ev.shiftKey && (sh !== undefined || /^Digit[1-7]$/.test(ev.code))) { ev.preventDefault(); const i = sh ?? (+ev.code.slice(5) - 1); S.commitTab = ['alles', 'mijn', 'aan_mij', 'bespreken', 'voornemen', 'taken', 'afgerond'][i]; S.fIdx = 0; S.fId = null; render(); return; }
+    const sh = { '!': 0, '@': 1, '#': 2, '$': 3, '%': 4, '^': 5, '&': 6, '*': 7, '(': 8 }[k];
+    if (ev.shiftKey && (sh !== undefined || /^Digit[1-9]$/.test(ev.code))) { ev.preventDefault(); const i = sh ?? (+ev.code.slice(5) - 1); S.commitTab = ['alles', 'mijn', 'aan_mij', 'bespreken', 'weekdoel', 'roadmap', 'voornemen', 'taken', 'afgerond'][i]; S.fIdx = 0; S.fId = null; render(); return; }
   }
   if (S.route.view === 'chat' && k === 'i') { ev.preventDefault(); S.chatChannel = 'ai'; render(); document.getElementById('composer-input')?.focus(); return; }
   const handled = await keyAction(k === 'Enter' ? 'Enter' : k, ev);
@@ -2233,6 +2490,11 @@ document.addEventListener('click', ev => {
     if (act === 'recap') { const x = byId(id); if (x) recapWithClaude(x); return; }
     if (act === 'sweep') return sweep();
     if (act === 'import-canvas') return importCanvas();
+    if (act === 'import-goals') return importWeekgoals();
+    if (act === 'swipe') return startSwipe();
+    if (act === 'swipe-key') return swipeKey(a.dataset.key);
+    if (act === 'swipe-stop') { const g = a.dataset.goAfter; stopSwipe(); if (g) go({ view: g }); return; }
+    if (act === 'cal-toggle') { S.calPrefs[id] = !calOn(id); store.set('calPrefs', S.calPrefs); if (MODE.live) ensureCalRange(calRangeStart(), 35); return render(); }
     if (act === 'refresh') { CAP.mcp?.invalidate().catch(() => {}); return toast(`${ic('refresh')} Bronnen worden ververst`); }
     if (act === 'retry') { const e = ST[a.dataset.key]; if (e?.retry) { ST[a.dataset.key] = 'loading'; render(); e.retry(); } return; }
     if (act === 'src-err') { const s = sourceState(SOURCES[+a.dataset.i]); return toast(esc(errText(s.err))); }
@@ -2259,7 +2521,7 @@ document.addEventListener('submit', async ev => {
   if (ev.target.id === 'addcommit') {
     const wat = document.getElementById('ac-wat').value.trim(); if (!wat) return;
     const stroom = document.getElementById('ac-stroom').value;
-    await commitAdd({ wat, stroom, org: document.getElementById('ac-org').value.trim(), reminder: stroom === 'aan_mij' ? ymd(addWorkdays(S.clock, 3)) : null });
+    await commitAdd({ wat, stroom, org: document.getElementById('ac-org').value.trim(), deadline: document.getElementById('ac-date').value || null, week: stroom === 'weekdoel' ? isoWeek(baseDay()) : null, reminder: stroom === 'aan_mij' ? ymd(addWorkdays(S.clock, 3)) : null });
     S.commitTab = stroom;
     document.getElementById('ac-wat').value = ''; document.getElementById('ac-org').value = ''; document.activeElement?.blur?.();
     toast(`${ic('commit')} Toegevoegd${['mijn', 'voornemen'].includes(stroom) ? ': plan hem met 1–5' : ''}`);
