@@ -1,30 +1,46 @@
 # Home Zero Workspace
 
-One workspace where your agenda, mail, Slack, tasks, meetings and commitments come together, with a ⌘K search bar on top. It answers one question when you get to the office: **where should my attention go right now?**
+Robert's visual layer and inbox on top of the Home Zero ecosystem: agenda, mail, Slack, Google Tasks, Wispr meetings and the commitment tracker in one place, keyboard-first, working together with Claude.
 
-Live version: https://claude.ai/artifact/4CzejHBSKjJNrvBNESpYw4 (private). Open it in claude.ai and it loads your own data through your connectors. Opened locally, `index.html` runs on example data.
+Live version (private): https://claude.ai/artifact/4CzejHBSKjJNrvBNESpYw4. Opened locally, `index.html` runs on example data.
 
-## What's in it
+## Screens
 
-| Screen | What it does |
-|---|---|
-| **Dagstart** (day start) | Welcome-back screen showing a top 5 of "here's where your attention goes", ranked by urgency: late commitments, external meetings with open commitments (the catcher), invites without a response, Slack messages and mail waiting on you, overdue tasks. Below that, three columns: **Reageren** (respond: Slack DMs and mentions you haven't answered, mail sent to you), **Verwerken** (process: Wispr meetings to pull commitments from, cc mail, notifications) and **Agenda** (the next working day, plus invites you can accept or decline right away). "Vat samen" (summarise) lets Claude brief you in five sentences. |
-| **Agenda** | Week view from Google Calendar. External meetings, invites not yet accepted and the number of open commitments per organisation are all visible. Click a meeting to see attendees with their responses, open commitments and related items. |
-| **Toezeggingen** (commitments) | The commitment tracker from the design of 7 October: three streams (what I promised, what was promised to me, my own intentions), statuses, evidence rules. **Haal op** (pull in): Claude extracts commitments from Slack, mail or a Wispr meeting, and you review them before they're added. **Zoek bewijs** (find evidence): searches your sent mail, your Slack messages and your agenda, and sets items to "waarschijnlijk klaar" (probably done). You confirm or object. Nothing closes automatically. |
-| **Chat** | Slack messages addressed to you, mentioning you, and your own, in one stream, marked "wacht op jou" (waiting on you) or "beantwoord" (answered). "Vraag Claude" (ask Claude) answers questions about all your sources. |
-| **⌘K** | Searches everything at once. Keywords build views: `@tonzon`, `type:mail`, `from:mike`, `in:-hz`, `when:week`, `is:reageren`, `is:invite`, `is:extern`, `type:commit is:te_laat`. Save any view with ⌘↵. |
-| **Organisaties** | Built automatically from the email domains in your agenda and mail, and from `-hz` Slack channels. One page per organisation: timeline, open commitments, upcoming meetings. |
-| **Meeting wegschrijven** (write back a meeting) | Concept with example data: how a meeting gets committed to the context layer (GitHub) once that repo is connected. |
+| Screen | Keys | What it does |
+|---|---|---|
+| **Dagstart** (day start) | `g d` | Built on `/morning-briefing`. **Te plannen** (to plan) is the inbox: everything that needs a decision, ranked by urgency. That covers Slack waiting on you, 📣-marked messages, mail sent to you, overdue and undated Google Tasks, unplanned or late commitments, Wachten op (waiting for) items whose reminder date has passed, invites, external meetings without prep, and Wispr meetings without a recap. Next to it: today (max 10), the agenda with prep and recap status, Wachten op, week goals, and Ter info (FYI). |
+| **Planning** | `g p` | Late · Vandaag (today) · Morgen (tomorrow) · Later deze week (later this week, per-day load) · Volgende week (next week) · Zonder datum (no date) · Backlog. Google Tasks and the tracker side by side. |
+| **Agenda** | `g a`, `[` `]` | Google Calendar week view. Invites, external meetings, open commitments per organisation. |
+| **Tracker** | `g t`, `n`, `⇧1–7` | Alles (all) · Ik beloofde (I promised) · Wachten op (waiting for) · Bespreken bij contact (raise at next contact) · Voornemens (intentions) · Google Tasks · Afgerond (done). Replaces the Slack canvas "⏳ Wachten op" (already copied over; "Neem canvas over" picks up new rows). |
+| **Chat** | `g c`, `i` | Slack addressed to you, plus Vraag Claude (ask Claude) about all sources. |
+| **⌘K** | `⌘K` `/` | Search and commands. Keywords: `@feenstra type:mail when:week is:reageren`. |
 
-## Connectors and storage
+## Keyboard
 
-- Google Calendar (`list_events`, `respond_to_event`), Gmail (`search_threads`, `get_thread`), Slack (`slack_search_public_and_private`), Google Tasks (`today`, `overdue`, `complete`), Wispr Flow (`search_meetings`, `get_meeting`).
-- Commitments live in the page's database (`commitments`, `processed`), readable and writable **only by the owner**.
-- Claude (via `sample`) for extraction, the summary and chat.
+`j`/`k` move · `↵` details · `o` open in the source app · `?` overview.
+**Planning:** `1` today · `2` tomorrow · `3` later this week (least busy day) · `4` next week · `5` backlog · `x` done.
+**Processing:** `e` read (mail is also marked read in Gmail) · `⇧E` read + ✅ reaction in Slack · `w` waiting for · `b` raise at next contact · `c` make a commitment · `r` recap with Claude · `t` pull commitments out (Claude) · `y`/`m`/`n` answer an invite.
 
-## Next steps
+## What planning does in the ecosystem
 
-1. Connect the context layer (GitHub repo): partner profiles on the organisation page, and meetings actually committed.
-2. Schedule extraction and the evidence sweep (07:30 / 12:30 / 17:00) and fold them into the Telegram morning briefing.
-3. Reply to Slack and mail directly from the workspace.
-4. Mac shell (Tauri) for a global ⌘K hotkey and notifications.
+- **Google Tasks** stays the task list. `1–4` writes the date into Google Tasks. `5` moves the task to a "Backlog" list. Slack, mail and tracker items get a Google Task when you plan them, marked `[workspace]`. Prep tasks are titled `🛠 Prep: <meeting> (30 min)` with `[briefing]`, so `/morning-briefing` recognises them.
+- **The tracker tracks everything.** A planned Slack message or mail becomes a commitment linked to its Google Task. Ticking either one off closes both. Wachten op and Bespreken are never Google Tasks (same rule as the briefing skill).
+- **`/klant-recap`:** `r` on a meeting or Wispr recording starts a Claude session with `/klant-recap`, the partner, the date, the Wispr link and the attendees. Claude prepares the Slack drafts and updates the partner portal. The workspace then shows "recap ✓" once the internal update appears in #04-klanten.
+- **Max 10 per day:** the counter turns red above 10, and `3`/`4` pick the least busy day.
+
+## Slack: how it comes in, and marking as read
+
+Currently: through the Slack connector of claude.ai (search API, read-only, as Robert). It fetches DMs and mentions addressed to you, your own messages (to detect what's already answered), 📣-marked messages and your recaps in #04-klanten. It refreshes every 5–15 minutes. The connector has **no mark-as-read**. So `e` marks something read in the workspace (stored privately), and `⇧E` also adds a visible ✅ in Slack. Gmail does mark as read for real (`unlabel_thread UNREAD`).
+
+In a Mac app or web app: your own Slack app with a user token (OAuth, scopes `channels:history`, `groups:history`, `im:history`, `mpim:history` plus `channels:write`, `groups:write`, `im:write`, `mpim:write`). With that, `conversations.mark` sets the read marker for real. Socket Mode / Events API make it real-time instead of polling. Same for Gmail (`users.threads.modify`) and Google Tasks via the Google APIs.
+
+## Personal vs shared (Mac app / web app)
+
+| What | Where | Why |
+|---|---|---|
+| Read status, planning, commitments, Wachten op | Locally in the app (SQLite, encrypted) or a private store per user | Personal; nobody else needs it |
+| Partner context, meeting notes, agreements | Context layer (GitHub, Home Zero) | Shared and lasting |
+| Check-ins, partner to-dos | Partner portal | Shared view per partner |
+| Tokens (Slack, Google) | macOS Keychain | Never in the app or in Claude |
+
+**Token-efficient with Claude:** the app exposes its own state to Claude as a small MCP server (`get_inbox_delta`, `list_commitments`, `plan_item`, `mark_read`). Skills like `/morning-briefing` and `/dag-afsluiting` then read pre-sorted JSON with ids and deltas since the last run, instead of searching Slack, the canvas and threads all over again. In this prototype the tracker already lives in the artifact database (`commitments`, `itemstate`), readable by Claude in a chat with `read_db`.

@@ -395,6 +395,41 @@ a.ext-link:hover { text-decoration: underline; }
   .addform { grid-template-columns: minmax(0, 1fr) auto; }
   .greet h1 { font-size: 24px; }
 }
+
+/* ---------- Toetsenbord, planning ---------- */
+.kf { outline: 2px solid var(--accent) !important; outline-offset: -2px; background: var(--hover); border-radius: 9px; }
+.commit-row.kf, .msg.kf { border-radius: 9px; }
+.msg.kf { outline-offset: 4px; }
+.k-wait { background: var(--warn-soft); color: var(--warn); }
+.main:not(.is-chat) { display: flex; flex-direction: column; }
+.main:not(.is-chat) > .page { flex: 1 0 auto; width: 100%; box-sizing: border-box; }
+.hintbar { position: sticky; bottom: 0; margin-top: auto; z-index: 4; display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; padding-block: 9px max(9px, env(safe-area-inset-bottom, 0px)); padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.hintbar span { display: inline-flex; gap: 5px; align-items: center; }
+.hintbar .hb-title { color: var(--fg); font-weight: 500; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+.kbd + .kbd { margin-left: 2px; }
+.nav-kbd { margin-left: 6px; opacity: 0; transition: opacity .12s; }
+.nav-item:hover .nav-kbd, .sidebar:focus-within .nav-kbd { opacity: 1; }
+.nav-item .count + .nav-kbd { margin-left: 6px; }
+.nav-item .count { margin-left: auto; }
+.tab-kbd { margin-left: 6px; font-size: 10px; opacity: .6; }
+.triage-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 4px; }
+.keylegend { display: flex; gap: 4px 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
+.keylegend span { display: inline-flex; gap: 5px; align-items: center; }
+.keylegend b { color: var(--fg); font-variant-numeric: tabular-nums; font-weight: 600; }
+.capbar { display: inline-block; width: 64px; height: 6px; border-radius: 3px; background: var(--hover); vertical-align: 2px; margin-left: 8px; overflow: hidden; }
+.capbar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.capbar.over span { background: var(--danger); }
+.plan-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; align-items: start; }
+.plan-col.late { border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+.daychips { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.daychip { font-size: 11px; padding: 0 6px; border-radius: 5px; background: var(--hover); color: var(--muted); font-variant-numeric: tabular-nums; }
+.daychip.full { background: var(--danger-soft); color: var(--danger); }
+.plan-btns { display: flex; gap: 4px; flex-wrap: wrap; width: 100%; margin-top: 4px; }
+.help-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; padding: 14px 18px !important; }
+.hk { display: grid; grid-template-columns: 64px 1fr; gap: 8px; font-size: 12.5px; padding: 3px 0; align-items: center; }
+.hk .kbd { justify-self: start; }
+@media (max-width: 1000px) { .triage-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .hintbar { display: none; } }
 </style>
 
 <div class="app" id="app">
@@ -414,8 +449,13 @@ a.ext-link:hover { text-decoration: underline; }
    ============================================================ */
 
 const SLACK_ME = 'U04L22BRJQ7';
+const CANVAS_WACHTEN = 'F0CCFSH3GNN';           // Slack-canvas "⏳ Wachten op" (wordt vervangen door de tracker)
+const CH_KLANTEN = 'C07073NPJ8P';               // #04-klanten, waar /klant-recap de interne update zet
+const CLAUDE_ENV = 'env_01PyHKhwP2f8deLAmby71iof'; // Claude Code-omgeving "Default" voor sessies vanuit de workspace
+const DAY_CAP = 10;                              // max items per dag
 const GENERIC_DOMAINS = ['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.nl', 'icloud.com', 'me.com', 'google.com', 'calendar.google.com', 'atlassian.net', 'slack.com', 'resource.calendar.google.com'];
-const NOW_DEMO = new Date('2026-10-30T14:10:00');
+const NOW_DEMO = new Date('2026-10-30T08:40:00');
+
 
 /* ---------- Icons ---------- */
 const P = {
@@ -452,63 +492,59 @@ const ic = (n) => `<svg class="i" viewBox="0 0 16 16" aria-hidden="true">${P[n] 
 
 const SRC = {
   meeting: { label: 'Agenda', plural: 'Meetings', icon: 'meeting' },
+  rec:     { label: 'Wispr', plural: 'Opnames', icon: 'mic' },
   mail:    { label: 'Mail', plural: 'Mail', icon: 'mail' },
   slack:   { label: 'Slack', plural: 'Slack', icon: 'slack' },
-  commit:  { label: 'Toezegging', plural: 'Toezeggingen', icon: 'commit' },
+  commit:  { label: 'Tracker', plural: 'Tracker', icon: 'commit' },
   context: { label: 'Contextlaag', plural: 'Contextlaag', icon: 'context' },
-  task:    { label: 'Taak', plural: 'Taken', icon: 'task' },
+  task:    { label: 'Google Tasks', plural: 'Taken', icon: 'task' },
   file:    { label: 'Drive', plural: 'Drive', icon: 'file' },
 };
-const TYPE_ORDER = ['commit', 'context', 'meeting', 'mail', 'slack', 'task', 'file'];
-const STROOM = { mijn: 'Ik beloofde', aan_mij: 'Aan mij beloofd', voornemen: 'Eigen voornemen' };
+const TYPE_ORDER = ['commit', 'task', 'context', 'meeting', 'rec', 'mail', 'slack', 'file'];
+const STROOM = { mijn: 'Ik beloofde', aan_mij: 'Wachten op', voornemen: 'Eigen voornemen', bespreken: 'Bespreken bij contact' };
 const STATUS = { open: 'Open', waarschijnlijk_klaar: 'Waarschijnlijk klaar', klaar: 'Klaar', te_laat: 'Te laat', overgedragen: 'Overgedragen' };
+const BUCKETS = { 1: 'Vandaag', 2: 'Morgen', 3: 'Later deze week', 4: 'Volgende week', 5: 'Backlog' };
 
 /* ---------- Voorbeelddata (alleen zonder live verbinding, en voor de wegschrijf-demo) ---------- */
-const PEOPLE = {
-  robert: 'Robert Verveen', lisanne: 'Lisanne', mark: 'Mark de Wit', dominique: 'Dominique',
-  jeroen: 'Jeroen Veenstra', sanne: 'Sanne de Boer', pieter: 'Pieter Hoekstra', anouk: 'Anouk Smit',
-};
 const DEMO_ENTITIES = {
-  veenstra: { name: 'Veenstra Installatietechniek', short: 'Veenstra', kind: 'Partner', status: 'Live', aliases: ['veenstra'], repo: 'partners/veenstra',
-    summary: 'Installateur van warmtepompen en zonnepanelen in Friesland, ±40 medewerkers. Gebruikt Pico voor leadopvolging, planning en offertes.',
-    facts: [['Fase', 'Live sinds april 2026'], ['Contract', 't/m 31-03-2027'], ['Agenda', 'Outlook'], ['Slack', '#veenstra-hz']],
-    afspraken: ['Agenda-sync Pico ↔ Outlook live vóór 15 november', 'Home Zero vernieuwt het offerte-sjabloon hybride'], open: ['Lead agent ook voor zonnepanelen?'] },
-  warmteplan: { name: 'Warmteplan Noord', short: 'Warmteplan', kind: 'Partner', status: 'Onboarding', aliases: ['warmteplan'], repo: 'partners/warmteplan-noord',
-    summary: 'Warmtepompspecialist in Groningen met 12 monteurs, stapt over van Excel op Pico.', facts: [['Fase', 'Onboarding'], ['Go-live', '1 december']],
-    afspraken: ['Klantbestand komt als Excel'], open: ['Welke velden zijn verplicht?'] },
-  delta: { name: 'Klimaatgroep Delta', short: 'Delta', kind: 'Prospect', status: 'Offertefase', aliases: ['delta', 'klimaatgroep'], repo: 'partners/klimaatgroep-delta',
-    summary: 'Installatiebedrijf in Zeeland, zag een demo van de offerteflow.', facts: [['Fase', 'Offertefase']], afspraken: ['Voorstel vóór 2 november'], open: ['Koppeling Exact Online?'] },
+  feenstra: { name: 'Feenstra', short: 'Feenstra', kind: 'Partner', status: 'Live', aliases: ['feenstra'], repo: 'partners/feenstra',
+    summary: 'Installateur van warmtepompen en zonnepanelen. Gebruikt Pico voor leadopvolging, planning en offertes, met de lead agent op de website.',
+    facts: [['Fase', 'Live'], ['Slack', '#feenstra-hz'], ['Eigenaar', 'Robert']], afspraken: ['Maandelijkse check-in'], open: ['Keuze ZSB-flow'] },
+  sunergy: { name: 'Sunergy', short: 'Sunergy', kind: 'Partner', status: 'Live', aliases: ['sunergy'], repo: 'partners/sunergy',
+    summary: 'Partner met eigen, WhiteLabel- en Alliantie-flows voor thuisbatterijen.', facts: [['Fase', 'Live']], afspraken: [], open: [] },
+  tonzon: { name: 'TonZon', short: 'TonZon', kind: 'Partner', status: 'Live', aliases: ['tonzon'], repo: 'partners/tonzon',
+    summary: 'Partner voor zonnepanelen en isolatie; isolatie-offerteflow in voorbereiding.', facts: [['Fase', 'Live']], afspraken: [], open: [] },
 };
 const DEMO_ITEMS = [
-  { id: 'm1', type: 'meeting', title: 'Veenstra · maandelijkse check-in', start: '2026-10-30T10:00', end: '2026-10-30T11:00', entities: ['veenstra'], attendeeNames: ['Jeroen Veenstra', 'Sanne de Boer', 'Robert Verveen', 'Lisanne'], where: 'Google Meet', external: true, writeback: 'pending', transcript: 'Wispr Flow · 58 min' },
-  { id: 'm2', type: 'meeting', title: 'Sprint review Pico', start: '2026-10-30T13:00', end: '2026-10-30T13:45', entities: [], attendeeNames: ['Robert Verveen', 'Mark de Wit', 'Lisanne'], where: 'Kantoor' },
-  { id: 'm3', type: 'meeting', title: 'Warmteplan Noord · onboarding sessie 2', start: '2026-10-30T15:00', end: '2026-10-30T16:00', entities: ['warmteplan'], attendeeNames: ['Pieter Hoekstra', 'Robert Verveen'], where: 'Google Meet', external: true },
-  { id: 'm8', type: 'meeting', title: 'Klimaatgroep Delta · voorstel bespreken', start: '2026-11-02T11:00', end: '2026-11-02T12:00', entities: ['delta'], attendeeNames: ['Anouk Smit', 'Robert Verveen'], where: 'Teams', external: true, needsAction: true },
-  { id: 'm9', type: 'meeting', title: 'Veenstra · Q4 planning', start: '2026-11-10T10:00', end: '2026-11-10T11:00', entities: ['veenstra'], attendeeNames: ['Jeroen Veenstra', 'Sanne de Boer', 'Robert Verveen'], where: 'Drachten', external: true, needsAction: true },
-  { id: 'e5', type: 'mail', title: 'Bedankt voor vanochtend', fromName: 'Jeroen Veenstra', time: '2026-10-30T11:24', entities: ['veenstra'], unread: true, direct: true, body: 'Wij willen de lead agent vanaf januari ook voor zonnepanelen-leads inzetten. Kun je laten weten wat daarvoor nodig is?' },
-  { id: 'e3', type: 'mail', title: 'Checklist onboarding + vragen over import klantbestand', fromName: 'Pieter Hoekstra', time: '2026-10-30T08:31', entities: ['warmteplan'], unread: true, direct: true, body: 'Moeten telefoonnummers en e-mailadressen allebei gevuld zijn?' },
-  { id: 'e4', type: 'mail', title: 'Terugkoppeling demo offerteflow', fromName: 'Anouk Smit', time: '2026-10-28T17:05', entities: ['delta'], unread: true, direct: false, body: 'Kan Pico koppelen met Exact Online?' },
-  { id: 's1', type: 'slack', channel: '#veenstra-hz', fromName: 'Sanne de Boer', time: '2026-10-29T09:12', entities: ['veenstra'], title: 'De leads van gisteravond staan niet in de planning, kan iemand kijken?', mention: true },
-  { id: 's10', type: 'slack', channel: 'DM Mark de Wit', dm: true, fromName: 'Mark de Wit', time: '2026-10-29T17:30', entities: ['veenstra'], title: 'Kun je morgen in de check-in vragen of Veenstra ook Google Agenda gebruikt?' },
-  { id: 's5', type: 'slack', channel: 'DM Lisanne', dm: true, fromName: 'Lisanne', time: '2026-10-30T11:05', entities: ['veenstra'], title: 'Zal ik de recap van Veenstra in #klanten zetten zodra jij de meeting hebt weggeschreven?' },
-  { id: 's7', type: 'slack', channel: '#warmteplan-noord-hz', fromName: 'Pieter Hoekstra', time: '2026-10-30T08:45', entities: ['warmteplan'], title: 'We hebben het klantbestand klaarstaan als Excel. Welk format willen jullie?', mention: true, answered: true },
-  { id: 't2', type: 'task', title: 'Onboarding-checklist naar Pieter sturen', due: '2026-10-30', entities: ['warmteplan'] },
-  { id: 't4', type: 'task', title: 'Voorstel Klimaatgroep Delta afronden', due: '2026-10-29', entities: ['delta'], overdue: true },
-  { id: 'c1', type: 'context', title: 'partners/veenstra/README.md', time: '2026-10-08T12:10', entities: ['veenstra'], body: '# Veenstra Installatietechniek\n\nFase: live sinds april 2026. Agenda: Outlook.' },
+  { id: 'm1', type: 'meeting', title: 'Feenstra · maandelijkse check-in', start: '2026-10-30T10:00', end: '2026-10-30T11:00', entities: ['feenstra'], attendeeNames: ['Marie-José', 'Robert Verveen', 'Lisanne'], where: 'Google Meet', external: true },
+  { id: 'm2', type: 'meeting', title: 'Sprint review Pico', start: '2026-10-30T13:00', end: '2026-10-30T13:45', entities: [], attendeeNames: ['Robert Verveen', 'Emiel', 'Lisanne'], where: 'Kantoor' },
+  { id: 'm3', type: 'meeting', title: 'TonZon x HomeZero', start: '2026-10-30T15:00', end: '2026-10-30T16:00', entities: ['tonzon'], attendeeNames: ['Peter', 'Robert Verveen', 'Mike'], where: 'Google Meet', external: true },
+  { id: 'm8', type: 'meeting', title: 'Sunergy', start: '2026-11-02T14:15', end: '2026-11-02T15:00', entities: ['sunergy'], attendeeNames: ['Bjorn', 'Robert Verveen'], where: 'Google Meet', external: true, needsAction: true, organizerName: 'Bjorn' },
+  { id: 'r1', rawId: 'r1', type: 'rec', title: 'Feenstra · werksessie ZSB-flow', start: '2026-10-29T09:00', end: '2026-10-29T10:00', entities: ['feenstra'], attendeeNames: ['Marie-José', 'Robert'], url: null, transcript: true },
+  { id: 'e5', type: 'mail', title: 'Vraag over de ZSB-flow', fromName: 'Marie-José', time: '2026-10-30T07:24', entities: ['feenstra'], unread: true, direct: true, body: 'Kunnen we het aantal personen én de warmwatervraag combineren?' },
+  { id: 'e4', type: 'mail', title: 'Notulen workshop isolatie', fromName: 'Mike', time: '2026-10-29T17:05', entities: [], unread: true, direct: false, body: 'Ter info de notulen en acties.' },
+  { id: 's1', type: 'slack', channel: '#feenstra-hz', fromName: 'Marie-José', time: '2026-10-29T09:12', entities: ['feenstra'], title: 'De leads van gisteravond staan niet in de planning, kan iemand kijken?', mention: true },
+  { id: 's10', type: 'slack', channel: 'DM Mike', dm: true, fromName: 'Mike', time: '2026-10-29T11:37', entities: ['tonzon'], title: 'Kan jij Peter van TonZon nog een keer bellen?' },
+  { id: 's11', type: 'slack', channel: '#02-intern', fromName: 'Rens', time: '2026-10-30T08:10', entities: [], title: '@Robert Anna heeft nog 2 besluiten nodig voor de partnerovereenkomst 3.0. Kunnen we maandag sparren?', mention: true },
+  { id: 't1', type: 'task', rawId: 't1', tasklist: 'demo', title: '🛠 Prep: TonZon x HomeZero (30 min)', due: '2026-10-30', entities: ['tonzon'], notes: '[briefing] Vragen voor het isolatie-rekenmodel klaarzetten' },
+  { id: 't2', type: 'task', rawId: 't2', tasklist: 'demo', title: 'Solar Concept reageren', due: '2026-10-28', entities: [] },
+  { id: 't3', type: 'task', rawId: 't3', tasklist: 'demo', title: 'Release notes sprint 64 versturen', due: '2026-10-30', entities: [] },
+  { id: 't4', type: 'task', rawId: 't4', tasklist: 'demo', title: '🎯 Isolatieflow TonZon live op acceptatie', due: '2026-10-30', entities: ['tonzon'], notes: '[weekprep] Doel: isolatieflow klaar voor test', weekgoal: true },
+  { id: 'c1', type: 'context', title: 'partners/feenstra/README.md', time: '2026-10-08T12:10', entities: ['feenstra'], body: '# Feenstra\n\nFase: live. Contact: Marie-José.' },
 ];
 const DEMO_COMMITS = [
-  { id: 'dc1', wat: 'Offerte-sjabloon hybride met prijzen delen met Sanne', stroom: 'mijn', aan: 'Sanne de Boer', org: 'veenstra', deadline: '2026-10-29', status: 'open', bron: { label: 'Meeting · Veenstra check-in' }, bewijsregel: { type: 'mail', to: 'sanne@…', keywords: ['sjabloon', 'hybride'] }, created: '2026-10-27' },
-  { id: 'dc2', wat: 'Leadrapport oktober sturen', stroom: 'aan_mij', aan: 'Lisanne', org: 'veenstra', deadline: '2026-11-03', status: 'open', bron: { label: 'Slack · DM Lisanne' }, bewijsregel: { type: 'slack', keywords: ['leadrapport'] }, created: '2026-10-30' },
-  { id: 'dc3', wat: 'Klantbestand-velden doorgeven aan Pieter', stroom: 'mijn', aan: 'Pieter Hoekstra', org: 'warmteplan', deadline: null, status: 'waarschijnlijk_klaar', bewijs: 'Mail aan Pieter, 30 okt', bron: { label: 'Mail' }, bewijsregel: { type: 'mail', keywords: ['klantbestand'] }, created: '2026-10-30' },
+  { id: 'dc1', wat: 'Keuze ZSB-flow: aantal personen, warmwatervraag of allebei', stroom: 'aan_mij', aan: 'Marie-José', org: 'Feenstra', deadline: null, reminder: '2026-10-29', status: 'open', bron: { label: 'Canvas Wachten op' }, created: '2026-10-26' },
+  { id: 'dc2', wat: 'Schulte-batterijflow in de Configurator naar WhiteLabel zetten', stroom: 'bespreken', aan: 'Robert (intern)', org: 'Sunergy', status: 'open', bron: { label: 'Canvas Wachten op' }, created: '2026-10-27' },
+  { id: 'dc3', wat: 'Rekenvoorbeeld thuisbatterij naar Feenstra sturen', stroom: 'mijn', aan: 'Marie-José', org: 'Feenstra', deadline: '2026-10-29', status: 'open', bron: { label: 'Meeting · Feenstra check-in' }, bewijsregel: { type: 'mail', keywords: ['rekenvoorbeeld'] }, created: '2026-10-27' },
   { id: 'dc4', wat: 'Isolatierekenmodel helemaal nalopen', stroom: 'voornemen', aan: '', org: '', deadline: null, status: 'open', bron: { label: 'Eigen invoer' }, bewijsregel: { type: 'geen' }, created: '2026-10-26' },
 ];
 const WRITEBACK_DEMO = {
-  summary: 'De fix voor de agenda-sync is getest door Sanne en mag naar productie. Veenstra wil de lead agent vanaf januari ook voor zonnepanelen-leads inzetten. Het nieuwe offerte-sjabloon hybride is qua opmaak akkoord; de prijzen per merk volgen nog.',
-  decisions: ['Agenda-sync gaat naar productie', 'Lead agent uitbreiden naar zonnepanelen vanaf januari 2027', 'Alleen Outlook, geen Google Agenda-koppeling nodig'],
-  actions: [{ text: 'Agenda-sync naar productie zetten', who: 'Mark', due: '6 nov' }, { text: 'Offerte-sjabloon hybride met prijzen delen met Sanne', who: 'Robert', due: '4 nov' }, { text: 'Leadrapport oktober sturen naar Jeroen', who: 'Lisanne', due: '3 nov' }],
+  summary: 'Marie-José kiest voor een combinatie van aantal personen en warmwatervraag in de ZSB-flow. De leadinstroom staat tijdelijk uit vanwege capaciteit; Feenstra laat weten wanneer die weer aan kan.',
+  decisions: ['ZSB-flow vraagt zowel aantal personen als warmwatervraag', 'Leadinstroom blijft uit tot Feenstra capaciteit heeft'],
+  actions: [{ text: 'ZSB-flow aanpassen op acceptatie', who: 'Robert', due: '4 nov' }, { text: 'Capaciteit terugmelden', who: 'Marie-José', due: '13 nov' }],
   files: [
-    { path: 'partners/veenstra/meetings/2026-10-30-check-in.md', state: 'nieuw', lines: [['+', '---'], ['+', 'datum: 2026-10-30'], ['+', 'bron: wispr-flow/transcript'], ['+', 'agenda: google-calendar/<event-id>'], ['+', '---'], ['+', '# Maandelijkse check-in oktober'], ['+', '## Besluiten'], ['+', '- Agenda-sync naar productie'], ['+', '- Lead agent ook voor zonnepanelen vanaf jan 2027']] },
-    { path: 'partners/veenstra/afspraken.md', state: 'gewijzigd', lines: [[' ', '# Lopende afspraken'], ['-', '- [ ] Agenda-sync Pico ↔ Outlook live vóór 15 november'], ['+', '- [x] Agenda-sync getest op acceptatie (30 okt)'], ['+', '- [ ] Agenda-sync naar productie — Mark, 6 nov']] },
+    { path: 'partners/feenstra/meetings/2026-10-30-check-in.md', state: 'nieuw', lines: [['+', '---'], ['+', 'datum: 2026-10-30'], ['+', 'bron: wispr-flow/<meeting-id>'], ['+', 'agenda: google-calendar/<event-id>'], ['+', '---'], ['+', '# Maandelijkse check-in oktober'], ['+', '## Besluiten'], ['+', '- ZSB-flow: personen + warmwatervraag'], ['+', '- Leadinstroom uit tot capaciteit terug is']] },
+    { path: 'partners/feenstra/afspraken.md', state: 'gewijzigd', lines: [[' ', '# Lopende afspraken'], ['-', '- [ ] Wachten op keuze ZSB-flow (Marie-José)'], ['+', '- [x] Keuze ZSB-flow: personen + warmwatervraag (30 okt)'], ['+', '- [ ] ZSB-flow aanpassen op acceptatie — Robert, 4 nov']] },
   ],
 };
 
@@ -519,19 +555,19 @@ const store = {
 };
 const DEFAULT_SAVED = [
   { id: 'v-reageren', name: 'Wacht op mijn antwoord', q: 'is:reageren' },
+  { id: 'v-wachten', name: 'Wachten op anderen', q: 'type:commit is:aan_mij' },
   { id: 'v-invites', name: 'Open uitnodigingen', q: 'type:meeting is:invite' },
-  { id: 'v-telaat', name: 'Toezeggingen te laat', q: 'type:commit is:te_laat' },
   { id: 'v-partnerslack', name: 'Partnerkanalen', q: 'type:slack in:-hz' },
 ];
 const BUILTIN_VIEWS = [
-  { id: 'inbox', name: 'Inbox', icon: 'mail', q: 'type:mail' },
-  { id: 'taken', name: 'Taken', icon: 'task', q: 'type:task' },
+  { id: 'inbox', name: 'Mail', icon: 'mail', q: 'type:mail' },
+  { id: 'taken', name: 'Google Tasks', icon: 'task', q: 'type:task' },
 ];
 const S = {
   route: { view: 'dagstart' },
   selected: null,
-  saved: store.get('saved2', DEFAULT_SAVED),
-  recent: store.get('recent2', ['tonzon', 'type:mail is:direct', 'type:commit is:open', 'when:week type:meeting']),
+  saved: store.get('saved3', DEFAULT_SAVED),
+  recent: store.get('recent2', ['feenstra', 'type:mail is:direct', 'type:commit is:open', 'when:week type:meeting']),
   weekOffset: 0,
   palette: null,
   commitTab: 'mijn',
@@ -539,7 +575,10 @@ const S = {
   aiThread: [],
   aiBrief: null,
   sheet: null,
+  help: false,
   busy: {},
+  fId: null, fIdx: 0,       // toetsenbordfocus in het werkvlak
+  gPending: false,
   clock: new Date(),
   lastSeen: store.get('lastSeen', 0),
 };
@@ -548,7 +587,7 @@ store.set('lastSeen', Date.now());
 const CAP = { mcp: null, db: null, sample: null };
 const MODE = { live: false, checked: false };
 const ST = {};            // status per bron: 'loading' | 'ok' | {code, message, retry}
-const LV = { ranges: {}, mails: [], slack: { dm: [], mention: [], mine: [] }, tasks: { today: [], overdue: [] }, wispr: [], commits: [], processed: new Set(), selfEmail: null, updated: {} };
+const LV = { ranges: {}, mails: [], slack: { dm: [], mention: [], mine: [], mega: [], recaps: [] }, tasks: [], tasklists: [], wispr: [], commits: [], state: {}, selfEmail: null, updated: {} };
 let ORGS = {};
 let LIVE_ITEMS = [];
 
@@ -586,7 +625,7 @@ const stripHtml = s => String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\
 const ENT = () => MODE.live ? ORGS : DEMO_ENTITIES;
 const entityName = id => ENT()[id]?.short || id;
 const entityChip = id => ENT()[id] ? `<span class="chip entity" data-entity="${esc(id)}">${esc(ENT()[id].short)}</span>` : '';
-const allItems = () => MODE.live ? LIVE_ITEMS : DEMO_ITEMS.concat(commitItems());
+const allItems = () => LIVE_ITEMS;
 const byId = id => allItems().find(i => i.id === id) || DEMO_ITEMS.find(i => i.id === id);
 const extLink = (url, label, cls = 'btn sm') => url ? `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener">${label}</a>` : '';
 
@@ -626,7 +665,7 @@ async function boot() {
   if (!mcp) return enterDemo('nomcp');
   MODE.live = true; MODE.checked = true;
   startWatches();
-  if (db) subscribeCommits(); else ST.commits = { code: 'nodb', message: 'Opslag niet beschikbaar in deze weergave.' };
+  if (db) subscribeDb(); else ST.commits = { code: 'nodb', message: 'Opslag niet beschikbaar in deze weergave.' };
   setInterval(() => { S.clock = new Date(); scheduleRender(); }, 60000);
   scheduleRender();
 }
@@ -657,7 +696,7 @@ function watch(key, server, tool, input, onData, interval = 300000) {
     scheduleRender();
   }, { cache: { staleTime: 60000, gcTime: 900000 }, refetchInterval: interval });
 }
-function weekStart(offset = 0) { const t = startOfDay(S.clock); const dow = (t.getDay() + 6) % 7; return addDays(t, -dow + offset * 7); }
+function weekStart(offset = 0, from = S.clock) { const t = startOfDay(from); const dow = (t.getDay() + 6) % 7; return addDays(t, -dow + offset * 7); }
 function ensureCalRange(from, days) {
   const key = 'cal:' + ymd(from) + ':' + days;
   if (LV.ranges[key]) return;
@@ -675,16 +714,23 @@ function startWatches() {
   watch('slackDm', 'Slack', 'slack_search_public_and_private', { ...base, filters: `to:me after:${since}` }, p => { LV.slack.dm = p ? parseSlack(p) : []; });
   watch('slackMention', 'Slack', 'slack_search_public_and_private', { ...base, keywords: [`<@${SLACK_ME}>`], filters: `after:${since}` }, p => { LV.slack.mention = p ? parseSlack(p) : []; });
   watch('slackMine', 'Slack', 'slack_search_public_and_private', { ...base, filters: `from:<@${SLACK_ME}> after:${since}` }, p => { LV.slack.mine = p ? parseSlack(p) : []; });
-  watch('tasksToday', 'Google Tasks', 'today', {}, p => { LV.tasks.today = p ? (p.tasks || []) : []; });
-  watch('tasksOverdue', 'Google Tasks', 'overdue', {}, p => { LV.tasks.overdue = p ? (p.tasks || []) : []; });
-  watch('wispr', 'Wispr Flow', 'search_meetings', { since: addDays(startOfDay(S.clock), -4).toISOString(), limit: 25 }, p => { LV.wispr = p ? (p.meetings || []) : []; }, 900000);
+  watch('slackMega', 'Slack', 'slack_search_public_and_private', { ...base, filters: 'hasmy::mega:' }, p => { LV.slack.mega = p ? parseSlack(p) : []; }, 900000);
+  watch('slackRecaps', 'Slack', 'slack_search_public_and_private', { ...base, filters: `in:<#${CH_KLANTEN}> from:<@${SLACK_ME}> after:${ymd(addDays(S.clock, -21))}` }, p => { LV.slack.recaps = p ? parseSlack(p) : []; }, 900000);
+  watch('tasks', 'Google Tasks', 'list_tasks', { max_results: 200 }, p => { LV.tasks = p ? (p.tasks || []) : []; });
+  watch('tasklists', 'Google Tasks', 'list_tasklists', {}, p => { LV.tasklists = p ? (p.tasklists || []) : []; ensureBacklogWatch(); }, 900000);
+  watch('wispr', 'Wispr Flow', 'search_meetings', { since: addDays(startOfDay(S.clock), -30).toISOString(), limit: 60 }, p => { LV.wispr = p ? (p.meetings || []) : []; }, 900000);
 }
-function subscribeCommits() {
+// Backlog-lijst in Google Tasks: apart ophalen zodra hij bestaat
+function ensureBacklogWatch() {
+  const bl = LV.tasklists.find(l => /^backlog$/i.test(l.title));
+  if (bl) watch('tasksBacklog', 'Google Tasks', 'list_tasks', { tasklist: bl.id, max_results: 200 }, p => { LV.tasksBacklog = p ? (p.tasks || []) : []; }, 900000);
+}
+function subscribeDb() {
   ST.commits = 'loading';
   const t = setTimeout(() => { if (ST.commits === 'loading') { ST.commits = { code: 'timeout', message: 'De opslag reageert niet.' }; scheduleRender(); } }, 10000);
   CAP.db.collection('commitments').onSnapshot(s => { clearTimeout(t); LV.commits = s.docs.map(x => ({ id: x.id, ...x.data() })); ST.commits = 'ok'; scheduleRender(); },
     e => { clearTimeout(t); ST.commits = { code: e?.code || 'error', message: e?.message || '' }; scheduleRender(); });
-  CAP.db.collection('processed').onSnapshot(s => { LV.processed = new Set(s.docs.map(x => x.id)); scheduleRender(); }, () => {});
+  CAP.db.collection('itemstate').onSnapshot(s => { const m = {}; s.docs.forEach(x => m[x.id] = x.data()); LV.state = m; scheduleRender(); }, () => {});
 }
 
 /* ---------- Live: omzetten naar items ---------- */
@@ -716,9 +762,7 @@ function cleanSlack(t) {
     .replace(/<(https?:[^|>]+)\|([^>]+)>/g, '$2').replace(/<(https?:[^>]+)>/g, '$1').replace(/<#\w+\|([^>]+)>/g, '#$1')
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
 }
-function rebuild() {
-  if (!MODE.live) return;
-  ORGS = {};
+function liveItems() {
   const items = [];
   // Agenda
   const seen = new Map();
@@ -755,35 +799,84 @@ function rebuild() {
   // Slack
   const mine = LV.slack.mine;
   const addSlack = (s, kind) => {
-    if (!s.ts || items.some(i => i.id === 'sl:' + s.ts)) return;
+    if (!s.ts) return;
+    const ex = items.find(i => i.id === 'sl:' + s.ts);
+    if (ex) { if (kind === 'mega') ex.mega = true; return; }
     const fromMe = s.fromId === SLACK_ME;
     const answered = !fromMe && mine.some(x => x.channelId === s.channelId && x.time && s.time && x.time > s.time);
     const hz = (s.channelName.match(/#([\w-]+?)-hz\b/) || [])[1];
-    const ents = [];
-    if (hz) ents.push(registerOrg(hz.replace(/-/g, '')));
-    items.push({ id: 'sl:' + s.ts, type: 'slack', live: true, title: s.text || '(bericht zonder tekst)', channel: s.channelName, channelId: s.channelId, fromName: s.fromName,
-      fromMe, bot: s.bot, dm: s.dm, mention: kind === 'mention', time: s.time, url: s.url, answered, entities: ents.filter(Boolean) });
+    items.push({ id: 'sl:' + s.ts, ts: s.ts, type: 'slack', live: true, title: s.text || '(bericht zonder tekst)', channel: s.channelName, channelId: s.channelId, fromName: s.fromName,
+      fromMe, bot: s.bot, dm: s.dm, mention: kind === 'mention', mega: kind === 'mega', time: s.time, url: s.url, answered, entities: hz ? [registerOrg(hz.replace(/-/g, ''))].filter(Boolean) : [] });
   };
+  LV.slack.mega.forEach(s => addSlack(s, 'mega'));
   LV.slack.dm.forEach(s => addSlack(s, 'dm'));
   LV.slack.mention.forEach(s => addSlack(s, 'mention'));
   mine.forEach(s => addSlack(s, 'mine'));
-  // Taken
+  // Google Tasks (standaardlijst + Backlog)
   const tseen = new Set();
-  [...LV.tasks.overdue.map(t => ({ ...t, overdue: true })), ...LV.tasks.today].forEach(t => {
-    if (tseen.has(t.id)) return; tseen.add(t.id);
-    items.push({ id: 'tk:' + t.id, rawId: t.id, tasklist: t.tasklist_id, type: 'task', live: true, title: t.title || '(taak)', due: t.due ? String(t.due).slice(0, 10) : null, overdue: !!t.overdue, list: t.tasklist_title, entities: [], url: 'https://tasks.google.com/' });
+  [...LV.tasks, ...(LV.tasksBacklog || [])].forEach(t => {
+    if (!t || tseen.has(t.id) || t.status === 'completed') return; tseen.add(t.id);
+    items.push({ id: 'tk:' + t.id, rawId: t.id, tasklist: t.tasklist_id, type: 'task', live: true, title: t.title || '(taak)', due: t.due ? String(t.due).slice(0, 10) : null,
+      notes: t.notes || '', list: t.tasklist_title, backlog: /^backlog$/i.test(t.tasklist_title || ''), entities: [], url: t.web_view_link || 'https://tasks.google.com/' });
   });
-  // Herken organisaties in tekst (bijv. "TonZon" in een Slack-bericht)
-  const slugs = Object.keys(ORGS).filter(s => s.length >= 4);
-  for (const it of items) {
-    if (it.entities.length) continue;
-    const hay = String(it.title + ' ' + (it.body || '')).toLowerCase().slice(0, 4000);
-    it.entities = slugs.filter(s => new RegExp('\\b' + s).test(hay)).slice(0, 2);
+  // Wispr-opnames
+  for (const m of LV.wispr) {
+    items.push({ id: 'wm:' + m.id, rawId: m.id, type: 'rec', live: true, title: m.title || 'Meeting', start: m.start, end: m.end || m.start, attendeeNames: m.attendees || [],
+      transcript: m.has_transcript, url: m.share_link, body: m.content_excerpt || '', shared: m.shared, entities: [] });
   }
-  LIVE_ITEMS = items.concat(commitItems());
+  return items;
 }
+
+function rebuild() {
+  ORGS = {};
+  let items = MODE.live ? liveItems() : DEMO_ITEMS.map(x => ({ ...x, entities: [...(x.entities || [])] }));
+  items = items.concat(commitItems());
+  // Herken organisaties in tekst (bijv. "TonZon" in een Slack-bericht of een Wispr-titel)
+  if (MODE.live) {
+    const slugs = Object.keys(ORGS).filter(s => s.length >= 4);
+    for (const it of items) {
+      if (it.entities.length) continue;
+      const hay = String(it.title + ' ' + (it.type === 'rec' ? '' : it.body || '')).toLowerCase().slice(0, 4000);
+      it.entities = slugs.filter(s => new RegExp('\\b' + s).test(hay)).slice(0, 2);
+    }
+  }
+  decorate(items);
+  LIVE_ITEMS = items;
+}
+function decorate(items) {
+  const T = today();
+  const tasks = items.filter(i => i.type === 'task');
+  const taskByRaw = new Map(tasks.map(t => [t.rawId, t]));
+  const recaps = MODE.live ? LV.slack.recaps : [];
+  for (const it of items) {
+    const st = LV.state[stateKey(it)] || {};
+    it.read = !!st.read; it.moved = st.moved || it.moved || 0;
+    if (it.type === 'task') {
+      it.overdue = !!it.due && it.due < T;
+      it.weekgoal = it.weekgoal || /^🎯/.test(it.title) || /\[weekprep\]/.test(it.notes || '') && /doel/i.test(it.notes || '');
+      it.prep = /prep/i.test(it.title) && /^🛠/.test(it.title);
+      const c = LV.commits.find(c => c.gtask?.id === it.rawId);
+      if (c) it.commitId = 'cm:' + c.id;
+    }
+    if (it.type === 'commit') {
+      const t = it.raw.gtask?.id && taskByRaw.get(it.raw.gtask.id);
+      if (t) { it.linkedTask = t.id; it.plan = t.backlog ? null : t.due; it.backlog = t.backlog; }
+    }
+    if (it.type === 'rec') { it.processed = !!st.processed; it.recapSession = st.recapSession; }
+    if (it.type === 'meeting' || it.type === 'rec') {
+      const words = [...it.entities.map(e => (ENT()[e]?.short || e).toLowerCase()), ...String(it.title).toLowerCase().split(/[^a-z0-9à-ÿ]+/).filter(w => w.length > 4 && !['homezero', 'sessie', 'meeting', 'check'].includes(w))].slice(0, 4);
+      if (it.type === 'meeting') {
+        const day = ymd(pd(it.start));
+        it.prepTask = tasks.find(t => t.due && t.due <= day && (/prep/i.test(t.title) || /\[briefing\]|\[weekprep\]/.test(t.notes || '')) && words.some(w => t.title.toLowerCase().includes(w)))?.id || null;
+        it.skipPrep = !!st.skipPrep; it.recapSession = st.recapSession;
+      }
+      it.recapDone = !!recaps.find(r => r.time && pd(r.time) >= pd(it.start) && words.some(w => r.text.toLowerCase().includes(w)));
+    }
+  }
+}
+const stateKey = it => it.type === 'task' ? 'tk:' + it.rawId : it.type === 'rec' ? 'wm:' + it.rawId : it.id.replace(/[^A-Za-z0-9_\-.~:@+]/g, '_').slice(0, 190);
 function commitStatus(c) {
-  if (c.status === 'open' && c.deadline && c.deadline < today()) return 'te_laat';
+  if (['open'].includes(c.status || 'open') && c.deadline && c.deadline < today()) return 'te_laat';
   return c.status || 'open';
 }
 function commitOrgId(c) {
@@ -795,12 +888,96 @@ function commitOrgId(c) {
 function commitItems() {
   return LV.commits.map(c => {
     const org = commitOrgId(c);
-    return { id: 'cm:' + c.id, docId: c.id, type: 'commit', title: c.wat, stroom: c.stroom, aan: c.aan, status: commitStatus(c), deadline: c.deadline, due: c.deadline,
+    return { id: 'cm:' + c.id, docId: c.id, type: 'commit', title: c.wat, stroom: c.stroom || 'mijn', aan: c.aan, status: commitStatus(c), deadline: c.deadline, plan: c.plan || null, backlog: !!c.backlog,
+      reminder: c.reminder || null, due: c.plan || c.deadline || null, moved: c.moved || 0, url: c.bron?.url || null,
       time: c.created ? c.created + 'T09:00' : null, body: [c.aan, c.bron?.label, c.bewijs].filter(Boolean).join(' · '), raw: c, entities: org ? [org] : [] };
   });
 }
 
-/* ---------- Waar moet je aandacht naartoe ---------- */
+/* ---------- Planning: 1 vandaag · 2 morgen · 3 later deze week · 4 volgende week · 5 backlog ---------- */
+const isWork = dt => dt.getDay() > 0 && dt.getDay() < 6;
+const nextWork = dt => { let x = addDays(dt, 1); while (!isWork(x)) x = addDays(x, 1); return x; };
+const baseDay = () => { const t = startOfDay(S.clock); return isWork(t) ? t : nextWork(t); };
+function addWorkdays(dt, n) { let x = startOfDay(dt); for (let i = 0; i < n; i++) x = nextWork(x); return x; }
+const isDone = it => it.type === 'commit' && ['klaar', 'overgedragen'].includes(it.status);
+function plannedOn(date) {
+  // op een weekenddag tellen taken van vandaag t/m de eerstvolgende werkdag mee voor 'Vandaag'
+  const lo = date === ymd(baseDay()) ? today() : date;
+  const inRange = d => d && d >= lo && d <= date;
+  return allItems().filter(it => !isDone(it) && ((it.type === 'task' && !it.backlog && inRange(it.due)) || (it.type === 'commit' && !it.linkedTask && ['mijn', 'voornemen'].includes(it.stroom) && inRange(it.plan))));
+}
+const loadOf = date => plannedOn(date).length;
+function bucketDate(n) {
+  const b = baseDay();
+  if (n === 1) return ymd(b);
+  const tm = nextWork(b);
+  if (n === 2) return ymd(tm);
+  const least = days => days.map(ymd).sort((a, c) => (loadOf(a) >= DAY_CAP) - (loadOf(c) >= DAY_CAP) || loadOf(a) - loadOf(c) || a.localeCompare(c))[0];
+  const wkB = weekStart(0, b);
+  if (n === 3) {
+    const later = [2, 3, 4].map(i => addDays(wkB, i)).filter(d => d > tm);
+    return least(later.length ? later : [addDays(wkB, 7), addDays(wkB, 8)]);
+  }
+  return least([0, 1, 2, 3, 4].map(i => addDays(wkB, 7 + i)));
+}
+function bucketOf(date, backlog) {
+  if (backlog) return 5;
+  if (!date) return 0;
+  const b = ymd(baseDay()), tm = ymd(nextWork(baseDay()));
+  if (date < today()) return -1;
+  if (date <= b) return 1;
+  if (date === tm) return 2;
+  const wkB = weekStart(0, baseDay());
+  if (pd(date) < addDays(wkB, 7)) return 3;
+  if (pd(date) < addDays(wkB, 14)) return 4;
+  return 6;
+}
+const BUCKET_NAMES = { '-1': 'Te laat', 0: 'Zonder datum', 1: 'Vandaag', 2: 'Morgen', 3: 'Later deze week', 4: 'Volgende week', 5: 'Backlog', 6: 'Later' };
+
+/* ---------- Inbox: wat vraagt nu om een besluit ---------- */
+function kindOf(it) {
+  if (it.type === 'slack') return it.mega ? 'mega' : 'reply';
+  if (it.type === 'mail') return 'reply';
+  if (it.type === 'task') return 'task';
+  if (it.type === 'commit') return it.stroom === 'aan_mij' ? 'waiting' : it.stroom === 'bespreken' ? 'bespreken' : 'commit';
+  if (it.type === 'meeting') return it.needsAction ? 'invite' : 'meeting';
+  if (it.type === 'rec') return 'process';
+  return 'other';
+}
+function slackToAnswer() {
+  return allItems().filter(i => i.type === 'slack' && !i.fromMe && !i.answered && !i.bot && !i.read && (i.dm || i.mention)).sort((a, b) => when(b) - when(a));
+}
+function openCommits() { return allItems().filter(i => i.type === 'commit' && !isDone(i)); }
+function inbox() {
+  const T = today(), out = [];
+  const add = (kind, it, score, why) => out.push({ kind, it, score, why });
+  const horizon = ymd(addWorkdays(S.clock, 2));
+  for (const it of allItems()) {
+    if (it.type === 'slack' && !it.read && !it.fromMe && !it.bot) {
+      if (it.mega) add('mega', it, 70, `📣 Door jou gemarkeerd · ${it.channel}`);
+      else if (!it.answered && (it.dm || it.mention)) { const ageH = (S.clock - when(it)) / 36e5; add('reply', it, (it.dm ? 72 : 64) + (/\?/.test(it.title) ? 6 : 0) - Math.min(14, ageH / 12), `${it.dm ? 'DM' : 'Noemt je in ' + it.channel} · ${it.fromName} · ${dayLabel(when(it))} ${hm(when(it))}`); }
+    }
+    if (it.type === 'mail' && it.direct && !it.read) add('reply', it, 62, `Mail aan jou · ${it.fromName}`);
+    if (it.type === 'task' && !it.backlog && !it.commitId && (!it.due || it.due < T)) add('task', it, it.due ? 66 + Math.min(10, -dayDiff(pd(it.due))) : 36, it.due ? `Google Tasks · over tijd sinds ${fmtDate(it.due)}${it.moved >= 2 ? ' · ' + it.moved + 'e keer doorgeschoven' : ''}` : 'Google Tasks · nog geen datum');
+    if (it.type === 'commit' && !isDone(it)) {
+      if (['mijn', 'voornemen'].includes(it.stroom)) {
+        if (it.status === 'waarschijnlijk_klaar') add('commit', it, 50, `Bewijs gevonden: ${it.raw.bewijs || ''} · bevestig met x`);
+        else if (it.status === 'te_laat' && !(it.plan >= T)) add('commit', it, 90, `${STROOM[it.stroom]}${it.aan ? ' · ' + it.aan : ''} · deadline was ${fmtDate(it.deadline)}`);
+        else if (!it.backlog && (!it.plan || it.plan < T)) add('commit', it, it.plan ? 68 : 46, `${STROOM[it.stroom]}${it.aan ? ' · ' + it.aan : ''}${it.plan ? ' · stond op ' + fmtDate(it.plan) : ' · nog niet gepland'}${it.moved >= 2 ? ' · ' + it.moved + 'e keer doorgeschoven' : ''}`);
+      } else if (it.stroom === 'aan_mij' && !it.backlog && it.reminder && it.reminder <= T) add('waiting', it, 58, `Wachten op ${it.aan || 'iemand'} sinds ${fmtDate(it.raw.created || it.reminder)} · nog geen reactie, nudge?`);
+    }
+    if (it.type === 'meeting' && pd(it.end || it.start) > S.clock) {
+      if (it.needsAction) add('invite', it, 74 - Math.min(7, Math.max(0, dayDiff(pd(it.start)))) * 3, `Uitnodiging van ${it.organizerName || 'onbekend'} · ${dayLabel(pd(it.start))}${it.allDay ? '' : ' ' + hm(pd(it.start))}`);
+      else if (it.external && !it.prepTask && !it.skipPrep && ymd(pd(it.start)) <= horizon) add('prep', it, 68 - Math.max(0, dayDiff(pd(it.start))) * 4, `Extern · ${dayLabel(pd(it.start))} ${hm(pd(it.start))} · nog geen prep gepland`);
+    }
+    if (it.type === 'rec' && !it.processed && !it.recapSession && pd(it.end) < S.clock && dayDiff(pd(it.start)) >= -7) add('process', it, (it.entities.length ? 60 : 44) - Math.min(10, -dayDiff(pd(it.start))), `Opname ${dayLabel(pd(it.start)).toLowerCase()}${it.recapDone ? ' · recap staat in #klanten' : it.entities.length ? ' · nog geen recap' : ''}`);
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+// Compatibel met de samenvatting (briefMe)
+const attention = () => inbox();
+const KIND = { late: ['k-late', 'Te laat'], commit: ['k-commit', 'Toezegging'], prep: ['k-prep', 'Prep'], invite: ['k-invite', 'Uitnodiging'], reply: ['k-reply', 'Reageren'], mega: ['k-reply', '📣 To-do'],
+  task: ['k-task', 'Taak'], process: ['k-process', 'Verwerken'], waiting: ['k-wait', 'Wachten op'], bespreken: ['k-prep', 'Bespreken'], meeting: ['k-process', 'Meeting'], other: ['k-process', ''] };
 function focusDay() {
   const evs = allItems().filter(i => i.type === 'meeting' && !i.allDay && !i.ooo);
   for (let k = 0; k < 8; k++) {
@@ -810,86 +987,260 @@ function focusDay() {
   }
   return { day: today(), k: 0, list: [] };
 }
-function openCommits() { return allItems().filter(i => i.type === 'commit' && !['klaar', 'overgedragen'].includes(i.status)); }
-function slackToAnswer() {
-  return allItems().filter(i => i.type === 'slack' && !i.fromMe && !i.answered && !i.bot && (i.dm || i.mention)).sort((a, b) => when(b) - when(a));
-}
-function attention() {
-  const out = [];
-  const add = (score, kind, it, why, acts = []) => out.push({ score, kind, it, why, acts });
-  const fd = focusDay();
-  const oc = openCommits();
-  // Te late / vandaag te leveren toezeggingen
-  oc.forEach(c => {
-    if (c.status === 'te_laat') add(92 - Math.min(10, -dayDiff(pd(c.deadline))), 'late', c, `${STROOM[c.stroom] || ''}${c.aan ? ' · ' + c.aan : ''} · deadline was ${fmtDate(c.deadline)}`);
-    else if (c.deadline && dayDiff(pd(c.deadline)) <= 1 && c.status === 'open') add(78, 'commit', c, `${STROOM[c.stroom]}${c.aan ? ' · ' + c.aan : ''} · deadline ${dayLabel(pd(c.deadline)).toLowerCase()}`);
-    else if (c.status === 'waarschijnlijk_klaar') add(40, 'commit', c, `Bewijs gevonden: ${c.raw?.bewijs || 'controleer en vink af'}`);
-  });
-  // De vanger: externe afspraak met open toezeggingen
-  fd.list.filter(m => m.external && pd(m.end) > S.clock).forEach((m, idx) => {
-    const open = oc.filter(c => c.entities.some(e => m.entities.includes(e)));
-    const hrs = (pd(m.start) - S.clock) / 36e5;
-    if (open.length) add(88 - idx * 3, 'prep', m, `${dayLabel(pd(m.start))} ${hm(pd(m.start))} · ${open.length} open ${open.length === 1 ? 'toezegging' : 'toezeggingen'} bij ${m.entities.map(entityName).join(', ')}`);
-    else if (idx < 2) add(hrs < 3 ? 70 : 56 - idx * 4, 'prep', m, `${dayLabel(pd(m.start))} ${hm(pd(m.start))} · extern met ${m.entities.map(entityName).join(', ')}`);
-  });
-  // Uitnodigingen
-  allItems().filter(i => i.type === 'meeting' && i.needsAction && pd(i.end || i.start) > S.clock).forEach(m => {
-    const days = Math.max(0, dayDiff(pd(m.start)));
-    add(76 - Math.min(days, 7) * 3, 'invite', m, `Uitnodiging van ${m.organizerName || 'onbekend'} · ${dayLabel(pd(m.start))} ${m.allDay ? '' : hm(pd(m.start))}`);
-  });
-  // Slack waar iemand op je wacht
-  slackToAnswer().forEach(s => {
-    const q = /\?/.test(s.title);
-    const ageH = (S.clock - when(s)) / 36e5;
-    add((s.dm ? 72 : 64) + (q ? 6 : 0) - Math.min(12, ageH / 12), 'reply', s, `${s.dm ? 'DM' : 'Noemt je in ' + s.channel} · ${s.fromName} · ${dayLabel(when(s))} ${hm(when(s))}`);
-  });
-  // Mail direct aan jou
-  allItems().filter(i => i.type === 'mail' && i.direct).forEach(m => add(62, 'reply', m, `Mail aan jou · ${m.fromName}`));
-  // Taken
-  allItems().filter(i => i.type === 'task').forEach(t => add(t.overdue ? 60 : 50, 'task', t, t.overdue ? `Over tijd sinds ${t.due ? fmtDate(t.due) : '–'}` : 'Staat voor vandaag'));
-  return out.sort((a, b) => b.score - a.score);
-}
-const KIND = { late: ['k-late', 'Te laat'], commit: ['k-commit', 'Toezegging'], prep: ['k-prep', 'Voorbereiden'], invite: ['k-invite', 'Uitnodiging'], reply: ['k-reply', 'Reageren'], task: ['k-task', 'Taak'], process: ['k-process', 'Verwerken'] };
 
 /* ---------- Acties ---------- */
+const demoItem = id => DEMO_ITEMS.find(x => x.id === id);
+async function setState(key, patch) {
+  LV.state[key] = { ...(LV.state[key] || {}), ...patch, at: Date.now() };
+  scheduleRender();
+  if (MODE.live && CAP.db) { try { await CAP.db.doc('itemstate/' + key).set(LV.state[key]); } catch (e) { toast('Opslaan lukte niet: ' + esc(e?.code || 'fout')); } }
+}
+const findId = p => p?.id || p?.task?.id || p?.tasklist?.id || p?.result?.id || (JSON.stringify(p || {}).match(/"id":"([^"]+)"/) || [])[1] || null;
+const call = (server, tool, input) => CAP.mcp.callTool(server, tool, input).then(r => r.payload);
+const defaultList = () => LV.tasklists.find(l => !/^backlog$/i.test(l.title))?.id || LV.tasks[0]?.tasklist_id || null;
+
 async function respondInvite(id, status) {
-  const it = byId(id);
-  if (!MODE.live) { it.needsAction = false; toast(`Demo: uitnodiging ${status === 'accepted' ? 'geaccepteerd' : status === 'declined' ? 'afgewezen' : 'onder voorbehoud'}`); return render(); }
+  const it = byId(id); if (!it || it.type !== 'meeting') return;
+  if (!MODE.live) { const d = demoItem(id); if (d) d.needsAction = false; toast(`Demo: ${status === 'accepted' ? 'geaccepteerd' : status === 'declined' ? 'afgewezen' : 'misschien'}`); return render(); }
   S.busy[id] = true; render();
   try {
-    await CAP.mcp.callTool('Google Calendar', 'respond_to_event', { eventId: it.rawId, responseStatus: status });
+    await call('Google Calendar', 'respond_to_event', { eventId: it.rawId, responseStatus: status });
     toast(`${ic('meeting')} ${status === 'accepted' ? 'Geaccepteerd' : status === 'declined' ? 'Afgewezen' : 'Misschien'}: ${esc(short(it.title, 40))}`);
     await CAP.mcp.invalidate('Google Calendar').catch(() => {});
-  } catch (e) { toast(`Antwoorden lukte niet (${esc(e?.code || 'fout')}). Probeer het opnieuw of open de afspraak in Google Agenda.`); }
+  } catch (e) { toast(`Antwoorden lukte niet (${esc(e?.code || 'fout')}).`); }
   delete S.busy[id]; render();
 }
-async function completeTask(id) {
-  const it = byId(id);
-  if (!MODE.live) { DEMO_ITEMS.splice(DEMO_ITEMS.indexOf(it), 1); toast('Demo: taak afgevinkt'); return render(); }
-  S.busy[id] = true; render();
+/* Google Tasks */
+async function gtaskAdd(title, due, notes) {
+  if (!MODE.live) { const id = 't' + Date.now(); DEMO_ITEMS.push({ id: 'tk:' + id, rawId: id, type: 'task', tasklist: 'demo', title, due, notes, entities: [] }); return { id, tasklist: 'demo' }; }
+  const tl = defaultList();
+  const p = await call('Google Tasks', 'add', { title, due, notes, ...(tl ? { tasklist: tl } : {}) });
+  await CAP.mcp.invalidate('Google Tasks').catch(() => {});
+  return { id: findId(p), tasklist: tl };
+}
+async function ensureBacklogList() {
+  let bl = LV.tasklists.find(l => /^backlog$/i.test(l.title));
+  if (bl) return bl.id;
+  const p = await call('Google Tasks', 'create_tasklist', { title: 'Backlog' });
+  const id = findId(p);
+  LV.tasklists.push({ id, title: 'Backlog' });
+  ensureBacklogWatch();
+  return id;
+}
+async function planTask(it, n) {
+  const date = n === 5 ? null : bucketDate(n);
+  const moved = it.due && it.due <= today() && (date === null || date > it.due) ? (it.moved || 0) + 1 : it.moved || 0;
+  if (!MODE.live) { const d = DEMO_ITEMS.find(x => x.rawId === it.rawId); if (d) { d.due = date; d.backlog = n === 5; } setState(stateKey(it), { moved }); return date; }
+  S.busy[it.id] = true; scheduleRender();
   try {
-    await CAP.mcp.callTool('Google Tasks', 'complete', { id: it.rawId, tasklist: it.tasklist });
-    toast(`${ic('task')} Afgevinkt in Google Tasks`);
+    if (n === 5) {
+      const bl = await ensureBacklogList();
+      if (!bl) throw { code: 'geen Backlog-lijst' };
+      if (!it.backlog) await call('Google Tasks', 'move', { id: it.rawId, tasklist: it.tasklist, destination_tasklist: bl });
+      try { await call('Google Tasks', 'update', { id: it.rawId, tasklist: bl, due: '' }); } catch {}
+    } else {
+      let tl = it.tasklist;
+      if (it.backlog && defaultList()) { await call('Google Tasks', 'move', { id: it.rawId, tasklist: it.tasklist, destination_tasklist: defaultList() }); tl = defaultList(); }
+      await call('Google Tasks', 'update', { id: it.rawId, tasklist: tl, due: date });
+    }
+    if (moved !== (it.moved || 0)) setState(stateKey(it), { moved });
     await CAP.mcp.invalidate('Google Tasks').catch(() => {});
-  } catch (e) { toast(`Afvinken lukte niet (${esc(e?.code || 'fout')}).`); }
-  delete S.busy[id]; render();
+  } catch (e) { toast(`Google Tasks bijwerken lukte niet (${esc(e?.code || 'fout')}).`); }
+  delete S.busy[it.id];
+  return date;
 }
+async function completeTask(it) {
+  if (!MODE.live) { const i = DEMO_ITEMS.findIndex(x => x.rawId === it.rawId); if (i >= 0) DEMO_ITEMS.splice(i, 1); }
+  else {
+    S.busy[it.id] = true; scheduleRender();
+    try { await call('Google Tasks', 'complete', { id: it.rawId, tasklist: it.tasklist }); await CAP.mcp.invalidate('Google Tasks').catch(() => {}); }
+    catch (e) { delete S.busy[it.id]; toast(`Afvinken lukte niet (${esc(e?.code || 'fout')}).`); return render(); }
+    delete S.busy[it.id];
+  }
+  const c = LV.commits.find(c => c.gtask?.id === it.rawId);
+  if (c) await commitSave(c.id, { status: 'klaar', closedAt: today() });
+  toast(`${ic('check')} Afgevinkt${MODE.live ? ' in Google Tasks' : ''}${c ? ' en in de tracker' : ''}`);
+  render();
+}
+/* Tracker */
 async function commitSave(docId, patch) {
-  if (!MODE.live || !CAP.db) { const c = LV.commits.find(x => x.id === docId); Object.assign(c, patch); return render(); }
-  try { await CAP.db.doc('commitments/' + docId).update(patch); } catch (e) { toast(`Opslaan lukte niet: ${esc(e?.code || e?.message || 'fout')}`); }
+  const c = LV.commits.find(x => x.id === docId); if (c) Object.assign(c, patch);
+  scheduleRender();
+  if (MODE.live && CAP.db) { try { await CAP.db.doc('commitments/' + docId).update(patch); } catch (e) { toast(`Opslaan lukte niet: ${esc(e?.code || e?.message || 'fout')}`); } }
 }
 async function commitAdd(data) {
-  const doc = { wat: data.wat, stroom: data.stroom || 'mijn', aan: data.aan || '', org: data.org || '', deadline: data.deadline || null, status: 'open',
-    bron: data.bron || { label: 'Eigen invoer' }, bewijsregel: data.bewijsregel || { type: 'geen' }, citaat: data.citaat || '', created: today(), createdAt: Date.now() };
-  if (!MODE.live || !CAP.db) { LV.commits.push({ id: 'dc' + Date.now() + Math.random().toString(36).slice(2, 5), ...doc }); return render(); }
-  try { await CAP.db.collection('commitments').add(doc); } catch (e) { toast(`Opslaan lukte niet: ${esc(e?.code || e?.message || 'fout')}`); }
+  const doc = { wat: data.wat, stroom: data.stroom || 'mijn', aan: data.aan || '', org: data.org || '', deadline: data.deadline || null, status: data.status || 'open',
+    plan: data.plan || null, backlog: !!data.backlog, reminder: data.reminder || null, gtask: data.gtask || null, src: data.src || null,
+    closedAt: data.closedAt || null, bron: data.bron || { label: 'Eigen invoer' }, bewijsregel: data.bewijsregel || { type: 'geen' }, citaat: data.citaat || '', created: data.created || today(), createdAt: Date.now() };
+  if (!MODE.live || !CAP.db) { const id = 'dc' + Date.now() + Math.random().toString(36).slice(2, 5); LV.commits.push({ id, ...doc }); scheduleRender(); return id; }
+  try { const ref = await CAP.db.collection('commitments').add(doc); return ref.id; } catch (e) { toast(`Opslaan lukte niet: ${esc(e?.code || e?.message || 'fout')}`); return null; }
 }
 async function commitDelete(docId) {
-  if (!MODE.live || !CAP.db) { LV.commits = LV.commits.filter(x => x.id !== docId); return render(); }
-  try { await CAP.db.doc('commitments/' + docId).delete(); } catch (e) { toast('Verwijderen lukte niet.'); }
+  LV.commits = LV.commits.filter(x => x.id !== docId); scheduleRender();
+  if (MODE.live && CAP.db) { try { await CAP.db.doc('commitments/' + docId).delete(); } catch (e) { toast('Verwijderen lukte niet.'); } }
+}
+async function commitDone(it) {
+  if (it.linkedTask) { const t = byId(it.linkedTask); if (t) return completeTask(t); }
+  await commitSave(it.docId, { status: 'klaar', closedAt: today() });
+  toast(`${ic('check')} ${it.stroom === 'aan_mij' ? 'Binnen, afgerond' : 'Afgerond'} in de tracker`);
+}
+async function planCommit(it, n) {
+  const date = n === 5 ? null : bucketDate(n);
+  if (it.stroom === 'aan_mij') { await commitSave(it.docId, { reminder: date, backlog: n === 5 }); return date; }
+  if (it.linkedTask) { const t = byId(it.linkedTask); if (t) { await planTask(t, n); await commitSave(it.docId, { plan: date, backlog: n === 5 }); return date; } }
+  const moved = it.plan && it.plan <= today() && (date === null || date > it.plan) ? (it.moved || 0) + 1 : it.moved || 0;
+  const patch = { plan: date, backlog: n === 5, moved };
+  if (date && ['mijn', 'voornemen'].includes(it.stroom) && !it.raw.gtask) {
+    try { patch.gtask = await gtaskAdd(it.title, date, `[workspace] Tracker: ${it.title}${it.aan ? ' · ' + it.aan : ''}${it.url ? '\n' + it.url : ''}`); } catch (e) { toast('Google Task aanmaken lukte niet; staat wel in de tracker.'); }
+  }
+  await commitSave(it.docId, patch);
+  return date;
+}
+/* Van inbox-item naar tracker */
+const orgNameOf = it => it.entities?.[0] ? (ENT()[it.entities[0]]?.short || '') : '';
+function srcOf(it) { return { key: stateKey(it), label: it.type === 'mail' ? `Mail · ${it.fromName}` : it.type === 'slack' ? `Slack · ${it.channel}` : it.type === 'rec' ? `Wispr · ${it.title}` : SRC[it.type]?.label || '', url: it.url || null }; }
+async function itemToCommit(it, extra) {
+  const wat = extra.wat || (it.type === 'mail' ? `Reageren op mail “${short(it.title, 70)}”` : it.type === 'slack' ? `Reageren op ${it.fromName}: ${short(it.title, 80)}` : it.title);
+  const id = await commitAdd({ wat, aan: it.fromName || '', org: orgNameOf(it), bron: srcOf(it), src: stateKey(it), ...extra });
+  return id;
+}
+async function markRead(it, react) {
+  if (it.type === 'mail') {
+    setState(stateKey(it), { read: true });
+    if (MODE.live) { try { await call('Gmail', 'unlabel_thread', { threadId: it.threadId, labelIds: ['UNREAD'] }); await CAP.mcp.invalidate('Gmail').catch(() => {}); } catch (e) { toast(`Gelezen in Gmail lukte niet (${esc(e?.code || 'fout')}); hier wel verborgen.`); return; } }
+    return toast(`${ic('mail')} Gelezen${MODE.live ? ', ook in Gmail' : ''}`);
+  }
+  if (it.type === 'slack') {
+    setState(stateKey(it), { read: true });
+    if (react && MODE.live) { try { await call('Slack', 'slack_add_reaction', { channel_id: it.channelId, message_ts: it.ts, emoji: 'white_check_mark' }); } catch (e) { return toast(`✅-reactie lukte niet (${esc(e?.code || 'fout')}); hier wel gelezen.`); } }
+    return toast(react ? '✅ Afgehandeld: reactie geplaatst in Slack' : 'Gelezen in de workspace');
+  }
+  if (it.type === 'rec') { setState(stateKey(it), { processed: true }); return toast('Opname gemarkeerd als verwerkt'); }
+  if (it.type === 'meeting') { if (it.needsAction) return toast('Uitnodiging: gebruik y, m of n'); setState(stateKey(it), { skipPrep: true }); return toast('Geen prep nodig'); }
+  toast('Hier niet van toepassing');
+}
+async function planItem(it, n) {
+  const kind = kindOf(it);
+  if (kind === 'invite') return toast('Uitnodiging: gebruik y (ja), m (misschien) of n (nee)');
+  if (n === 1 && loadOf(bucketDate(1)) >= DAY_CAP) toast(`Vandaag zit al op ${loadOf(bucketDate(1))}/${DAY_CAP}. Overweeg 2 of 3.`);
+  let date;
+  if (it.type === 'task') date = await planTask(it, n);
+  else if (it.type === 'commit') date = await planCommit(it, n);
+  else if (it.type === 'slack' || it.type === 'mail') {
+    date = n === 5 ? null : bucketDate(n);
+    const extra = { stroom: 'mijn', plan: date, backlog: n === 5 };
+    if (date) { try { extra.gtask = await gtaskAdd(it.type === 'mail' ? `Mail ${it.fromName}: ${short(it.title, 60)}` : `Slack ${it.fromName}: ${short(it.title, 60)}`, date, `[workspace] ${it.url || ''}`); } catch { toast('Google Task aanmaken lukte niet; staat wel in de tracker.'); } }
+    await itemToCommit(it, extra);
+    if (it.type === 'mail') await markRead(it); else setState(stateKey(it), { read: true });
+  } else if (it.type === 'meeting') {
+    if (n === 5) { setState(stateKey(it), { skipPrep: true }); return toast('Geen prep voor deze meeting'); }
+    date = bucketDate(n);
+    try { await gtaskAdd(`🛠 Prep: ${it.title} (30 min)`, date, `[briefing] Voorbereiding voor ${it.title} op ${longDay(pd(it.start))} ${hm(pd(it.start))}. Via de workspace.`); } catch (e) { return toast('Prep-taak aanmaken lukte niet.'); }
+  } else if (it.type === 'rec') {
+    if (n === 5) { setState(stateKey(it), { processed: true }); return toast('Opname gemarkeerd als verwerkt'); }
+    date = bucketDate(n);
+    try { await gtaskAdd(`📝 Recap: ${it.title}`, date, `[workspace] /klant-recap ${it.url || ''}`); setState(stateKey(it), { processed: true }); } catch { return toast('Taak aanmaken lukte niet.'); }
+  } else return toast('Dit item kun je niet plannen');
+  toast(`${ic('meeting')} ${n === 5 ? 'Naar de backlog' : `Gepland: ${BUCKETS[n].toLowerCase()} (${fmtDate(date)} · ${loadOf(date)}/${DAY_CAP})`}`);
+  render();
+}
+async function makeWaiting(it) {
+  if (!['slack', 'mail', 'rec'].includes(it.type)) return toast('Wachten op maak je van een bericht of mail');
+  await itemToCommit(it, { stroom: 'aan_mij', wat: `${it.fromName || 'Iemand'}: ${short(it.title, 100)}`, reminder: ymd(addWorkdays(S.clock, 3)) });
+  if (it.type === 'mail') await markRead(it); else setState(stateKey(it), { read: true });
+  toast(`${ic('commit')} In Wachten op · reminder ${fmtDate(ymd(addWorkdays(S.clock, 3)))}`);
+}
+async function makeBespreken(it) {
+  if (!['slack', 'mail', 'rec', 'commit'].includes(it.type)) return toast('Bespreken maak je van een bericht, mail of toezegging');
+  if (it.type === 'commit') { await commitSave(it.docId, { stroom: 'bespreken' }); return toast('Verplaatst naar Bespreken bij contact'); }
+  await itemToCommit(it, { stroom: 'bespreken', wat: short(it.title, 140) });
+  setState(stateKey(it), { read: true });
+  toast(`${ic('commit')} Op de lijst voor het volgende contact${orgNameOf(it) ? ' met ' + esc(orgNameOf(it)) : ''}`);
+}
+async function makeCommit(it) {
+  if (!['slack', 'mail', 'rec'].includes(it.type)) return toast('Een toezegging maak je van een bericht, mail of opname');
+  await itemToCommit(it, { stroom: 'mijn' });
+  setState(stateKey(it), { read: true });
+  toast(`${ic('commit')} Toegevoegd aan de tracker, nog te plannen`);
+}
+async function doneItem(it) {
+  if (it.type === 'task') return completeTask(it);
+  if (it.type === 'commit') return commitDone(it);
+  if (it.type === 'slack' || it.type === 'mail') return markRead(it);
+  if (it.type === 'rec') return markRead(it);
+  toast('Hier niet van toepassing');
 }
 
-/* Extractie: Claude haalt toezeggingen uit Slack, mail en meetings */
+/* ---------- Samen met Claude: /klant-recap starten ---------- */
+function recFor(it) {
+  if (it.type === 'rec') return it;
+  const s = pd(it.start), e = pd(it.end || it.start);
+  return allItems().find(r => r.type === 'rec' && Math.abs(pd(r.start) - s) < 45 * 6e4) || allItems().find(r => r.type === 'rec' && pd(r.start) < e && pd(r.end) > s) || null;
+}
+async function recapWithClaude(it) {
+  if (!['meeting', 'rec'].includes(it.type)) return toast('Recap start je vanaf een meeting of opname');
+  const rec = recFor(it);
+  const org = orgNameOf(it) || orgNameOf(rec || {}) || '';
+  const lines = ['/klant-recap', '', `Sessie: ${it.title} (${longDay(pd(it.start))} ${hm(pd(it.start))})`, org ? `Partner: ${org}` : 'Partner: haal uit de titel of deelnemers', rec?.url ? `Wispr: ${rec.url}` : 'Wispr: zoek de opname van deze sessie in Wispr Flow',
+    `Deelnemers: ${(it.attendeeNames || []).slice(0, 8).join(', ')}`, '', 'Gestart vanuit de Home Zero Workspace. Zet de Slack-drafts klaar en werk het partnerportaal bij zoals de skill beschrijft.'];
+  const prompt = lines.join('\n');
+  const key = stateKey(rec || it);
+  if (!MODE.live) { copyText(prompt); return toast('Demo: de opdracht voor Claude staat op je klembord'); }
+  S.busy[it.id] = true; render();
+  try {
+    const p = await call('Claude Code Remote', 'create_session', { environment_id: CLAUDE_ENV, title: `Klant-recap ${org || it.title}`.slice(0, 120), prompt });
+    const sid = (JSON.stringify(p || {}).match(/session_[A-Za-z0-9]+/) || [])[0];
+    const url = sid ? `https://claude.ai/code/${sid}` : null;
+    await setState(key, { recapSession: url || 'gestart' });
+    toast(url ? `${ic('spark')} Claude maakt de recap · <a href="${esc(url)}" target="_blank" rel="noopener" style="color:inherit">open sessie</a>` : `${ic('spark')} Claude-sessie gestart voor de recap`);
+  } catch (e) {
+    copyText(prompt);
+    toast(`Sessie starten lukte niet (${esc(e?.code || 'fout')}). De opdracht staat op je klembord: plak hem in Claude.`);
+  }
+  delete S.busy[it.id]; render();
+}
+function copyText(t) { try { navigator.clipboard.writeText(t).catch(() => {}); } catch {} }
+
+/* ---------- Canvas "⏳ Wachten op" importeren in de tracker ---------- */
+function parseCanvasTables(md) {
+  const sections = {}; let cur = null;
+  for (const line of String(md || '').split('\n')) {
+    const h = line.match(/^#\s+(.+)/); if (h) { cur = h[1].trim(); sections[cur] = []; continue; }
+    if (cur && /^\|/.test(line) && !/^\|\s*-/.test(line)) sections[cur].push(line.split('|').slice(1, -1).map(c => c.trim()));
+  }
+  for (const k in sections) sections[k] = sections[k].slice(1); // kopregel weg
+  return sections;
+}
+const canvasDate = s => (String(s).match(/slack_date:(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
+const canvasLink = s => (String(s).match(/\]\((https?:[^)]+)\)/) || [])[1] || null;
+const plainMd = s => String(s).replace(/\*\*/g, '').replace(/!\[\]\([^)]*\)/g, '').trim();
+async function importCanvas() {
+  if (!MODE.live) return toast('Demo: importeren werkt alleen live.');
+  S.busy.canvas = true; render();
+  try {
+    const p = await call('Slack', 'slack_read_canvas', { canvas_id: CANVAS_WACHTEN });
+    const sec = parseCanvasTables(p?.markdown_content || '');
+    const have = new Set(LV.commits.map(c => normOrg(c.wat).slice(0, 60)));
+    let n = 0;
+    const exists = wat => have.has(normOrg(wat).slice(0, 60));
+    for (const [wie, wat, sinds, reminder, link] of (sec['Open'] || [])) {
+      if (!wat || exists(wat)) continue;
+      const m = wie.match(/^(.*?)\s*\((.+)\)$/);
+      await commitAdd({ wat: plainMd(wat), stroom: 'aan_mij', aan: m ? m[1] : wie, org: m ? m[2] : '', created: canvasDate(sinds) || today(), reminder: canvasDate(reminder), bron: { label: 'Canvas Wachten op', url: canvasLink(link) } }); n++;
+    }
+    for (const [partner, contact, wat] of (sec['Bespreken bij eerstvolgend contactmoment'] || [])) {
+      if (!wat || exists(plainMd(wat))) continue;
+      await commitAdd({ wat: plainMd(wat), stroom: 'bespreken', aan: contact, org: partner, bron: { label: 'Canvas Wachten op' } }); n++;
+    }
+    for (const [partner, wat, op] of (sec['Afgerond'] || [])) {
+      if (!wat || exists(plainMd(wat))) continue;
+      await commitAdd({ wat: plainMd(wat), stroom: 'aan_mij', org: partner, status: 'klaar', closedAt: canvasDate(op), bron: { label: 'Canvas Wachten op' } }); n++;
+    }
+    toast(n ? `${ic('commit')} ${n} regels uit het canvas overgenomen` : 'Canvas en tracker lopen gelijk');
+  } catch (e) { toast(`Canvas lezen lukte niet (${esc(e?.code || 'fout')}).`); }
+  delete S.busy.canvas; render();
+}
+
 function extractionPrompt(sources) {
   const existing = LV.commits.filter(c => c.status !== 'klaar').map(c => '- ' + c.wat).join('\n') || '(geen)';
   return `Je bent de commitment tracker van Robert Verveen, productmanager bij Home Zero (software voor installateurs van warmtepompen, zonnepanelen en isolatie). Vandaag is ${longDay(S.clock)} ${S.clock.getFullYear()}.
@@ -952,14 +1303,10 @@ async function runExtraction(kind, meetingId) {
 async function acceptCandidates() {
   const sh = S.sheet; const keep = sh.items.filter(x => x.keep);
   for (const x of keep) await commitAdd({ ...x, deadline: /^\d{4}-\d{2}-\d{2}$/.test(x.deadline || '') ? x.deadline : null, bron: { ...(sh.bron || {}), label: x.bron ? `${sh.bron?.label || ''} · ${x.bron}`.replace(/^ · /, '') : sh.bron?.label } });
-  if (sh.kind === 'meeting' && CAP.db) { try { await CAP.db.doc('processed/' + sh.meetingId).set({ at: Date.now(), added: keep.length }); } catch {} }
-  if (sh.kind === 'meeting' && !CAP.db) LV.processed.add(sh.meetingId);
+  if (sh.kind === 'meeting') setState('wm:' + sh.meetingId, { processed: true, added: keep.length });
   closeSheet();
   toast(`${ic('commit')} ${keep.length} ${keep.length === 1 ? 'toezegging' : 'toezeggingen'} toegevoegd`);
   if (S.route.view !== 'toezeggingen') go({ view: 'toezeggingen' }); else render();
-}
-async function markProcessed(id) {
-  if (CAP.db) { try { await CAP.db.doc('processed/' + id).set({ at: Date.now(), added: 0 }); } catch {} } else { LV.processed.add(id); render(); }
 }
 
 /* Bewijssweep: zoekt in verzonden mail, je Slack-berichten en je agenda */
@@ -1018,7 +1365,7 @@ Open toezeggingen: ${openCommits().length}. Slack wacht op antwoord: ${slackToAn
 
 /* ---------- Query engine (⌘K en views) ---------- */
 const TYPE_ALIAS = { mail: 'mail', email: 'mail', inbox: 'mail', slack: 'slack', chat: 'slack', meeting: 'meeting', meetings: 'meeting', afspraak: 'meeting', agenda: 'meeting',
-  context: 'context', taak: 'task', taken: 'task', task: 'task', commit: 'commit', toezegging: 'commit', toezeggingen: 'commit', commitments: 'commit', drive: 'file' };
+  context: 'context', wispr: 'rec', opname: 'rec', rec: 'rec', taak: 'task', taken: 'task', task: 'task', commit: 'commit', toezegging: 'commit', toezeggingen: 'commit', commitments: 'commit', drive: 'file' };
 function parseQuery(q) {
   const out = { types: [], entities: [], from: [], in: [], when: null, is: [], text: [] };
   for (const raw of q.trim().split(/\s+/).filter(Boolean)) {
@@ -1066,7 +1413,7 @@ function runQuery(q) {
       if (f === 'direct' && !it.direct) return false;
       if (f === 'invite' && !it.needsAction) return false;
       if (f === 'extern' && !it.external) return false;
-      if (f === 'reageren' && !((it.type === 'slack' && !it.fromMe && !it.answered && !it.bot && (it.dm || it.mention)) || (it.type === 'mail' && it.direct))) return false;
+      if (f === 'reageren' && !((it.type === 'slack' && !it.fromMe && !it.answered && !it.bot && !it.read && (it.dm || it.mention)) || (it.type === 'mail' && it.direct && !it.read))) return false;
       if (STATUS[f] && it.status !== f) return false;
       if (STROOM[f] && it.stroom !== f) return false;
     }
@@ -1089,37 +1436,39 @@ function queryChips(q) {
 
 /* ---------- Rijen ---------- */
 function relTime(it) {
-  if (it.type === 'task') return it.overdue ? 'Te laat' : it.due ? dayLabel(pd(it.due)) : '';
-  if (it.type === 'commit') return it.deadline ? dayLabel(pd(it.deadline)) : '';
+  if (it.type === 'task') return it.backlog ? 'Backlog' : it.due ? (it.overdue ? 'Te laat · ' : '') + dayLabel(pd(it.due)) : '';
+  if (it.type === 'commit') { const d = it.stroom === 'aan_mij' ? it.reminder : it.plan || it.deadline; return it.backlog ? 'Backlog' : d ? dayLabel(pd(d)) : ''; }
   if (it.nodate) return '';
   const t = when(it); const dl = dayLabel(t);
-  if (it.type === 'meeting') return (dl === 'Vandaag' ? '' : dl + ' ') + (it.allDay ? 'hele dag' : hm(t));
+  if (it.type === 'meeting' || it.type === 'rec') return (dl === 'Vandaag' ? '' : dl + ' ') + (it.allDay ? 'hele dag' : hm(t));
   return dl === 'Vandaag' ? hm(t) : dl;
 }
 function itemSub(it) {
   switch (it.type) {
-    case 'mail': return `${it.fromName}${it.fromEmail && orgSlugFromEmail(it.fromEmail) && ENT()[registerOrg(orgSlugFromEmail(it.fromEmail))] ? ' · ' + entityName(registerOrg(orgSlugFromEmail(it.fromEmail))) : ''}${it.direct ? '' : ' · cc'}${it.count > 1 ? ' · ' + it.count + ' berichten' : ''}${it.body ? ' · ' + short(it.body, 80) : ''}`;
-    case 'slack': return `${it.channel} · ${it.fromMe ? 'jij' : it.fromName}${it.answered ? ' · beantwoord' : ''}`;
+    case 'mail': return `${it.fromName}${orgNameOf(it) ? ' · ' + orgNameOf(it) : ''}${it.direct ? '' : ' · cc'}${it.count > 1 ? ' · ' + it.count + ' berichten' : ''}${it.body ? ' · ' + short(it.body, 80) : ''}`;
+    case 'slack': return `${it.channel} · ${it.fromMe ? 'jij' : it.fromName}${it.answered ? ' · beantwoord' : ''}${it.read ? ' · gelezen' : ''}`;
     case 'meeting': return it.allDay ? 'Hele dag' : `${hm(pd(it.start))}–${hm(pd(it.end))}${it.where ? ' · ' + short(it.where, 30) : ''}${it.attendeeNames?.length ? ' · ' + it.attendeeNames.length + ' deelnemers' : ''}`;
-    case 'task': return `${it.overdue ? 'Over tijd · ' : ''}${it.due ? 'Deadline ' + fmtDate(it.due) : 'Geen deadline'}${it.list ? ' · ' + it.list : ''}`;
-    case 'commit': return `${STATUS[it.status]} · ${STROOM[it.stroom] || ''}${it.aan ? ' · ' + it.aan : ''}`;
+    case 'rec': return `Wispr · ${(it.attendeeNames || []).slice(0, 3).join(', ')}${it.recapDone ? ' · recap gedeeld' : ''}`;
+    case 'task': return `${it.backlog ? 'Backlog' : it.due ? (it.overdue ? 'Over tijd · ' : '') + 'gepland ' + fmtDate(it.due) : 'Geen datum'}${it.commitId ? ' · in tracker' : ''}${it.moved >= 2 ? ' · ' + it.moved + 'e keer doorgeschoven' : ''}`;
+    case 'commit': return `${STATUS[it.status]} · ${STROOM[it.stroom] || ''}${it.aan ? ' · ' + it.aan : ''}${it.linkedTask ? ' · Google Tasks' : ''}`;
     case 'context': return 'Contextlaag (voorbeeld)';
   }
   return '';
 }
-function rowHTML(it) {
-  const trailing = it.type === 'meeting' && it.needsAction ? '<span class="chip warn">Uitnodiging</span>' : it.type === 'commit' ? `<span class="st st-${it.status}">${STATUS[it.status]}</span>` : '';
-  return `<button class="row${S.selected === it.id ? ' sel' : ''}" data-open="${esc(it.id)}">
+function rowHTML(it, o = {}) {
+  const kind = o.kind || kindOf(it);
+  const chip = o.chip !== false ? (it.type === 'meeting' && it.needsAction ? '<span class="chip warn">Uitnodiging</span>' : it.type === 'commit' ? `<span class="st st-${it.status}">${STATUS[it.status]}</span>` : it.moved >= 2 ? `<span class="chip warn">${it.moved}× doorgeschoven</span>` : '') : '';
+  return `<button class="row${S.selected === it.id ? ' sel' : ''}" data-open="${esc(it.id)}" data-k="${esc(it.id)}" data-kind="${kind}">
     <span class="ic ${it.type}">${ic(SRC[it.type].icon)}</span>
-    <span class="row-main"><span class="row-title${it.unread ? ' unread' : ''}" style="display:block">${esc(short(it.title, 120))}</span><span class="row-sub" style="display:block">${esc(itemSub(it))}</span></span>
-    ${trailing}<span class="row-meta">${esc(relTime(it))}</span></button>`;
+    <span class="row-main"><span class="row-title${it.unread && !it.read ? ' unread' : ''}" style="display:block">${o.kindChip && KIND[kind]?.[1] ? `<span class="kind ${KIND[kind][0]}">${KIND[kind][1]}</span>` : ''}${esc(short(it.title, 120))}</span><span class="row-sub" style="display:block">${esc(o.why || itemSub(it))}</span></span>
+    ${S.busy[it.id] ? '<span class="sub">…</span>' : chip}<span class="row-meta">${esc(relTime(it))}</span></button>`;
 }
 
 /* ---------- Routing ---------- */
 function routeFromHash() {
   const h = location.hash.slice(1);
   if (!h || h === 'dagstart') return { view: 'dagstart' };
-  if (['agenda', 'chat', 'toezeggingen', 'wegschrijven'].includes(h)) return { view: h };
+  if (['agenda', 'chat', 'toezeggingen', 'planning', 'wegschrijven'].includes(h)) return { view: h };
   if (h.startsWith('o-')) return { view: 'entity', id: h.slice(2) };
   const b = BUILTIN_VIEWS.find(v => v.id === h); if (b) return { view: 'list', q: b.q, title: b.name, key: b.id };
   const s = S.saved.find(v => v.id === h); if (s) return { view: 'list', q: s.q, title: s.name, key: s.id, saved: true };
@@ -1127,21 +1476,227 @@ function routeFromHash() {
 }
 const hashFor = r => r.view === 'entity' ? 'o-' + r.id : r.view === 'list' ? (r.key || '') : r.view;
 function go(r) {
-  S.route = r;
+  S.route = r; S.fIdx = 0; S.fId = null;
   const h = hashFor(r);
   if (h && location.hash.slice(1) !== h) { S.skipHash = h; try { location.hash = h; } catch {} }
   document.getElementById('app').classList.remove('nav-open');
   render();
   document.getElementById('main').scrollTop = 0;
 }
-window.addEventListener('hashchange', () => { if (location.hash.slice(1) === S.skipHash) { S.skipHash = null; return; } S.route = routeFromHash(); render(); });
+window.addEventListener('hashchange', () => { if (location.hash.slice(1) === S.skipHash) { S.skipHash = null; return; } S.route = routeFromHash(); S.fIdx = 0; S.fId = null; render(); });
+
+/* ---------- Sidebar ---------- */
+function renderSidebar() {
+  const r = S.route;
+  const act = c => c ? ' active' : '';
+  const inb = inbox().length;
+  const oc = openCommits(); const late = oc.filter(c => c.status === 'te_laat').length;
+  const inv = allItems().filter(i => i.needsAction && pd(i.end || i.start) > S.clock).length;
+  const todayN = loadOf(bucketDate(1));
+  const orgCounts = {};
+  allItems().forEach(i => (i.entities || []).forEach(e => orgCounts[e] = (orgCounts[e] || 0) + 1));
+  const topOrgs = Object.entries(orgCounts).filter(([id]) => ENT()[id]).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const navBtn = (view, icon, label, count, key, hot) => `<button class="nav-item${act(r.view === view)}" data-go="${view}">${ic(icon)}${label}${count ? `<span class="count${hot ? ' hot' : ''}">${count}</span>` : ''}<span class="kbd nav-kbd">g ${key}</span></button>`;
+  document.getElementById('sidebar').innerHTML = `
+    <div class="brand"><span class="brand-mark">HZ</span><div><b>Home Zero</b><span>Workspace${MODE.live ? '' : ' · voorbeeld'}</span></div></div>
+    <button class="searchbtn" data-action="palette">${ic('search')}<span>Zoek overal</span><span class="kbd">⌘K</span></button>
+    <nav class="nav">
+      <div class="nav-group">
+        ${navBtn('dagstart', 'sun', 'Dagstart', inb, 'd', inb > 0)}
+        ${navBtn('planning', 'inbox', 'Planning', `${todayN}/${DAY_CAP}`, 'p', todayN > DAY_CAP)}
+        ${navBtn('agenda', 'meeting', 'Agenda', inv ? inv + ' open' : '', 'a')}
+        ${navBtn('toezeggingen', 'commit', 'Tracker', late ? late + ' te laat' : oc.length, 't', late > 0)}
+        ${navBtn('chat', 'chat', 'Chat', '', 'c')}
+      </div>
+      <div class="nav-group"><div class="nav-label">Bronnen</div>
+        ${BUILTIN_VIEWS.map(v => { const n = allItems().filter(i => i.type === (v.id === 'inbox' ? 'mail' : 'task')).length; return `<button class="nav-item${act(r.key === v.id)}" data-go="${v.id}">${ic(v.icon)}${v.name}${n ? `<span class="count">${n}</span>` : ''}</button>`; }).join('')}
+      </div>
+      <div class="nav-group"><div class="nav-label">Views</div>
+        ${S.saved.map(v => `<button class="nav-item${act(r.key === v.id)}" data-go="${v.id}" title="${esc(v.q)}">${ic('bookmark')}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name)}</span></button>`).join('')}
+      </div>
+      ${topOrgs.length ? `<div class="nav-group"><div class="nav-label">${MODE.live ? 'Organisaties' : 'Partners'}</div>
+        ${topOrgs.map(([id, n]) => `<button class="nav-item${act(r.view === 'entity' && r.id === id)}" data-go="o-${esc(id)}"><span class="dot" style="background:${hashColor(id)}"></span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ENT()[id].short)}</span><span class="count">${n}</span></button>`).join('')}</div>` : ''}
+      <div class="nav-group"><div class="nav-label">Concept</div>
+        <button class="nav-item${act(r.view === 'wegschrijven')}" data-go="wegschrijven">${ic('context')}Meeting wegschrijven<span class="count">demo</span></button>
+      </div>
+    </nav>
+    <button class="sources" data-action="help" style="width:100%;text-align:left"><span class="sd" style="background:${MODE.live ? 'var(--accent)' : 'var(--faint)'}"></span>${MODE.live ? 'Live' : MODE.checked ? 'Voorbeelddata' : 'Verbinden…'} · <span class="kbd">?</span> sneltoetsen</button>`;
+}
+const topbar = () => `<div class="topbar"><button class="iconbtn" data-action="nav" aria-label="Menu">${ic('menu')}</button><button class="searchbtn" data-action="palette">${ic('search')}<span>Zoeken</span><span class="kbd">⌘K</span></button></div>`;
+
+/* ---------- Dagstart (op basis van /morning-briefing) ---------- */
+function greeting() {
+  const h = S.clock.getHours();
+  const away = S.lastSeen && Date.now() - S.lastSeen > 10 * 36e5;
+  if (away || !S.lastSeen) return 'Welkom terug, Robert';
+  return (h < 12 ? 'Goedemorgen' : h < 18 ? 'Goedemiddag' : 'Goedenavond') + ', Robert';
+}
+function capBar(n) { const pct = Math.min(100, n / DAY_CAP * 100); return `<span class="capbar${n > DAY_CAP ? ' over' : ''}" title="${n} van ${DAY_CAP}"><span style="width:${pct}%"></span></span>`; }
+function viewDagstart() {
+  const box = inbox();
+  const T1 = bucketDate(1);
+  const todayList = plannedOn(T1).sort((a, b) => (a.type === 'task' ? 0 : 1) - (b.type === 'task' ? 0 : 1));
+  const fd = focusDay();
+  const waiting = openCommits().filter(c => c.stroom === 'aan_mij' && !c.backlog).sort((a, b) => String(a.reminder || '9').localeCompare(String(b.reminder || '9')));
+  const goals = allItems().filter(i => i.type === 'task' && i.weekgoal);
+  const ccm = allItems().filter(i => i.type === 'mail' && !i.direct && !i.read);
+  const bots = allItems().filter(i => i.type === 'slack' && i.bot && !i.read && !i.fromMe);
+  const nReply = box.filter(b => b.kind === 'reply' || b.kind === 'mega').length;
+  const parts = [];
+  if (box.length) parts.push(`${box.length} ${box.length === 1 ? 'ding vraagt' : 'dingen vragen'} om een besluit`);
+  if (nReply) parts.push(`${nReply} om op te reageren`);
+  parts.push(`${todayList.length}/${DAY_CAP} gepland voor ${dayDiff(pd(T1)) === 0 ? 'vandaag' : dayLabel(pd(T1)).toLowerCase()}`);
+  const nextM = fd.list.find(m => pd(m.end) > S.clock);
+  const sum = parts.join(', ') + '.' + (nextM ? ` Volgende afspraak: ${esc(nextM.title)}, ${dayLabel(pd(nextM.start)).toLowerCase()} om ${hm(pd(nextM.start))}.` : '');
+  const bespreken = org => openCommits().filter(c => c.stroom === 'bespreken' && c.entities.includes(org));
+  return `<div class="page">
+    ${modeBanner()}
+    <div class="page-head greet" style="margin-bottom:0"><div style="min-width:0"><div class="eyebrow">${cap(longDay(S.clock))} · ${hm(S.clock)}</div><h1>${greeting()}</h1><div class="sub">${MODE.checked ? sum : 'Je bronnen worden geladen…'}</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="brief">${ic('spark')}Vat samen</button><button class="btn" data-action="help"><span class="kbd">?</span>Sneltoetsen</button></div></div>
+    ${statusRow()}
+    ${S.aiBrief ? `<div class="ai-card"><div class="eyebrow">${ic('spark')}Claude${S.aiBrief.state === 'loading' ? ' denkt mee…' : ''}</div><div id="ai-brief-text">${esc(S.aiBrief.text)}</div></div>` : ''}
+    <div class="triage-grid">
+      <section class="card">
+        <div class="card-head"><div><h2>Te plannen<span class="count-badge">${box.length}</span></h2><div class="sub" style="font-size:12px">Loop erdoorheen met <span class="kbd">j</span><span class="kbd">k</span> en plan met <span class="kbd">1</span>–<span class="kbd">5</span></div></div>
+          <div class="keylegend">${[1, 2, 3, 4, 5].map(n => `<span><span class="kbd">${n}</span>${BUCKETS[n]}${n < 5 ? ` <b>${loadOf(bucketDate(n))}</b>` : ''}</span>`).join('')}</div></div>
+        <div class="card-body" style="padding:6px">${sectionNote(['slackDm', 'slackMention', 'gmail', 'tasks'])}
+          ${box.length ? `<div class="list">${box.map(b => rowHTML(b.it, { kind: b.kind, why: b.why, kindChip: true })).join('')}</div>` : MODE.checked ? '<div class="empty">Inbox leeg. Alles heeft een plek.</div>' : ''}</div>
+      </section>
+      <div class="stack">
+        <section class="card"><div class="card-head"><h2>${dayDiff(pd(T1)) === 0 ? 'Vandaag' : cap(dayLabel(pd(T1)))} ${capBar(todayList.length)} <span class="count-badge">${todayList.length}/${DAY_CAP}</span></h2><button class="btn sm" data-go="planning">Planning <span class="kbd">g p</span></button></div>
+          <div class="card-body" style="padding:6px">${todayList.length ? `<div class="list">${todayList.map(it => rowHTML(it)).join('')}</div>` : '<div class="empty">Nog niets gepland. Druk <span class="kbd">1</span> bij een item.</div>'}</div></section>
+        <section class="card"><div class="card-head"><h2>Agenda ${fd.k === 0 ? 'vandaag' : esc(dayLabel(pd(fd.day)).toLowerCase())}<span class="count-badge">${fd.list.length}</span></h2><button class="btn sm" data-go="agenda">Week</button></div>
+          <div class="card-body" style="padding:6px">${sectionNote(Object.keys(ST).filter(k => k.startsWith('cal:')).slice(0, 1))}
+            ${fd.list.map(m => {
+              const oc = openCommits().filter(c => ['mijn', 'aan_mij'].includes(c.stroom) && c.entities.some(e => m.entities.includes(e))).length;
+              const bs = m.entities.flatMap(bespreken).length;
+              const flags = [m.external ? (m.prepTask ? '✅ prep' : m.skipPrep ? 'geen prep' : '⚠️ geen prep') : '', oc ? `${oc} open` : '', bs ? `${bs} bespreken` : '', isPast(m) && m.external ? (m.recapDone ? 'recap ✓' : m.recapSession ? 'recap loopt' : 'nog geen recap') : ''].filter(Boolean).join(' · ');
+              return `<button class="ma-row${isPast(m) ? ' past' : ''}${m.needsAction ? ' inv' : ''}" data-open="${esc(m.id)}" data-k="${esc(m.id)}" data-kind="${kindOf(m)}" style="width:100%;text-align:left"><span class="t">${hm(pd(m.start))}</span><span style="min-width:0"><span class="row-title" style="display:block">${esc(m.title)}</span><span class="row-sub" style="display:block">${m.external ? esc(m.entities.map(entityName).join(', ')) + ' · ' : ''}${m.needsAction ? 'nog niet geaccepteerd' : esc(flags || hm(pd(m.end)))}</span></span></button>`;
+            }).join('') || (MODE.checked ? '<div class="empty">Geen afspraken de komende dagen.</div>' : '')}</div></section>
+        ${waiting.length ? `<section class="card"><div class="card-head"><h2>Wachten op<span class="count-badge">${waiting.length}</span></h2><button class="btn sm" data-action="ctab" data-tab="aan_mij">Tracker</button></div><div class="card-body" style="padding:6px"><div class="list">${waiting.slice(0, 6).map(c => rowHTML(c, { why: `${c.aan || ''}${c.raw.org ? ' (' + c.raw.org + ')' : ''} · sinds ${c.raw.created ? fmtDate(c.raw.created) : '–'}${c.reminder ? ' · reminder ' + fmtDate(c.reminder) : ''}` })).join('')}</div></div></section>` : ''}
+        ${goals.length ? `<section class="card"><div class="card-head"><h2>Weekdoelen</h2></div><div class="card-body" style="padding:6px"><div class="list">${goals.map(g => rowHTML(g)).join('')}</div></div></section>` : ''}
+        ${ccm.length || bots.length ? `<section class="card"><div class="card-head"><h2>Ter info<span class="count-badge">${ccm.length + bots.length}</span></h2></div><div class="card-body" style="padding:6px"><div class="list">${[...ccm, ...bots].slice(0, 6).map(it => rowHTML(it)).join('')}</div></div></section>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- Planning ---------- */
+function viewPlanning() {
+  const all = allItems().filter(it => !isDone(it) && ((it.type === 'task') || (it.type === 'commit' && !it.linkedTask && ['mijn', 'voornemen'].includes(it.stroom))));
+  const col = n => all.filter(it => { const b = it.type === 'task' ? bucketOf(it.due, it.backlog) : bucketOf(it.plan, it.backlog); return n === 'late' ? b === -1 : n === 'none' ? b === 0 : n === 6 ? b === 6 : b === n; });
+  const cols = [['late', 'Te laat'], [1, BUCKETS[1]], [2, BUCKETS[2]], [3, BUCKETS[3]], [4, BUCKETS[4]], [6, 'Later'], ['none', 'Zonder datum'], [5, BUCKETS[5]]];
+  const dayChips = n => {
+    const wkB = weekStart(n === 3 ? 0 : 1, baseDay());
+    return [0, 1, 2, 3, 4].map(i => addDays(wkB, i)).filter(d => n === 4 || d > nextWork(baseDay())).map(d => `<span class="daychip${loadOf(ymd(d)) >= DAY_CAP ? ' full' : ''}">${DAYS[d.getDay()].slice(0, 2)} ${loadOf(ymd(d))}</span>`).join('');
+  };
+  return `<div class="page">${modeBanner()}
+    <div class="page-head"><div><div class="eyebrow">Google Tasks en tracker samen · max ${DAY_CAP} per dag</div><h1>Planning</h1></div>
+      <div class="keylegend">${[1, 2, 3, 4, 5].map(n => `<span><span class="kbd">${n}</span>${BUCKETS[n]}</span>`).join('')}<span><span class="kbd">x</span>klaar</span></div></div>
+    ${sectionNote(['tasks'])}
+    <div class="plan-cols">${cols.map(([n, label]) => {
+      const items = col(n); if ((n === 'late' || n === 6 || n === 'none') && !items.length) return '';
+      const date = typeof n === 'number' && n <= 2 ? bucketDate(n) : null;
+      return `<section class="card plan-col${n === 'late' ? ' late' : ''}"><div class="card-head"><h2>${label}<span class="count-badge">${items.length}${date ? '/' + DAY_CAP : ''}</span></h2>${date ? capBar(items.length) : n === 3 || n === 4 ? `<span class="daychips">${dayChips(n)}</span>` : ''}</div>
+        <div class="card-body" style="padding:6px">${items.length ? `<div class="list">${items.sort((a, b) => String(a.due || a.plan || '').localeCompare(String(b.due || b.plan || ''))).map(it => rowHTML(it)).join('')}</div>` : '<div class="empty" style="padding:12px">Leeg</div>'}</div></section>`;
+    }).join('')}</div></div>`;
+}
+
+/* ---------- Tracker ---------- */
+function viewToezeggingen() {
+  const cs = commitItems().map(c => allItems().find(i => i.id === c.id) || c);
+  const tasksFree = allItems().filter(i => i.type === 'task' && !i.commitId);
+  const tabs = [['alles', 'Alles'], ['mijn', 'Ik beloofde'], ['aan_mij', 'Wachten op'], ['bespreken', 'Bespreken bij contact'], ['voornemen', 'Voornemens'], ['taken', 'Google Tasks'], ['afgerond', 'Afgerond']];
+  const sel = S.commitTab;
+  const list = sel === 'taken' ? tasksFree : sel === 'afgerond' ? cs.filter(isDone) : sel === 'alles' ? [...cs.filter(c => !isDone(c)), ...tasksFree] : cs.filter(c => c.stroom === sel && !isDone(c));
+  const order = { te_laat: 0, waarschijnlijk_klaar: 1, open: 2, klaar: 3, overgedragen: 4 };
+  list.sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2) || String(a.plan || a.due || a.reminder || '9999').localeCompare(String(b.plan || b.due || b.reminder || '9999')));
+  const count = k => k === 'taken' ? tasksFree.length : k === 'afgerond' ? cs.filter(isDone).length : k === 'alles' ? cs.filter(c => !isDone(c)).length + tasksFree.length : cs.filter(c => c.stroom === k && !isDone(c)).length;
+  const ruleText = r => !r || r.type === 'geen' ? '<span class="rule none">geen bewijsregel · dit vink je zelf af</span>' : `<span class="rule">bewijs: ${esc(r.type)}${r.to ? ' → ' + esc(r.to) : ''}${r.keywords?.length ? ' · ' + esc(r.keywords.join(', ')) : ''}</span>`;
+  const row = it => it.type === 'task' ? `<div class="commit-row" data-k="${esc(it.id)}" data-kind="task" data-open="${esc(it.id)}"><div style="min-width:0"><div class="wat">${esc(it.title)}</div><div class="meta"><span class="st st-open">Google Tasks</span><span>${esc(itemSub(it))}</span></div></div><div class="commit-acts"><span class="sub" style="font-size:12px">${esc(relTime(it))}</span></div></div>` : `<div class="commit-row" data-k="${esc(it.id)}" data-kind="${kindOf(it)}" data-open="${esc(it.id)}">
+      <div style="min-width:0"><div class="wat">${esc(it.title)}</div>
+        <div class="meta"><span class="st st-${it.status}">${STATUS[it.status]}</span>${sel === 'alles' ? `<span>${STROOM[it.stroom]}</span>` : ''}${it.aan ? `<span>${it.stroom === 'aan_mij' ? 'van' : it.stroom === 'bespreken' ? 'met' : 'aan'} ${esc(it.aan)}</span>` : ''}${it.entities.map(entityChip).join('') || (it.raw.org ? `<span>${esc(it.raw.org)}</span>` : '')}
+          ${it.stroom === 'aan_mij' ? `<span>sinds ${it.raw.created ? fmtDate(it.raw.created) : '–'}${it.reminder ? ` · reminder <b style="${it.reminder <= today() ? 'color:var(--danger)' : ''}">${fmtDate(it.reminder)}</b>` : ''}</span>` : it.stroom === 'bespreken' ? '' : `<span>${it.backlog ? 'backlog' : it.plan ? 'gepland ' + fmtDate(it.plan) : 'nog niet gepland'}${it.deadline ? ` · deadline <b style="${it.status === 'te_laat' ? 'color:var(--danger)' : ''}">${fmtDate(it.deadline)}</b>` : ''}${it.linkedTask ? ' · in Google Tasks' : ''}</span>`}
+          ${it.raw.bron?.url ? extLink(it.raw.bron.url, esc(it.raw.bron.label || 'bron'), 'ext-link') : `<span>${esc(it.raw.bron?.label || '')}</span>`}</div>
+        ${['mijn', 'voornemen'].includes(it.stroom) ? `<div class="meta">${it.raw.bewijs ? `<span class="rule" style="color:var(--c-commit)">✓ ${esc(it.raw.bewijs)}</span>` : ruleText(it.raw.bewijsregel)}</div>` : ''}
+        ${it.raw.citaat ? `<div class="meta"><i>“${esc(short(it.raw.citaat, 160))}”</i></div>` : ''}</div>
+      <div class="commit-acts">${isDone(it) ? `<button class="btn sm" data-action="c-reopen" data-id="${esc(it.docId)}">${ic('undo')}Heropen</button>` : `
+        <button class="btn sm${it.status === 'waarschijnlijk_klaar' ? ' primary' : ''}" data-action="c-done" data-id="${esc(it.docId)}">${ic('check')}${it.stroom === 'aan_mij' ? 'Binnen' : 'Klaar'} <span class="kbd">x</span></button>
+        ${it.status === 'waarschijnlijk_klaar' ? `<button class="btn sm" data-action="c-reopen" data-id="${esc(it.docId)}">Bezwaar</button>` : ''}
+        ${['mijn', 'voornemen'].includes(it.stroom) ? `<button class="btn sm" data-action="c-hand" data-id="${esc(it.docId)}" title="Wordt een Jira-story: de tracker laat hem los">Naar Jira</button>` : ''}`}
+        <button class="iconbtn" data-action="c-del" data-id="${esc(it.docId)}" aria-label="Verwijder">${ic('trash')}</button></div></div>`;
+  return `<div class="page">${modeBanner()}
+    <div class="page-head"><div><div class="eyebrow">Commitment tracker · alles op één plek</div><h1>Tracker</h1><div class="sub" style="margin-top:4px;max-width:70ch">Wat jij toezegt, waar je op wacht, wat je bij het volgende contact bespreekt, en je Google Tasks. Wat je plant, staat ook in Google Tasks. Wachten op wordt nooit een taak.</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="extract-scan">${ic('spark')}Haal op uit Slack en mail</button><button class="btn" data-action="sweep" ${S.busy.sweep ? 'disabled' : ''}>${ic('check')}${S.busy.sweep ? 'Bewijs zoeken…' : 'Zoek bewijs'}</button><button class="btn" data-action="import-canvas" ${S.busy.canvas ? 'disabled' : ''}>${ic('refresh')}${S.busy.canvas ? 'Canvas lezen…' : 'Neem canvas Wachten op over'}</button></div></div>
+    ${statusRow()}${sectionNote(['commits'])}
+    <form class="addform" id="addcommit"><input id="ac-wat" placeholder="Nieuw, bijv. ‘DNS-instructies naar Liselot sturen’   (n om hier te typen)" autocomplete="off" required>
+      <select id="ac-stroom" aria-label="Stroom"><option value="mijn">Ik beloofde</option><option value="aan_mij">Wachten op</option><option value="bespreken">Bespreken</option><option value="voornemen">Voornemen</option></select>
+      <input id="ac-org" placeholder="Partner" aria-label="Partner" style="max-width:120px;border:1px solid var(--line);border-radius:7px;padding:4px 6px;background:var(--bg);font-size:12.5px">
+      <button class="btn sm primary" type="submit">${ic('plus')}Toevoegen</button></form>
+    <div class="tabs" role="tablist">${tabs.map(([k, l], i) => `<button class="tab${sel === k ? ' on' : ''}" role="tab" data-ctab="${k}">${l}<span class="count-badge">${count(k)}</span><span class="kbd tab-kbd">${i + 1}</span></button>`).join('')}</div>
+    <div class="card">${list.length ? list.map(row).join('') : `<div class="empty">${sel === 'afgerond' ? 'Nog niets afgerond.' : 'Niets in deze lijst.'}</div>`}</div>
+    <p class="hint" style="margin-top:12px">Tabs wisselen met <span class="kbd">⇧</span>+<span class="kbd">1</span>–<span class="kbd">7</span>. Een toezegging telt als er een eigenaar is, iets controleerbaars te leveren, en iemand het merkt als het niet gebeurt. Wordt het een Jira-story, dan laat de tracker hem los.</p></div>`;
+}
+
+/* ---------- Toetsenbord: sneltoetsen per soort item ---------- */
+const HINTS = {
+  reply: [['1–5', 'plannen'], ['e', 'gelezen'], ['⇧E', 'gelezen + ✅ in Slack'], ['w', 'wachten op'], ['b', 'bespreken'], ['c', 'toezegging'], ['o', 'openen']],
+  mega: [['1–5', 'plannen'], ['e', 'afgehandeld'], ['⇧E', '+ ✅ in Slack'], ['c', 'toezegging'], ['o', 'openen']],
+  task: [['1–5', 'plannen'], ['x', 'klaar'], ['o', 'Google Tasks']],
+  commit: [['1–5', 'plannen'], ['x', 'klaar'], ['b', 'bespreken'], ['o', 'bron']],
+  waiting: [['x', 'binnen'], ['1–4', 'reminder'], ['5', 'parkeren'], ['o', 'thread']],
+  bespreken: [['x', 'besproken'], ['o', 'bron']],
+  invite: [['y', 'ja'], ['m', 'misschien'], ['n', 'nee'], ['o', 'Google Agenda']],
+  prep: [['1–4', 'prep plannen'], ['5', 'geen prep'], ['r', 'recap met Claude'], ['o', 'Google Agenda']],
+  meeting: [['1–4', 'prep plannen'], ['r', 'recap met Claude'], ['o', 'Google Agenda']],
+  process: [['r', 'recap met Claude'], ['t', 'toezeggingen eruit'], ['1–4', 'recap plannen'], ['e', 'verwerkt'], ['o', 'Wispr']],
+  other: [['↵', 'openen']],
+};
+function hintBar() {
+  const el = document.getElementById('hintbar'); if (!el) return;
+  const row = document.querySelector('#main .kf');
+  const kind = row?.dataset.kind || 'other';
+  const it = row && byId(row.dataset.k);
+  el.innerHTML = `${it ? `<span class="hb-title">${esc(short(it.title, 46))}</span>` : ''}${[['j k', 'bewegen'], ['↵', 'details'], ...(HINTS[kind] || HINTS.other)].map(([k, l]) => `<span><span class="kbd">${k}</span>${l}</span>`).join('')}<span><span class="kbd">?</span>alles</span>`;
+}
+function applyFocus(scroll) {
+  const rows = [...document.querySelectorAll('#main [data-k]')];
+  rows.forEach(r => r.classList.remove('kf'));
+  if (!rows.length) { hintBar(); return; }
+  let idx = S.fId ? rows.findIndex(r => r.dataset.k === S.fId) : -1;
+  if (idx < 0 || (rows[S.fIdx]?.dataset.k === S.fId)) idx = Math.min(Math.max(0, S.fIdx), rows.length - 1);
+  S.fIdx = idx; S.fId = rows[idx].dataset.k;
+  rows[idx].classList.add('kf');
+  if (scroll) rows[idx].scrollIntoView({ block: 'nearest' });
+  hintBar();
+}
+function moveFocus(d) {
+  const rows = [...document.querySelectorAll('#main [data-k]')]; if (!rows.length) return;
+  S.fIdx = Math.min(Math.max(0, S.fIdx + d), rows.length - 1); S.fId = rows[S.fIdx].dataset.k;
+  applyFocus(true);
+}
+function focusedItem() { const r = document.querySelector('#main .kf'); return r ? byId(r.dataset.k) : null; }
+function renderHelp() {
+  const ov = document.getElementById('overlay');
+  if (!S.help) { if (!S.palette && !S.sheet) ov.innerHTML = ''; return; }
+  const grp = (t, rows) => `<div><h3 style="margin:0 0 6px;font-size:13px">${t}</h3>${rows.map(([k, l]) => `<div class="hk"><span class="kbd">${k}</span><span>${l}</span></div>`).join('')}</div>`;
+  ov.innerHTML = `<div class="scrim" data-action="close-help"><div class="palette sheet" role="dialog" aria-label="Sneltoetsen" style="max-width:820px">
+    <div class="pal-input" style="justify-content:space-between"><b>Sneltoetsen</b><button class="iconbtn" data-action="close-help-btn" aria-label="Sluiten">${ic('x')}</button></div>
+    <div class="pal-results help-grid">
+      ${grp('Overal', [['⌘K /', 'zoeken en commando’s'], ['?', 'dit overzicht'], ['g d', 'Dagstart'], ['g p', 'Planning'], ['g a', 'Agenda'], ['g t', 'Tracker'], ['g c', 'Chat'], ['g m', 'Mail'], ['g k', 'Google Tasks'], ['Esc', 'sluiten']])}
+      ${grp('Bewegen', [['j ↓', 'volgende'], ['k ↑', 'vorige'], ['↵', 'details rechts'], ['o', 'openen in Slack, Gmail, Tasks, Agenda'], ['[ ]', 'vorige / volgende week (Agenda)'], ['n', 'nieuw item (Tracker)'], ['⇧1–7', 'tab (Tracker)']])}
+      ${grp('Plannen', [['1', 'vandaag'], ['2', 'morgen'], ['3', 'later deze week'], ['4', 'volgende week'], ['5', 'backlog'], ['x', 'klaar / binnen']])}
+      ${grp('Verwerken', [['e', 'gelezen (mail ook in Gmail)'], ['⇧E', 'gelezen + ✅ in Slack'], ['w', 'wachten op'], ['b', 'bespreken bij contact'], ['c', 'toezegging maken'], ['r', 'recap met Claude (/klant-recap)'], ['t', 'toezeggingen eruit (Claude)'], ['y m n', 'uitnodiging: ja, misschien, nee']])}
+    </div>
+    <div class="pal-foot"><span>Max ${DAY_CAP} items per dag. Plannen schrijft de datum in Google Tasks; wachten op en bespreken blijven in de tracker.</span></div></div></div>`;
+}
 
 /* ---------- Status van bronnen ---------- */
 const SOURCES = [
   { label: 'Agenda', keys: () => Object.keys(ST).filter(k => k.startsWith('cal:')) },
   { label: 'Gmail', keys: () => ['gmail'] },
   { label: 'Slack', keys: () => ['slackDm', 'slackMention', 'slackMine'] },
-  { label: 'Taken', keys: () => ['tasksToday', 'tasksOverdue'] },
+  { label: 'Taken', keys: () => ['tasks'] },
   { label: 'Wispr', keys: () => ['wispr'] },
   { label: 'Toezeggingen', keys: () => ['commits'] },
 ];
@@ -1187,122 +1742,6 @@ function modeBanner() {
   return `<div class="mode-banner">${ic('spark')}<span><b>Voorbeelddata.</b> ${MODE.demoWhy === 'local' ? 'Open deze pagina in claude.ai om je echte agenda, mail, Slack, taken en Wispr-meetings te laden.' : 'Deze weergave kan je connectoren niet gebruiken. Open de pagina zelf in claude.ai.'}</span></div>`;
 }
 
-/* ---------- Sidebar ---------- */
-function renderSidebar() {
-  const r = S.route;
-  const act = c => c ? ' active' : '';
-  const reply = slackToAnswer().length + allItems().filter(i => i.type === 'mail' && i.direct).length;
-  const oc = openCommits(); const late = oc.filter(c => c.status === 'te_laat').length;
-  const inv = allItems().filter(i => i.needsAction && pd(i.end || i.start) > S.clock).length;
-  const orgCounts = {};
-  allItems().forEach(i => (i.entities || []).forEach(e => orgCounts[e] = (orgCounts[e] || 0) + 1));
-  const topOrgs = Object.entries(orgCounts).filter(([id]) => ENT()[id]).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  document.getElementById('sidebar').innerHTML = `
-    <div class="brand"><span class="brand-mark">HZ</span><div><b>Home Zero</b><span>Workspace${MODE.live ? '' : ' · voorbeeld'}</span></div></div>
-    <button class="searchbtn" data-action="palette">${ic('search')}<span>Zoek overal</span><span class="kbd">⌘K</span></button>
-    <nav class="nav">
-      <div class="nav-group">
-        <button class="nav-item${act(r.view === 'dagstart')}" data-go="dagstart">${ic('sun')}Dagstart${reply ? `<span class="count hot">${reply}</span>` : ''}</button>
-        <button class="nav-item${act(r.view === 'agenda')}" data-go="agenda">${ic('meeting')}Agenda${inv ? `<span class="count">${inv} open</span>` : ''}</button>
-        <button class="nav-item${act(r.view === 'toezeggingen')}" data-go="toezeggingen">${ic('commit')}Toezeggingen${oc.length ? `<span class="count${late ? ' hot' : ''}">${late ? late + ' te laat' : oc.length}</span>` : ''}</button>
-        <button class="nav-item${act(r.view === 'chat')}" data-go="chat">${ic('chat')}Chat</button>
-      </div>
-      <div class="nav-group"><div class="nav-label">Bronnen</div>
-        ${BUILTIN_VIEWS.map(v => { const n = allItems().filter(i => i.type === (v.id === 'inbox' ? 'mail' : 'task')).length; return `<button class="nav-item${act(r.key === v.id)}" data-go="${v.id}">${ic(v.icon)}${v.name}${n ? `<span class="count">${n}</span>` : ''}</button>`; }).join('')}
-      </div>
-      <div class="nav-group"><div class="nav-label">Views</div>
-        ${S.saved.map(v => `<button class="nav-item${act(r.key === v.id)}" data-go="${v.id}" title="${esc(v.q)}">${ic('bookmark')}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name)}</span></button>`).join('')}
-      </div>
-      ${topOrgs.length ? `<div class="nav-group"><div class="nav-label">${MODE.live ? 'Organisaties deze weken' : 'Partners'}</div>
-        ${topOrgs.map(([id, n]) => `<button class="nav-item${act(r.view === 'entity' && r.id === id)}" data-go="o-${esc(id)}"><span class="dot" style="background:${hashColor(id)}"></span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ENT()[id].short)}</span><span class="count">${n}</span></button>`).join('')}</div>` : ''}
-      <div class="nav-group"><div class="nav-label">Concept</div>
-        <button class="nav-item${act(r.view === 'wegschrijven')}" data-go="wegschrijven">${ic('context')}Meeting wegschrijven<span class="count">demo</span></button>
-      </div>
-    </nav>
-    <div class="sources"><span class="sd" style="background:${MODE.live ? 'var(--accent)' : 'var(--faint)'}"></span>${MODE.live ? 'Live · Agenda · Gmail · Slack · Tasks · Wispr' : MODE.checked ? 'Voorbeelddata' : 'Verbinden…'}</div>`;
-}
-const topbar = () => `<div class="topbar"><button class="iconbtn" data-action="nav" aria-label="Menu">${ic('menu')}</button><button class="searchbtn" data-action="palette">${ic('search')}<span>Zoeken</span><span class="kbd">⌘K</span></button></div>`;
-
-/* ---------- Dagstart ---------- */
-function greeting() {
-  const h = S.clock.getHours();
-  const away = S.lastSeen && Date.now() - S.lastSeen > 10 * 36e5;
-  if (away || !S.lastSeen) return 'Welkom terug, Robert';
-  return (h < 12 ? 'Goedemorgen' : h < 18 ? 'Goedemiddag' : 'Goedenavond') + ', Robert';
-}
-function focusActions(a) {
-  const it = a.it;
-  const open = `<button class="btn sm" data-open="${esc(it.id)}">Bekijk</button>`;
-  if (a.kind === 'invite') return S.busy[it.id] ? '<span class="sub">Bezig…</span>' : `<button class="btn sm primary" data-action="rsvp" data-id="${esc(it.id)}" data-s="accepted">Accepteer</button><button class="btn sm" data-action="rsvp" data-id="${esc(it.id)}" data-s="tentative">Misschien</button><button class="btn sm" data-action="rsvp" data-id="${esc(it.id)}" data-s="declined">Afwijzen</button>`;
-  if (a.kind === 'reply') return `${extLink(it.url, `${ic('out')}${it.type === 'mail' ? 'Open in Gmail' : 'Open in Slack'}`)}${open}`;
-  if (a.kind === 'late' || a.kind === 'commit') return `<button class="btn sm" data-action="c-done" data-id="${esc(it.docId)}">${ic('check')}Klaar</button>${open}`;
-  if (a.kind === 'task') return S.busy[it.id] ? '<span class="sub">Bezig…</span>' : `<button class="btn sm" data-action="t-done" data-id="${esc(it.id)}">${ic('check')}Afvinken</button>`;
-  if (a.kind === 'prep') return `<button class="btn sm primary" data-open="${esc(it.id)}">Briefing</button>`;
-  return open;
-}
-function viewDagstart() {
-  const att = attention();
-  const top = att.slice(0, 5);
-  const reply = slackToAnswer();
-  const mails = allItems().filter(i => i.type === 'mail');
-  const direct = mails.filter(m => m.direct), ccm = mails.filter(m => !m.direct);
-  const fd = focusDay();
-  const invites = allItems().filter(i => i.type === 'meeting' && i.needsAction && pd(i.end || i.start) > S.clock).sort((a, b) => when(a) - when(b));
-  const wisprTodo = MODE.live ? LV.wispr.filter(m => !LV.processed.has(m.id) && new Date(m.end || m.start) < S.clock) : [];
-  const bots = allItems().filter(i => i.type === 'slack' && i.bot && !i.fromMe);
-  const oc = openCommits();
-  const tasks = allItems().filter(i => i.type === 'task');
-  const parts = [];
-  if (reply.length) parts.push(`${reply.length} Slack-${reply.length === 1 ? 'bericht wacht' : 'berichten wachten'} op je`);
-  if (direct.length) parts.push(`${direct.length} ${direct.length === 1 ? 'mail' : 'mails'} aan jou`);
-  if (invites.length) parts.push(`${invites.length} open ${invites.length === 1 ? 'uitnodiging' : 'uitnodigingen'}`);
-  const late = oc.filter(c => c.status === 'te_laat').length;
-  if (late) parts.push(`${late} ${late === 1 ? 'toezegging' : 'toezeggingen'} te laat`);
-  const nextM = fd.list.find(m => pd(m.end) > S.clock);
-  const sum = (parts.length ? parts.join(', ') + '.' : 'Niets dat op je wacht.') + (nextM ? ` Volgende afspraak: ${esc(nextM.title)}, ${dayLabel(pd(nextM.start)).toLowerCase()} om ${hm(pd(nextM.start))}.` : '');
-  const fdLabel = fd.k === 0 ? 'vandaag' : dayLabel(pd(fd.day)).toLowerCase();
-  return `<div class="page">
-    ${modeBanner()}
-    <div class="page-head greet" style="margin-bottom:0"><div style="min-width:0"><div class="eyebrow">${cap(longDay(S.clock))} · ${hm(S.clock)}</div><h1>${greeting()}</h1><div class="sub">${MODE.checked ? sum : 'Je bronnen worden geladen…'}</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="brief">${ic('spark')}Vat samen</button><button class="btn" data-action="palette">${ic('search')}Zoek<span class="kbd">⌘K</span></button></div></div>
-    ${statusRow()}
-    ${S.aiBrief ? `<div class="ai-card"><div class="eyebrow">${ic('spark')}Claude${S.aiBrief.state === 'loading' ? ' denkt mee…' : ''}</div><div id="ai-brief-text">${esc(S.aiBrief.text)}</div></div>` : ''}
-    <div class="section-title"><h2>Hier gaat je aandacht nu naartoe</h2><span class="sub">gerangschikt op urgentie</span></div>
-    ${top.length ? `<ol class="focus-list">${top.map((a, i) => `<li class="focus${a.score >= 80 ? ' hot' : ''}"><span class="num">${i + 1}</span>
-      <div style="min-width:0"><div class="focus-title"><span class="kind ${KIND[a.kind][0]}">${KIND[a.kind][1]}</span>${esc(short(a.it.title, 140))}</div><div class="focus-why">${esc(a.why)}</div></div>
-      <div class="focus-acts">${focusActions(a)}</div></li>`).join('')}</ol>` : `<div class="note">${MODE.checked ? 'Niets dringends. Een goed moment voor diep werk.' : 'Laden…'}</div>`}
-    <div class="cols3">
-      <div class="card"><div class="card-head"><h2>Reageren<span class="count-badge">${reply.length + direct.length}</span></h2><button class="btn sm" data-go="v-reageren">Alles</button></div>
-        <div class="card-body" style="padding:6px">${sectionNote(['slackDm', 'slackMention', 'gmail'])}
-          ${reply.length || direct.length ? `<div class="list">${reply.slice(0, 7).map(rowHTML).join('')}${direct.slice(0, 5).map(rowHTML).join('')}</div>` : MODE.checked ? '<div class="empty">Niemand wacht op je.</div>' : ''}</div></div>
-      <div class="card"><div class="card-head"><h2>Verwerken<span class="count-badge">${wisprTodo.length + ccm.length + bots.length}</span></h2></div>
-        <div class="card-body" style="padding:6px">${sectionNote(['wispr'])}
-          ${wisprTodo.length ? `<div class="group-label">${ic('mic')} Meetings · toezeggingen eruit halen</div>${wisprTodo.slice(0, 4).map(m => `<div class="row" style="cursor:default"><span class="ic meeting">${ic('mic')}</span><span class="row-main"><span class="row-title" style="display:block">${esc(m.title)}</span><span class="row-sub" style="display:block">${dayLabel(new Date(m.start))} ${hm(new Date(m.start))}${m.has_transcript ? ' · transcript' : ''}</span>
-            <span class="inv-acts"><button class="btn sm" data-action="extract-m" data-id="${esc(m.id)}">${ic('spark')}Haal toezeggingen eruit</button><button class="btn sm" data-action="skip-m" data-id="${esc(m.id)}">Niets te doen</button>${extLink(m.share_link, ic('out') + 'Notities')}</span></span></div>`).join('')}` : ''}
-          ${ccm.length ? `<div class="group-label">${ic('mail')} Ter info · cc</div><div class="list">${ccm.slice(0, 5).map(rowHTML).join('')}</div>` : ''}
-          ${bots.length ? `<div class="group-label">${ic('slack')} Meldingen</div><div class="list">${bots.slice(0, 4).map(rowHTML).join('')}</div>` : ''}
-          ${!wisprTodo.length && !ccm.length && !bots.length && MODE.checked ? '<div class="empty">Alles verwerkt.</div>' : ''}</div></div>
-      <div class="card"><div class="card-head"><h2>Agenda ${esc(fdLabel)}<span class="count-badge">${fd.list.length}</span></h2><button class="btn sm" data-go="agenda">Week</button></div>
-        <div class="card-body" style="padding:6px">${sectionNote(Object.keys(ST).filter(k => k.startsWith('cal:')).slice(0, 1))}
-          <div class="mini-agenda">${fd.list.map(m => {
-            const nOpen = oc.filter(c => c.entities.some(e => m.entities.includes(e))).length;
-            return `<div class="ma-row${isPast(m) ? ' past' : ''}${m.needsAction ? ' inv' : ''}${m.ooo ? ' ooo' : ''}" data-open="${esc(m.id)}"><span class="t">${hm(pd(m.start))}</span><span style="min-width:0"><span class="row-title" style="display:block">${esc(m.title)}</span><span class="row-sub" style="display:block">${m.external ? m.entities.map(entityName).join(', ') + ' · ' : ''}${m.needsAction ? 'nog niet geaccepteerd' : hm(pd(m.end))}${nOpen ? ` · <b style="color:var(--c-commit)">${nOpen} open</b>` : ''}</span></span></div>`;
-          }).join('') || (MODE.checked ? '<div class="empty">Geen afspraken de komende dagen.</div>' : '')}</div>
-          ${invites.length ? `<div class="group-label">Uitnodigingen<span>${invites.length}</span></div>${invites.slice(0, 4).map(m => `<div class="row" style="cursor:default"><span class="ic meeting">${ic('meeting')}</span><span class="row-main"><button class="row-title" data-open="${esc(m.id)}" style="display:block;text-align:left">${esc(m.title)}</button><span class="row-sub" style="display:block">${dayLabel(pd(m.start))} ${m.allDay ? '' : hm(pd(m.start))} · ${esc(m.organizerName || '')}</span>
-            <span class="inv-acts">${S.busy[m.id] ? '<span class="sub">Bezig…</span>' : `<button class="btn sm primary" data-action="rsvp" data-id="${esc(m.id)}" data-s="accepted">Ja</button><button class="btn sm" data-action="rsvp" data-id="${esc(m.id)}" data-s="tentative">Misschien</button><button class="btn sm" data-action="rsvp" data-id="${esc(m.id)}" data-s="declined">Nee</button>`}</span></span></div>`).join('')}` : ''}
-        </div></div>
-    </div>
-    <div class="grid2" style="margin-top:16px">
-      <div class="card"><div class="card-head"><h2>Toezeggingen<span class="count-badge">${oc.length} open</span></h2><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-action="extract-scan">${ic('spark')}Haal op uit Slack en mail</button><button class="btn sm" data-go="toezeggingen">Tracker</button></div></div>
-        <div class="card-body" style="padding:6px">${sectionNote(['commits'])}
-          ${oc.length ? `<div class="list">${oc.sort((a, b) => (a.status === 'te_laat' ? -1 : 0) - (b.status === 'te_laat' ? -1 : 0) || String(a.deadline || '9').localeCompare(String(b.deadline || '9'))).slice(0, 6).map(rowHTML).join('')}</div>` : MODE.checked ? '<div class="empty">Nog geen toezeggingen. Haal ze op uit Slack en mail, of uit een meeting hierboven.</div>' : ''}</div></div>
-      <div class="card"><div class="card-head"><h2>Taken<span class="count-badge">${tasks.length}</span></h2>${extLink('https://tasks.google.com/', ic('out') + 'Google Tasks')}</div>
-        <div class="card-body" style="padding:6px">${sectionNote(['tasksToday', 'tasksOverdue'])}
-          ${tasks.length ? `<div class="list">${tasks.map(t => `<div class="row" style="cursor:default"><span class="ic task">${ic('task')}</span><span class="row-main"><span class="row-title" style="display:block">${esc(t.title)}</span><span class="row-sub" style="display:block">${esc(itemSub(t))}</span></span>${S.busy[t.id] ? '<span class="sub">…</span>' : `<button class="btn sm" data-action="t-done" data-id="${esc(t.id)}">${ic('check')}</button>`}</div>`).join('')}</div>` : MODE.checked ? '<div class="empty">Geen taken voor vandaag.</div>' : ''}</div></div>
-    </div>
-  </div>`;
-}
-
 /* ---------- Agenda (week) ---------- */
 function viewAgenda() {
   const weekend = [0, 6].includes(S.clock.getDay());
@@ -1336,45 +1775,12 @@ function viewAgenda() {
             const lanes = overlap.length + 1;
             const nOpen = oc.filter(c => c.entities.some(x => m.entities.includes(x))).length;
             const cls = [m.needsAction ? 'inv' : '', m.ooo ? 'ooo' : '', m.focusTime ? 'focus-t' : '', m.external ? 'ext' : ''].join(' ');
-            return `<div class="wk-ev ${cls}" data-open="${esc(m.id)}" style="top:${top}px;height:${h}px;left:calc(${(lane / lanes) * 100}% + 3px);width:calc(${100 / lanes}% - 6px);right:auto" title="${esc(m.title)}"><b>${esc(m.title)}</b>${h > 34 ? `<span class="state">${hm(s)}${m.external ? ' · ' + esc(m.entities.map(entityName).join(', ')) : ''}${nOpen ? ` · <b style="display:inline;color:var(--c-commit)">${nOpen} open</b>` : ''}</span>` : nOpen ? `<span class="cb">${nOpen}</span>` : ''}</div>`;
+            return `<div class="wk-ev ${cls}" data-open="${esc(m.id)}" data-k="${esc(m.id)}" data-kind="${kindOf(m)}" style="top:${top}px;height:${h}px;left:calc(${(lane / lanes) * 100}% + 3px);width:calc(${100 / lanes}% - 6px);right:auto" title="${esc(m.title)}"><b>${esc(m.title)}</b>${h > 34 ? `<span class="state">${hm(s)}${m.external ? ' · ' + esc(m.entities.map(entityName).join(', ')) : ''}${nOpen ? ` · <b style="display:inline;color:var(--c-commit)">${nOpen} open</b>` : ''}</span>` : nOpen ? `<span class="cb">${nOpen}</span>` : ''}</div>`;
           }).join('')}
           ${ymd(dt) === today() && S.clock.getHours() >= H0 && S.clock.getHours() < H1 ? `<div class="now-line" style="left:0;right:0;top:${((S.clock.getHours() + S.clock.getMinutes() / 60) - H0) * PX}px"></div>` : ''}</div>`;
       }).join('')}
     </div></div>
     <p class="hint" style="margin-top:12px">Klik op een afspraak voor deelnemers, je reactie, open toezeggingen bij die organisatie en alles wat er recent over binnenkwam.</p></div>`;
-}
-
-/* ---------- Toezeggingen (commitment tracker) ---------- */
-function viewToezeggingen() {
-  const cs = commitItems();
-  const tabs = [['mijn', 'Ik beloofde'], ['aan_mij', 'Aan mij beloofd'], ['voornemen', 'Eigen voornemens'], ['afgerond', 'Afgerond']];
-  const isDone = c => ['klaar', 'overgedragen'].includes(c.status);
-  const list = S.commitTab === 'afgerond' ? cs.filter(isDone) : cs.filter(c => c.stroom === S.commitTab && !isDone(c));
-  const order = { te_laat: 0, waarschijnlijk_klaar: 1, open: 2, klaar: 3, overgedragen: 4 };
-  list.sort((a, b) => order[a.status] - order[b.status] || String(a.deadline || '9999').localeCompare(String(b.deadline || '9999')));
-  const wisprTodo = MODE.live ? LV.wispr.filter(m => !LV.processed.has(m.id) && new Date(m.end || m.start) < S.clock) : [];
-  const ruleText = r => !r || r.type === 'geen' ? '<span class="rule none">geen bewijsregel · dit vink je zelf af</span>' : `<span class="rule">bewijs: ${esc(r.type)}${r.to ? ' → ' + esc(r.to) : ''}${r.keywords?.length ? ' · ' + esc(r.keywords.join(', ')) : ''}</span>`;
-  return `<div class="page">${modeBanner()}
-    <div class="page-head"><div><div class="eyebrow">Commitment tracker</div><h1>Toezeggingen</h1><div class="sub" style="margin-top:4px;max-width:66ch">Wat jij toezegt, wat anderen jou toezeggen en je eigen voornemens. Bewijs in je verzonden mail, Slack of agenda zet een item op ‘waarschijnlijk klaar’. Jij bevestigt of maakt bezwaar.</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="extract-scan">${ic('spark')}Haal op uit Slack en mail</button><button class="btn" data-action="sweep" ${S.busy.sweep ? 'disabled' : ''}>${ic('check')}${S.busy.sweep ? 'Bewijs zoeken…' : 'Zoek bewijs'}</button></div></div>
-    ${statusRow()}${sectionNote(['commits'])}
-    <form class="addform" id="addcommit"><input id="ac-wat" placeholder="Nieuwe toezegging, bijv. ‘DNS-instructies naar Liselot sturen’" autocomplete="off" required>
-      <select id="ac-stroom" aria-label="Stroom"><option value="mijn">Ik beloofde</option><option value="aan_mij">Aan mij</option><option value="voornemen">Voornemen</option></select>
-      <input id="ac-date" type="date" aria-label="Deadline"><button class="btn sm primary" type="submit">${ic('plus')}Toevoegen</button></form>
-    ${wisprTodo.length ? `<div class="card" style="margin-bottom:16px"><div class="card-head"><h2>${ic('mic')} Recente meetings om te verwerken<span class="count-badge">${wisprTodo.length}</span></h2></div><div class="card-body" style="padding:6px">${wisprTodo.map(m => `<div class="row" style="cursor:default;align-items:center"><span class="ic meeting">${ic('mic')}</span><span class="row-main"><span class="row-title" style="display:block">${esc(m.title)}</span><span class="row-sub" style="display:block">${dayLabel(new Date(m.start))} ${hm(new Date(m.start))} · ${esc((m.attendees || []).slice(0, 4).join(', '))}</span></span><button class="btn sm primary" data-action="extract-m" data-id="${esc(m.id)}">${ic('spark')}Haal eruit</button><button class="btn sm" data-action="skip-m" data-id="${esc(m.id)}">Overslaan</button></div>`).join('')}</div></div>` : ''}
-    <div class="tabs" role="tablist">${tabs.map(([k, l]) => { const n = k === 'afgerond' ? cs.filter(isDone).length : cs.filter(c => c.stroom === k && !isDone(c)).length; return `<button class="tab${S.commitTab === k ? ' on' : ''}" role="tab" data-ctab="${k}">${l}<span class="count-badge">${n}</span></button>`; }).join('')}</div>
-    <div class="card">${list.length ? list.map(c => `<div class="commit-row">
-        <div style="min-width:0"><div class="wat">${esc(c.title)}</div>
-          <div class="meta"><span class="st st-${c.status}">${STATUS[c.status]}</span>${c.aan ? `<span>${S.commitTab === 'aan_mij' ? 'van' : 'aan'} ${esc(c.aan)}</span>` : ''}${c.entities.map(entityChip).join('')}${c.deadline ? `<span style="${c.status === 'te_laat' ? 'color:var(--danger);font-weight:600' : ''}">deadline ${fmtDate(c.deadline)}</span>` : '<span>geen deadline</span>'}<span>${esc(c.raw.bron?.url ? '' : c.raw.bron?.label || '')}</span>${c.raw.bron?.url ? extLink(c.raw.bron.url, esc(c.raw.bron.label), 'ext-link') : ''}</div>
-          <div class="meta">${c.raw.bewijs ? `<span class="rule" style="color:var(--c-commit)">✓ ${esc(c.raw.bewijs)}</span>` : ruleText(c.raw.bewijsregel)}</div>
-          ${c.raw.citaat ? `<div class="meta"><i>“${esc(short(c.raw.citaat, 160))}”</i></div>` : ''}</div>
-        <div class="commit-acts">${c.status === 'klaar' || c.status === 'overgedragen' ? `<button class="btn sm" data-action="c-reopen" data-id="${esc(c.docId)}">${ic('undo')}Heropen</button>` : `
-          <button class="btn sm${c.status === 'waarschijnlijk_klaar' ? ' primary' : ''}" data-action="c-done" data-id="${esc(c.docId)}">${ic('check')}Klaar</button>
-          ${c.status === 'waarschijnlijk_klaar' ? `<button class="btn sm" data-action="c-reopen" data-id="${esc(c.docId)}">Bezwaar</button>` : ''}
-          <button class="btn sm" data-action="c-hand" data-id="${esc(c.docId)}" title="Wordt een Jira-story: de tracker laat hem los">Naar Jira</button>`}
-          <button class="iconbtn" data-action="c-del" data-id="${esc(c.docId)}" aria-label="Verwijder">${ic('trash')}</button></div></div>`).join('')
-      : `<div class="empty">${S.commitTab === 'afgerond' ? 'Nog niets afgerond.' : 'Niets in deze stroom. Voeg er hierboven een toe, of laat Claude ze ophalen uit Slack, mail en je meetings.'}</div>`}</div>
-    <p class="hint" style="margin-top:12px">Telt als toezegging als er een eigenaar is, iets controleerbaars te leveren, en iemand het merkt als het niet gebeurt. Wordt het een Jira-story, dan laat de tracker hem los.</p></div>`;
 }
 
 /* ---------- Organisatie / partner ---------- */
@@ -1436,7 +1842,7 @@ function viewChat() {
       ${dms.length ? `<div class="nav-group" style="margin-top:12px"><div class="nav-label">Direct</div>${dms.map(c => item(c, c.replace(/^DM /, ''), 'users')).join('')}</div>` : ''}</div>
     <div class="chat-main">
       <div class="chat-head"><div><h3>${isAI ? 'Vraag Claude' : ch === 'all' ? 'Alles voor jou' : esc(ch)}</h3><div class="sub" style="font-size:12px">${isAI ? 'Antwoorden op basis van je agenda, mail, Slack, taken en toezeggingen' : 'Slack-berichten aan jou, waarin je genoemd wordt, en je eigen berichten van de laatste dagen'}</div></div></div>
-      <div class="msgs" id="msgs">${isAI ? aiMessages() : (sectionNote(['slackDm', 'slackMention', 'slackMine']) + msgs.map(m => `<div class="msg">${avatar(m.fromMe ? 'Robert Verveen' : m.fromName)}<div class="msg-body"><div class="msg-meta"><b>${esc(m.fromMe ? 'Jij' : m.fromName)}</b>${ch === 'all' ? `<span>${esc(m.channel)}</span>` : ''}<span>${m.time ? dayLabel(when(m)) + ' ' + hm(when(m)) : ''}</span>${m.answered ? '<span class="chip ok">beantwoord</span>' : (!m.fromMe && !m.bot && (m.dm || m.mention)) ? '<span class="chip warn">wacht op jou</span>' : ''}${extLink(m.url, 'Open in Slack', 'ext-link')}</div><div class="msg-text">${esc(m.title).replace(/\n/g, '<br>')}</div></div></div>`).join('') || '<div class="empty">Geen berichten.</div>')}</div>
+      <div class="msgs" id="msgs">${isAI ? aiMessages() : (sectionNote(['slackDm', 'slackMention', 'slackMine']) + msgs.map(m => `<div class="msg" data-k="${esc(m.id)}" data-kind="${kindOf(m)}">${avatar(m.fromMe ? 'Robert Verveen' : m.fromName)}<div class="msg-body"><div class="msg-meta"><b>${esc(m.fromMe ? 'Jij' : m.fromName)}</b>${ch === 'all' ? `<span>${esc(m.channel)}</span>` : ''}<span>${m.time ? dayLabel(when(m)) + ' ' + hm(when(m)) : ''}</span>${m.answered ? '<span class="chip ok">beantwoord</span>' : (!m.fromMe && !m.bot && (m.dm || m.mention)) ? '<span class="chip warn">wacht op jou</span>' : ''}${extLink(m.url, 'Open in Slack', 'ext-link')}</div><div class="msg-text">${esc(m.title).replace(/\n/g, '<br>')}</div></div></div>`).join('') || '<div class="empty">Geen berichten.</div>')}</div>
       <form class="composer" id="composer">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="seg"><button type="button" class="${!isAI ? 'on' : ''}" data-mode="slack">Slack</button><button type="button" class="${isAI ? 'on' : ''}" data-mode="ai">Vraag Claude</button></div>
           ${!isAI ? '<span class="sub" style="font-size:12px">Antwoorden gaat nog via Slack zelf (link per bericht)</span>' : ''}</div>
@@ -1478,7 +1884,7 @@ async function ask(q) {
 function viewWegschrijven() {
   const wb = WRITEBACK_DEMO;
   return `<div class="page"><div class="mode-banner">${ic('context')}<span><b>Concept met voorbeelddata.</b> Zo wordt een meeting straks weggeschreven naar de contextlaag (GitHub), zodra die gekoppeld is. De toezeggingen eruit halen werkt al live via Dagstart en Toezeggingen.</span></div>
-    <div class="page-head"><div><div class="eyebrow" style="display:flex;gap:8px;align-items:center">${srcLabel('meeting')} · vrijdag 30 oktober</div><h1>Veenstra · maandelijkse check-in</h1>
+    <div class="page-head"><div><div class="eyebrow" style="display:flex;gap:8px;align-items:center">${srcLabel('meeting')} · vrijdag 30 oktober</div><h1>Feenstra · maandelijkse check-in</h1>
       <div class="meta-line"><span>10:00–11:00 · Google Meet</span><span class="chip warn">${ic('context')}Wacht op wegschrijven</span><span class="chip">${ic('mic')}Wispr Flow · 58 min</span></div></div></div>
     <div class="card" style="max-width:860px">
       <div class="card-head"><div><div class="eyebrow" style="display:flex;gap:6px;align-items:center">${ic('spark')}Voorstel uit transcript</div><h3 style="margin-top:2px">Wegschrijven naar de contextlaag</h3></div><span class="chip warn">Concept</span></div>
@@ -1506,20 +1912,31 @@ function renderInspector() {
     else if (it.attendeeNames?.length) extra += `<div class="insp-section"><h2>Deelnemers</h2><div class="people">${it.attendeeNames.map(n => `<span class="person">${avatar(n, 20)}${esc(n)}</span>`).join('')}</div></div>`;
     if (it.entities.length) extra += `<div class="insp-section"><h2>${ic('commit')} Open toezeggingen bij ${esc(it.entities.map(entityName).join(', '))}</h2>${oc.length ? `<div class="list">${oc.map(rowHTML).join('')}</div>` : '<div class="note">Niets open. Mooi.</div>'}</div>`;
     if (it.desc) body = it.desc;
+    if (it.external) {
+      const bs = openCommits().filter(c => c.stroom === 'bespreken' && c.entities.some(e => it.entities.includes(e)));
+      if (bs.length) extra += `<div class="insp-section"><h2>Bespreken bij dit contact</h2><div class="list">${bs.map(c => rowHTML(c)).join('')}</div></div>`;
+      extra += `<div class="insp-section"><h2>Voorbereiding en recap</h2><div class="note">${it.prepTask ? '✅ Prep staat gepland.' : it.skipPrep ? 'Geen prep nodig.' : '⚠️ Nog geen prep gepland. Druk 1–4 om een prep-taak te maken.'}${isPast(it) ? `<br>${it.recapDone ? '✓ Recap staat in #04-klanten.' : it.recapSession ? 'Recap-sessie met Claude loopt.' : 'Nog geen recap.'}` : ''}</div><div class="actions"><button class="btn sm" data-action="recap" data-id="${esc(it.id)}">${ic('spark')}Recap met Claude <span class="kbd">r</span></button></div></div>`;
+    }
   } else if (it.type === 'mail') {
     meta = `${esc(it.fromName)}${it.fromEmail ? ' · ' + esc(it.fromEmail) : ''}${it.direct ? ' · aan jou' : ' · cc'}`;
-    body = it.body || ''; actions = extLink(it.url, ic('out') + 'Open in Gmail');
+    body = it.body || ''; actions = extLink(it.url, ic('out') + 'Open in Gmail') + `<button class="btn sm" data-action="item" data-key="e">Gelezen <span class="kbd">e</span></button><button class="btn sm" data-action="item" data-key="w">Wachten op <span class="kbd">w</span></button>` + `<span class="plan-btns">${[1,2,3,4,5].map(n => `<button class="btn sm" data-action="plan" data-id="${esc(it.id)}" data-n="${n}" title="${BUCKETS[n]}"><span class="kbd">${n}</span>${n === 1 ? 'Vandaag' : n === 2 ? 'Morgen' : n === 3 ? 'Later' : n === 4 ? 'Volg. week' : 'Backlog'}</button>`).join('')}</span>`;
   } else if (it.type === 'slack') {
     meta = `${esc(it.channel)} · ${esc(it.fromMe ? 'jij' : it.fromName)}${it.time ? ' · ' + dayLabel(when(it)) + ' ' + hm(when(it)) : ''}`;
-    body = it.title; actions = extLink(it.url, ic('out') + 'Open in Slack') + `<button class="btn sm" data-chat-open="${esc(it.channel)}">${ic('chat')}Gesprek</button>`;
+    body = it.title; actions = extLink(it.url, ic('out') + 'Open in Slack') + `<button class="btn sm" data-action="item" data-key="e">Gelezen <span class="kbd">e</span></button><button class="btn sm" data-action="item" data-key="E">✅ in Slack <span class="kbd">⇧E</span></button><button class="btn sm" data-action="item" data-key="w">Wachten op <span class="kbd">w</span></button>` + `<span class="plan-btns">${[1,2,3,4,5].map(n => `<button class="btn sm" data-action="plan" data-id="${esc(it.id)}" data-n="${n}" title="${BUCKETS[n]}"><span class="kbd">${n}</span>${n === 1 ? 'Vandaag' : n === 2 ? 'Morgen' : n === 3 ? 'Later' : n === 4 ? 'Volg. week' : 'Backlog'}</button>`).join('')}</span>`;
   } else if (it.type === 'task') {
-    meta = `Google Tasks${it.list ? ' · ' + esc(it.list) : ''} · ${it.due ? 'deadline ' + fmtDate(it.due) : 'geen deadline'}`;
-    actions = S.busy[it.id] ? '<span class="sub">Bezig…</span>' : `<button class="btn sm" data-action="t-done" data-id="${esc(it.id)}">${ic('check')}Afvinken</button>`;
+    meta = `Google Tasks${it.list ? ' · ' + esc(it.list) : ''} · ${it.backlog ? 'backlog' : it.due ? 'gepland ' + fmtDate(it.due) : 'geen datum'}${it.moved >= 2 ? ' · ' + it.moved + 'e keer doorgeschoven' : ''}`;
+    body = it.notes || '';
+    actions = S.busy[it.id] ? '<span class="sub">Bezig…</span>' : `<button class="btn sm primary" data-action="t-done" data-id="${esc(it.id)}">${ic('check')}Afvinken <span class="kbd">x</span></button>` + extLink(it.url, ic('out') + 'Google Tasks') + `<span class="plan-btns">${[1,2,3,4,5].map(n => `<button class="btn sm" data-action="plan" data-id="${esc(it.id)}" data-n="${n}" title="${BUCKETS[n]}"><span class="kbd">${n}</span>${n === 1 ? 'Vandaag' : n === 2 ? 'Morgen' : n === 3 ? 'Later' : n === 4 ? 'Volg. week' : 'Backlog'}</button>`).join('')}</span>`;
   } else if (it.type === 'commit') {
     const c = it.raw;
     meta = `${STROOM[c.stroom] || ''}${c.aan ? ' · ' + esc(c.aan) : ''}${c.deadline ? ' · deadline ' + fmtDate(c.deadline) : ''}`;
     body = [c.citaat ? '“' + c.citaat + '”' : '', c.bron?.label ? 'Bron: ' + c.bron.label : '', c.bewijs ? 'Bewijs: ' + c.bewijs : (c.bewijsregel?.type && c.bewijsregel.type !== 'geen' ? `Bewijsregel: ${c.bewijsregel.type}${c.bewijsregel.to ? ' → ' + c.bewijsregel.to : ''}${c.bewijsregel.keywords?.length ? ' · ' + c.bewijsregel.keywords.join(', ') : ''}` : 'Geen bewijsregel: dit vink je zelf af.')].filter(Boolean).join('\n\n');
     actions = `<span class="st st-${it.status}">${STATUS[it.status]}</span>` + (['klaar', 'overgedragen'].includes(it.status) ? `<button class="btn sm" data-action="c-reopen" data-id="${esc(it.docId)}">Heropen</button>` : `<button class="btn sm" data-action="c-done" data-id="${esc(it.docId)}">${ic('check')}Klaar</button>`) + extLink(c.bron?.url, ic('out') + 'Bron');
+  } else if (it.type === 'rec') {
+    meta = `${cap(longDay(pd(it.start)))} · ${hm(pd(it.start))} · ${esc((it.attendeeNames || []).slice(0, 5).join(', '))}`;
+    body = it.body || '';
+    actions = `<button class="btn sm primary" data-action="recap" data-id="${esc(it.id)}">${ic('spark')}Recap met Claude <span class="kbd">r</span></button><button class="btn sm" data-action="extract-m" data-id="${esc(it.rawId)}">Toezeggingen eruit <span class="kbd">t</span></button>` + extLink(it.url, ic('out') + 'Wispr');
+    extra += `<div class="insp-section"><h2>Recap-status</h2><div class="note">${it.recapDone ? '✓ Interne update staat in #04-klanten.' : it.recapSession ? 'Claude-sessie gestart' + (it.recapSession.startsWith('http') ? `: <a href="${esc(it.recapSession)}" target="_blank" rel="noopener">open</a>` : '.') : 'Nog geen recap in #04-klanten gevonden.'}</div></div>`;
   } else if (it.type === 'context') { meta = 'Contextlaag · voorbeeld'; body = it.body; }
   el.innerHTML = `<div class="insp-head">${srcLabel(it.type)}<button class="iconbtn" data-action="close-insp" aria-label="Sluiten">${ic('x')}</button></div>
     <div class="insp-title">${esc(it.title.length > 220 ? short(it.title, 220) : it.title)}</div><div class="sub" style="font-size:12.5px">${meta}</div>
@@ -1553,7 +1970,10 @@ function closeSheet() { S.sheet = null; renderSheet(); }
 const COMMANDS = [
   { label: 'Ga naar Dagstart', hint: 'overzicht', icon: 'sun', run: () => go({ view: 'dagstart' }) },
   { label: 'Ga naar Agenda', hint: 'week', icon: 'meeting', run: () => go({ view: 'agenda' }) },
-  { label: 'Ga naar Toezeggingen', hint: 'tracker', icon: 'commit', run: () => go({ view: 'toezeggingen' }) },
+  { label: 'Ga naar Planning', hint: 'g p', icon: 'inbox', run: () => go({ view: 'planning' }) },
+  { label: 'Ga naar Tracker', hint: 'g t', icon: 'commit', run: () => go({ view: 'toezeggingen' }) },
+  { label: 'Neem canvas Wachten op over in de tracker', hint: 'Slack', icon: 'refresh', run: () => importCanvas() },
+  { label: 'Toon sneltoetsen', hint: '?', icon: 'search', run: () => { S.help = true; renderHelp(); } },
   { label: 'Vraag Claude…', hint: 'chat', icon: 'spark', run: q => q ? ask(q) : (S.chatChannel = 'ai', go({ view: 'chat' })) },
   { label: 'Nieuwe toezegging…', hint: 'tracker', icon: 'plus', run: q => q ? (commitAdd({ wat: q }), toast('Toezegging toegevoegd'), go({ view: 'toezeggingen' })) : go({ view: 'toezeggingen' }) },
   { label: 'Haal toezeggingen op uit Slack en mail', hint: 'Claude', icon: 'spark', run: () => runExtraction('scan') },
@@ -1674,7 +2094,6 @@ function saveView(q) {
   closePalette(); toast(`${ic('bookmark')}View “${esc(v.name)}” bewaard`);
   go({ view: 'list', q, title: v.name, key: v.id, saved: true });
 }
-
 /* ---------- Render ---------- */
 let renderQueued = false, mainDirty = false;
 function scheduleRender() {
@@ -1696,6 +2115,7 @@ function render() {
   let html = '';
   if (r.view === 'dagstart') html = viewDagstart();
   else if (r.view === 'agenda') html = viewAgenda();
+  else if (r.view === 'planning') html = viewPlanning();
   else if (r.view === 'toezeggingen') html = viewToezeggingen();
   else if (r.view === 'entity') html = viewEntity(r.id);
   else if (r.view === 'list') html = viewList(r);
@@ -1703,7 +2123,7 @@ function render() {
   else if (r.view === 'wegschrijven') html = viewWegschrijven();
   main.classList.toggle('is-chat', r.view === 'chat');
   main.style.overflowY = r.view === 'chat' ? 'hidden' : '';
-  main.innerHTML = topbar() + html;
+  main.innerHTML = topbar() + html + (r.view === 'chat' ? '' : '<div class="hintbar" id="hintbar" aria-live="polite"></div>');
   main.scrollTop = keepScroll;
   if (r.view === 'list') {
     renderListResults();
@@ -1711,7 +2131,8 @@ function render() {
     qb.addEventListener('input', () => { S.route.q = qb.value; renderListResults(); renderMainHighlights(); });
   }
   if (r.view === 'chat') { const m = document.getElementById('msgs'); if (m) m.scrollTop = m.scrollHeight; }
-  renderInspector(); renderMainHighlights();
+  renderInspector(); renderMainHighlights(); applyFocus(false);
+  if (S.help) renderHelp();
   mainDirty = false;
 }
 let toastTimer;
@@ -1722,12 +2143,54 @@ function toast(html) {
 }
 
 /* ---------- Events ---------- */
-document.addEventListener('keydown', ev => {
-  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') { ev.preventDefault(); S.palette ? closePalette() : openPalette(); }
-  else if (ev.key === 'Escape' && S.sheet && !S.palette) closeSheet();
-  else if (ev.key === 'Escape' && !S.palette && S.selected) { S.selected = null; renderInspector(); renderMainHighlights(); }
-  else if (ev.key === '/' && !S.palette && !/input|textarea|select/i.test(document.activeElement.tagName)) { ev.preventDefault(); openPalette(); }
-  if (ev.target.id === 'composer-input' && ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ev.target.form.requestSubmit(); }
+const GO_KEYS = { d: 'dagstart', p: 'planning', a: 'agenda', t: 'toezeggingen', c: 'chat', m: 'inbox', k: 'taken' };
+const typing = el => el && (/INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable);
+async function keyAction(key, ev, over) {
+  const it = over || focusedItem();
+  if (key === 'Enter') { if (it) openItem(it.id); return true; }
+  if (key === 'o') { if (it) { const url = it.type === 'meeting' ? (it.meet && pd(it.start) - S.clock < 15 * 6e4 && pd(it.end) > S.clock ? it.meet : it.url) : it.url; if (!url) toast('Geen link voor dit item'); else { let w = null; try { w = window.open(url, '_blank', 'noopener'); } catch {} if (!w) toast(`<a href="${esc(url)}" target="_blank" rel="noopener" style="color:inherit">Openen ${ic('out')}</a>`); } } return true; }
+  if (!it) return false;
+  if (/^[1-5]$/.test(key)) { await planItem(it, +key); return true; }
+  if (key === 'x') { await doneItem(it); return true; }
+  if (key === 'e' || key === 'E') { await markRead(it, key === 'E'); return true; }
+  if (key === 'w') { await makeWaiting(it); return true; }
+  if (key === 'b') { await makeBespreken(it); return true; }
+  if (key === 'c') { await makeCommit(it); return true; }
+  if (key === 'r') { await recapWithClaude(it); return true; }
+  if (key === 't') { if (it.type === 'rec') runExtraction('meeting', it.rawId); else toast('Toezeggingen eruit halen werkt op een Wispr-opname'); return true; }
+  if (it.type === 'meeting' && it.needsAction && ['y', 'm', 'n'].includes(key)) { await respondInvite(it.id, { y: 'accepted', m: 'tentative', n: 'declined' }[key]); return true; }
+  return false;
+}
+document.addEventListener('keydown', async ev => {
+  const k = ev.key;
+  if ((ev.metaKey || ev.ctrlKey) && k.toLowerCase() === 'k') { ev.preventDefault(); S.help = false; S.palette ? closePalette() : openPalette(); return; }
+  if (S.palette) return;                     // het palet regelt zijn eigen toetsen
+  if (k === 'Escape') {
+    if (S.help) { S.help = false; renderHelp(); return; }
+    if (S.sheet) { closeSheet(); return; }
+    if (typing(document.activeElement)) { document.activeElement.blur(); return; }
+    if (S.selected) { S.selected = null; renderInspector(); renderMainHighlights(); return; }
+    return;
+  }
+  if (S.sheet) { if (k === 'Enter' && S.sheet.state === 'ready' && S.sheet.items.some(x => x.keep)) { ev.preventDefault(); acceptCandidates(); } return; }
+  if (ev.target.id === 'composer-input' && k === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ev.target.form.requestSubmit(); return; }
+  if (typing(document.activeElement) || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (k === '?') { ev.preventDefault(); S.help = !S.help; renderHelp(); return; }
+  if (S.help) return;
+  if (S.gPending) { S.gPending = false; const v = GO_KEYS[k.toLowerCase()]; if (v) { ev.preventDefault(); if (['inbox', 'taken'].includes(v)) location.hash = v; else go({ view: v }); } return; }
+  if (k === 'g') { S.gPending = true; setTimeout(() => S.gPending = false, 1200); return; }
+  if (k === '/') { ev.preventDefault(); openPalette(); return; }
+  if (k === 'j' || k === 'ArrowDown') { ev.preventDefault(); moveFocus(1); return; }
+  if (k === 'k' || k === 'ArrowUp') { ev.preventDefault(); moveFocus(-1); return; }
+  if (S.route.view === 'agenda' && (k === '[' || k === ']')) { S.weekOffset += k === ']' ? 1 : -1; render(); return; }
+  if (S.route.view === 'toezeggingen') {
+    if (k === 'n') { ev.preventDefault(); document.getElementById('ac-wat')?.focus(); return; }
+    const sh = { '!': 0, '@': 1, '#': 2, '$': 3, '%': 4, '^': 5, '&': 6 }[k];
+    if (ev.shiftKey && (sh !== undefined || /^Digit[1-7]$/.test(ev.code))) { ev.preventDefault(); const i = sh ?? (+ev.code.slice(5) - 1); S.commitTab = ['alles', 'mijn', 'aan_mij', 'bespreken', 'voornemen', 'taken', 'afgerond'][i]; S.fIdx = 0; S.fId = null; render(); return; }
+  }
+  if (S.route.view === 'chat' && k === 'i') { ev.preventDefault(); S.chatChannel = 'ai'; render(); document.getElementById('composer-input')?.focus(); return; }
+  const handled = await keyAction(k === 'Enter' ? 'Enter' : k, ev);
+  if (handled) ev.preventDefault();
 });
 document.addEventListener('click', ev => {
   const t = ev.target;
@@ -1740,6 +2203,9 @@ document.addEventListener('click', ev => {
     if (act === 'close-pal') { if (t === a) closePalette(); return; }
     if (act === 'close-sheet') { if (t === a) closeSheet(); return; }
     if (act === 'close-sheet-btn') return closeSheet();
+    if (act === 'close-help') { if (t === a) { S.help = false; renderHelp(); } return; }
+    if (act === 'close-help-btn') { S.help = false; return renderHelp(); }
+    if (act === 'help') { S.help = true; return renderHelp(); }
     if (act === 'accept-cands') return acceptCandidates();
     if (act === 'palette') return openPalette();
     if (act === 'palette-q') return openPalette(a.dataset.q);
@@ -1751,17 +2217,22 @@ document.addEventListener('click', ev => {
     if (act === 'brief') return briefMe();
     if (act === 'week') { const dir = +a.dataset.dir; S.weekOffset = dir === 0 ? 0 : S.weekOffset + dir; return render(); }
     if (act === 'save-view') return saveView(S.route.q.trim());
-    if (act === 'delete-view') { S.saved = S.saved.filter(v => v.id !== id); store.set('saved2', S.saved); go({ view: 'dagstart' }); return toast('View verwijderd'); }
+    if (act === 'delete-view') { S.saved = S.saved.filter(v => v.id !== id); store.set('saved3', S.saved); go({ view: 'dagstart' }); return toast('View verwijderd'); }
     if (act === 'rsvp') return respondInvite(id, a.dataset.s);
-    if (act === 't-done') return completeTask(id);
-    if (act === 'c-done') { commitSave(id, { status: 'klaar', closedAt: today() }); return toast(`${ic('check')} Toezegging afgerond`); }
+    if (act === 'plan') { const x = byId(id); if (x) planItem(x, +a.dataset.n); return; }
+    if (act === 'item') { const x = byId(S.selected); if (x) keyAction(a.dataset.key, null, x); return; }
+    if (act === 't-done') { const x = byId(id); if (x) completeTask(x); return; }
+    if (act === 'c-done') { const x = byId('cm:' + id); if (x) commitDone(x); return; }
     if (act === 'c-reopen') return commitSave(id, { status: 'open', bewijs: null, closedAt: null });
     if (act === 'c-hand') { commitSave(id, { status: 'overgedragen', closedAt: today() }); return toast('Overgedragen aan Jira: de tracker laat hem los'); }
     if (act === 'c-del') return commitDelete(id);
+    if (act === 'ctab') { S.commitTab = a.dataset.tab; return go({ view: 'toezeggingen' }); }
     if (act === 'extract-scan') return runExtraction('scan');
     if (act === 'extract-m') return runExtraction('meeting', id);
-    if (act === 'skip-m') { closeSheet(); return markProcessed(id); }
+    if (act === 'skip-m') { closeSheet(); return markRead({ type: 'rec', rawId: id, id: 'wm:' + id }); }
+    if (act === 'recap') { const x = byId(id); if (x) recapWithClaude(x); return; }
     if (act === 'sweep') return sweep();
+    if (act === 'import-canvas') return importCanvas();
     if (act === 'refresh') { CAP.mcp?.invalidate().catch(() => {}); return toast(`${ic('refresh')} Bronnen worden ververst`); }
     if (act === 'retry') { const e = ST[a.dataset.key]; if (e?.retry) { ST[a.dataset.key] = 'loading'; render(); e.retry(); } return; }
     if (act === 'src-err') { const s = sourceState(SOURCES[+a.dataset.i]); return toast(esc(errText(s.err))); }
@@ -1775,21 +2246,23 @@ document.addEventListener('click', ev => {
     document.getElementById('app').classList.remove('nav-open');
     return;
   }
-  const tab = t.closest('[data-ctab]'); if (tab) { S.commitTab = tab.dataset.ctab; return render(); }
+  const tab = t.closest('[data-ctab]'); if (tab) { S.commitTab = tab.dataset.ctab; S.fIdx = 0; S.fId = null; return render(); }
+  const kr = t.closest('#main [data-k]'); if (kr) { const rows = [...document.querySelectorAll('#main [data-k]')]; S.fIdx = rows.indexOf(kr); S.fId = kr.dataset.k; applyFocus(); }
   const o = t.closest('[data-open]'); if (o && o.dataset.open) return openItem(o.dataset.open);
   const ch = t.closest('[data-chat]'); if (ch) { S.chatChannel = ch.dataset.chat; return render(); }
   const co = t.closest('[data-chat-open]'); if (co) { S.chatChannel = co.dataset.chatOpen; S.selected = null; return go({ view: 'chat' }); }
   const md = t.closest('[data-mode]'); if (md) { S.chatChannel = md.dataset.mode === 'ai' ? 'ai' : 'all'; return render(); }
   if (document.getElementById('app').classList.contains('nav-open') && !t.closest('.sidebar')) document.getElementById('app').classList.remove('nav-open');
 });
-document.addEventListener('submit', ev => {
+document.addEventListener('submit', async ev => {
   ev.preventDefault();
   if (ev.target.id === 'addcommit') {
     const wat = document.getElementById('ac-wat').value.trim(); if (!wat) return;
-    commitAdd({ wat, stroom: document.getElementById('ac-stroom').value, deadline: document.getElementById('ac-date').value || null });
-    S.commitTab = document.getElementById('ac-stroom').value;
-    document.getElementById('ac-wat').value = ''; document.activeElement?.blur?.();
-    toast(`${ic('commit')} Toezegging toegevoegd`);
+    const stroom = document.getElementById('ac-stroom').value;
+    await commitAdd({ wat, stroom, org: document.getElementById('ac-org').value.trim(), reminder: stroom === 'aan_mij' ? ymd(addWorkdays(S.clock, 3)) : null });
+    S.commitTab = stroom;
+    document.getElementById('ac-wat').value = ''; document.getElementById('ac-org').value = ''; document.activeElement?.blur?.();
+    toast(`${ic('commit')} Toegevoegd${['mijn', 'voornemen'].includes(stroom) ? ': plan hem met 1–5' : ''}`);
     mainDirty = false; render();
   }
   if (ev.target.id === 'composer') { const inp = document.getElementById('composer-input'); const v = inp.value.trim(); if (v && S.chatChannel === 'ai') ask(v); }
