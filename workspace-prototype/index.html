@@ -693,6 +693,131 @@ body:not(.kbd-mode) .hintbar { display: none; }
 
 :root[data-theme="dark"] .ic { background: var(--hover); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ic { background: var(--hover); } }
+
+/* ---------- Gesprekken + Inhalen (v7) ---------- */
+.chat.conv { grid-template-columns: 320px minmax(0, 1fr); }
+.chat.conv .chat-list { padding: 16px 12px 24px; display: flex; flex-direction: column; gap: 2px; }
+.cv-filter { width: 100%; box-sizing: border-box; border: 1px solid var(--grey-200); border-radius: 999px; padding: 9px 16px; background: var(--panel); font: inherit; font-size: 13.5px; color: var(--fg); margin-bottom: 10px; outline: none; }
+.cv-filter:focus { border-color: var(--blue-500); }
+.cv-catch { position: relative; display: grid; width: 100%; box-sizing: border-box; overflow: hidden; gap: 2px; text-align: left; border: 0; border-radius: var(--corner-l); padding: 16px 18px; margin-bottom: 10px; cursor: pointer; font: inherit; color: var(--ink, #292f38); }
+.cv-catch b { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+.cv-catch > span:not(.shapes) { font-size: 12.5px; color: #4a5260; }
+.cv-catch .cv-catch-go { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--blue-500) !important; font-size: 13px !important; }
+.cv-catch .cv-catch-go .kbd { background: rgba(255,255,255,.6); }
+.cv-group { margin-top: 14px; }
+.cv-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 0 10px 6px; }
+.cv-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; width: 100%; text-align: left; padding: 8px 10px; border-radius: 12px; border: 0; background: transparent; color: var(--fg); cursor: pointer; font: inherit; }
+.cv-row:hover { background: var(--hover); }
+.cv-row.active { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+.cv-row.kf { box-shadow: inset 0 0 0 2px var(--blue-500); }
+.cv-row .cv-ico { width: 24px; height: 24px; display: grid; place-items: center; color: var(--muted); grid-row: 1 / span 2; align-self: start; }
+.cv-row.fixed .cv-ico { grid-row: auto; }
+.cv-row .nm { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-row.unread .nm { font-weight: 650; }
+.cv-row.unread .nm::after { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--yellow-500); margin-left: 7px; vertical-align: 1px; }
+.cv-row .tm { font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.cv-row .pv { grid-column: 2 / 4; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-more { border: 0; background: none; color: var(--blue-500); font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 10px; cursor: pointer; text-align: left; }
+.chat.conv .chat-head { padding: 18px 24px 14px; align-items: flex-start; }
+.chat.conv .chat-head h3 { font-size: 22px; font-weight: 560; letter-spacing: -0.035em; line-height: 1.2; margin: 0 0 2px; overflow-wrap: anywhere; }
+.cv-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.cv-back { display: none; }
+.cv-back .i, .ct-link:first-child .i { transform: rotate(180deg); }
+.chat.conv .msgs { padding: 18px 24px; gap: 12px; }
+.msgs.mail { background: var(--bg); }
+.day-sep { align-self: center; font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 2px 12px; margin: 8px 0 2px; }
+.msgs.mail .day-sep { background: var(--panel); }
+.msg { max-width: 820px; }
+.msg.cont { margin-top: -8px; }
+.msg.cont > .avatar { visibility: hidden; height: 4px; }
+.msg.cont .msg-meta { display: none; }
+.msg-text { white-space: pre-wrap; line-height: 1.55; }
+.msg-text pre { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; background: var(--hover); border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+.msg-text code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 5px; border-radius: 5px; }
+.msg-text .bq, .mail-body .bq { display: inline-block; border-left: 3px solid var(--grey-200); padding-left: 8px; color: var(--muted); }
+.mention { font-weight: 600; background: linear-gradient(transparent 58%, color-mix(in srgb, var(--yellow-500) 55%, transparent) 58%); padding: 0 1px; }
+.msg.focus > .msg-body { background: var(--yellow-100); border-radius: 12px; padding: 6px 10px; margin: -6px -10px; box-shadow: inset 3px 0 0 var(--yellow-500); }
+.msg.is-item > .msg-body > .msg-meta .chip { margin-left: 2px; }
+.msg-files { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.file-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; border: 1px solid var(--grey-200); border-radius: 999px; padding: 3px 10px; color: var(--fg); background: var(--panel); }
+.file-pill .i { width: 13px; height: 13px; color: var(--muted); }
+.reacts { display: flex; gap: 4px; margin-top: 5px; }
+.react { font-size: 12px; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 1px 8px; }
+.thread-btn { display: inline-flex; margin-top: 6px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--blue-500); background: none; border: 0; padding: 0; cursor: pointer; }
+.thread-btn:hover { text-decoration: underline; }
+.thread { margin-top: 10px; border-left: 2px solid var(--blue-200); padding-left: 14px; display: flex; flex-direction: column; gap: 10px; }
+.linklike { border: 0; background: none; padding: 0; font: inherit; color: var(--blue-500); cursor: pointer; }
+.cv-older { align-self: center; }
+.mail-msg { display: block; border: 1px solid var(--line); border-radius: var(--corner-l); background: var(--panel); padding: 16px 18px; max-width: 820px; }
+.mail-msg.unread { box-shadow: inset 3px 0 0 var(--yellow-500); }
+.mail-msg.folded > summary { list-style: none; cursor: pointer; }
+.mail-msg.folded > summary::-webkit-details-marker { display: none; }
+.mail-msg.folded[open] > summary { margin-bottom: 4px; }
+.mail-head { display: flex; gap: 10px; align-items: flex-start; }
+.mail-head .who { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.mail-head .who b { font-weight: 600; }
+.mail-head .rcpt { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.mail-head time { font-size: 12px; color: var(--faint); white-space: nowrap; }
+.mail-body { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 10px; line-height: 1.6; }
+.mail-quoted > summary { font-size: 12px; color: var(--muted); cursor: pointer; margin-top: 10px; }
+.mail-quoted .mail-body { color: var(--muted); font-size: 13px; }
+.att-inline { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.composer-box { border: 1px solid var(--grey-200); border-radius: 28px; padding: 6px 6px 6px 18px; background: var(--panel); align-items: center; transition: border-color .15s; }
+.composer-box:focus-within { border-color: var(--blue-500); }
+.composer-box textarea { padding: 8px 0; line-height: 1.45; font: inherit; color: var(--fg); }
+.send-btn { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--blue-500); color: #fff; display: grid; place-items: center; cursor: pointer; transition: background .15s, transform .15s; }
+.send-btn:hover { background: var(--blue-600); }
+.send-btn:active { transform: scale(.96); }
+.send-btn .i { width: 18px; height: 18px; stroke-width: 1.8; }
+.send-btn:disabled { opacity: .5; cursor: default; }
+.chat.conv .composer { padding: 12px 24px 14px; gap: 6px; }
+.cv-foot { font-size: 11.5px; color: var(--muted); display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 0 6px; }
+.cv-foot label, .ct-meta label { display: inline-flex; gap: 5px; align-items: center; color: var(--fg); }
+.ctx-box { background: var(--bg); border-radius: var(--corner-m); padding: 12px; display: flex; flex-direction: column; gap: 12px; max-height: 560px; overflow-y: auto; }
+.ctx-box .msg { gap: 8px; }
+.ctx-box .msg-text { font-size: 13px; }
+.ctx-box .mail-msg { padding: 10px 12px; border-radius: var(--corner-m); }
+.ctx-box .mail-body { font-size: 13px; }
+/* Inhalen-overlay */
+.ct { width: min(720px, 100%); display: flex; flex-direction: column; gap: 12px; max-height: calc(100dvh - 32px); position: relative; z-index: 1; }
+.ct-top { display: flex; justify-content: space-between; align-items: center; color: #fff; }
+.ct-top b { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+.ct-link { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: #fff; font: inherit; font-size: 14px; cursor: pointer; padding: 6px 4px; }
+.ct-link:disabled { opacity: .45; cursor: default; }
+.ct-link .kbd { color: #fff; }
+.ct-card { background: var(--panel); border-radius: var(--corner-xl); display: flex; flex-direction: column; min-height: 0; overflow: hidden; flex: 1; }
+.ct-card.ct-end { padding: 32px; gap: 12px; align-items: flex-start; flex: none; }
+.ct-head { padding: 14px 20px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.ct-title { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; font: inherit; font-size: 18px; font-weight: 600; letter-spacing: -0.025em; color: var(--fg); cursor: pointer; max-width: 100%; }
+.ct-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ct-title .i:last-child { transform: rotate(90deg); width: 13px; height: 13px; color: var(--muted); }
+.ct-head .sub { font-size: 12px; }
+.ct-body { flex: 1; min-height: 160px; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.ct-compose { padding: 10px 16px 6px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.ct-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); padding: 0 8px; }
+.ct-plan { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 16px 14px; }
+.ct-plan .sub { font-size: 12px; margin-right: 2px; }
+.ct-plan .btn .kbd { margin-right: 4px; }
+.ct-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ct-btn { height: 56px; border-radius: 16px; border: 0; background: var(--panel); color: var(--fg); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.ct-btn.primary { background: var(--yellow-500); color: #292f38; }
+.ct-btn.primary:hover { background: var(--yellow-400); }
+.ct-btn .kbd { font-size: 11px; }
+.ct-btn.primary .kbd { border-color: rgba(41,47,56,.4); color: #292f38; }
+@media (max-width: 760px) {
+  .chat.conv { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .chat.conv .chat-list { display: flex; flex-direction: column; overflow-y: auto; border-bottom: 0; padding: 12px 16px; }
+  .chat.conv .chat-list .cv-label { display: flex; }
+  .chat.conv.m-list .chat-main { display: none; }
+  .chat.conv:not(.m-list) .chat-list { display: none; }
+  .cv-back { display: inline-grid; }
+  .chat.conv .msgs, .chat.conv .chat-head, .chat.conv .composer { padding-left: 16px; padding-right: 16px; }
+  .chat.conv .chat-head { flex-wrap: wrap; }
+  .chat.conv .cv-acts { width: 100%; padding-left: 40px; }
+  .cv-acts .btn { padding-inline: 8px; }
+  .ct { max-height: calc(100dvh - 16px); }
+  .ct-plan .btn { font-size: 12px; }
+}
 </style>
 
 <div class="app" id="app">
@@ -873,7 +998,7 @@ store.set('lastSeen', Date.now());
 const CAP = { mcp: null, db: null, sample: null };
 const MODE = { live: false, checked: false };
 const ST = {};            // status per bron: 'loading' | 'ok' | {code, message, retry}
-const LV = { briefings: [], calendars: [], ranges: {}, mails: [], slack: { dm: [], mention: [], mine: [], mega: [], recaps: [] }, tasks: [], tasklists: [], wispr: [], commits: [], state: {}, selfEmail: null, updated: {} };
+const LV = { briefings: [], calendars: [], ranges: {}, mails: [], slack: { dm: [], mention: [], mine: [], mega: [], recaps: [] }, tasks: [], tasklists: [], wispr: [], commits: [], state: {}, selfEmail: null, updated: {}, slackUsers: {}, slackChans: [], slackDms: [], mailAll: [] };
 let ORGS = {};
 let LIVE_ITEMS = [];
 let AGENDA_EVENTS = [];
@@ -911,7 +1036,9 @@ const when = it => it.start ? pd(it.start) : it.time ? pd(it.time) : it.due ? pd
 const isPast = m => m.end && pd(m.end) <= S.clock;
 const hashColor = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; const hues = ['#1D6A4C', '#7B3A82', '#2F5FD0', '#0E7490', '#A86B12', '#C2410C', '#4B6B2A', '#8A3B5B', '#5B4BC4']; return hues[Math.abs(h) % hues.length]; };
 const initialsOf = name => String(name || '?').split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-const avatar = (name, size) => `<span class="avatar" style="background:${hashColor(name)}${size ? `;width:${size}px;height:${size}px;font-size:${Math.round(size / 2.6)}px` : ''}">${esc(initialsOf(name))}</span>`;
+const AV_TONES = [['#0022c4', '#fff'], ['#f9b20b', '#292f38'], ['#b8c6ff', '#0b1a6e'], ['#292f38', '#fff'], ['#5b74ff', '#fff'], ['#fde3a1', '#5c3d00'], ['#0b1a6e', '#fff'], ['#e7ecff', '#0022c4']];
+const avTone = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return AV_TONES[Math.abs(h) % AV_TONES.length]; };
+const avatar = (name, size) => `<span class="avatar" style="background:${avTone(name)[0]};color:${avTone(name)[1]}${size ? `;width:${size}px;height:${size}px;font-size:${Math.round(size / 2.6)}px` : ''}">${esc(initialsOf(name))}</span>`;
 const srcLabel = t => `<span class="src src-${t}">${ic(SRC[t].icon)}${SRC[t].label}</span>`;
 const stripHtml = s => String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|li|div)>/gi, '\n').replace(/<li>/gi, '• ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\n{3,}/g, '\n\n').trim();
 const ENT = () => MODE.live ? ORGS : DEMO_ENTITIES;
@@ -1071,6 +1198,10 @@ function startWatches() {
   watch('slackMine', 'Slack', 'slack_search_public_and_private', { ...base, filters: `from:<@${SLACK_ME}> after:${since}` }, p => { LV.slack.mine = p ? parseSlack(p) : []; });
   watch('slackMega', 'Slack', 'slack_search_public_and_private', { ...base, filters: 'hasmy::mega:' }, p => { LV.slack.mega = p ? parseSlack(p) : []; }, 900000);
   watch('slackRecaps', 'Slack', 'slack_search_public_and_private', { ...base, filters: `in:<#${CH_KLANTEN}> from:<@${SLACK_ME}> after:${ymd(addDays(S.clock, -21))}` }, p => { LV.slack.recaps = p ? parseSlack(p) : []; }, 900000);
+  watch('slackRecent', 'Slack', 'slack_search_public_and_private', { ...base, filters: `after:${ymd(addDays(S.clock, -2))}` }, p => { LV.slack.recent = p ? parseSlack(p) : []; }, 600000);
+  watch('slackChans', 'Slack', 'slack_list_user_channels', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200 }, p => { LV.slackChans = p ? parseChannelList(p).list : []; }, 3600000);
+  watch('slackDms', 'Slack', 'slack_list_user_channels', { types: 'im,mpim', exclude_archived: true, limit: 200 }, p => { LV.slackDms = p ? parseChannelList(p).list : []; }, 3600000);
+  watch('mailAll', 'Gmail', 'search_threads', { query: 'in:inbox newer_than:21d -category:promotions -category:social -category:forums', pageSize: 50, view: 'THREAD_VIEW_SUMMARY' }, p => { LV.mailAll = p ? (p.threads || []) : []; });
   watch('tasks', 'Google Tasks', 'list_tasks', { max_results: 200 }, p => { LV.tasks = p ? (p.tasks || []) : []; });
   watch('tasklists', 'Google Tasks', 'list_tasklists', {}, p => { LV.tasklists = p ? (p.tasklists || []) : []; ensureBacklogWatch(); }, 900000);
   const JIRA_CLOUD = '922c4e8e-234c-4847-974d-3067809eacb1', JQL = 'project = HOM AND sprint in openSprints()';
@@ -1170,9 +1301,12 @@ function liveItems() {
     const ex = items.find(i => i.id === 'sl:' + s.ts);
     if (ex) { if (kind === 'mega') ex.mega = true; return; }
     const fromMe = s.fromId === SLACK_ME;
-    const answered = !fromMe && mine.some(x => x.channelId === s.channelId && x.time && s.time && x.time > s.time);
+    // Beantwoord = jij schreef later iets in hetzelfde gesprek of dezelfde thread (Slack geeft zijn eigen leesstatus niet door)
+    const thr = (s.url || '').match(/thread_ts=([\d.]+)/)?.[1];
+    const later = m => m.me && +m.ts > +s.ts;
+    const answered = !fromMe && (mine.some(x => x.channelId === s.channelId && x.time && s.time && x.time > s.time) || (CV.conv['sl:' + s.channelId]?.msgs || []).some(later) || (thr && (CV.thread[s.channelId + '|' + thr]?.msgs || []).some(later)));
     const hz = (s.channelName.match(/#([\w-]+?)-hz\b/) || [])[1];
-    items.push({ id: 'sl:' + s.ts, ts: s.ts, type: 'slack', live: true, title: s.text || '(bericht zonder tekst)', channel: s.channelName, channelId: s.channelId, fromName: s.fromName,
+    items.push({ id: 'sl:' + s.ts, ts: s.ts, type: 'slack', live: true, title: s.text || '(bestand, huddle of bericht zonder tekst)', channel: s.channelName, channelId: s.channelId, fromName: s.fromName,
       fromMe, bot: s.bot, dm: s.dm, mention: kind === 'mention', mega: kind === 'mega', time: s.time, url: s.url, answered, entities: hz ? [registerOrg(hz.replace(/-/g, ''))].filter(Boolean) : [] });
   };
   LV.slack.mega.forEach(s => addSlack(s, 'mega'));
@@ -1932,6 +2066,7 @@ function viewDagstart() {
       </section>
     </div>
     <div class="calm-foot">
+      ${catchCount() ? `<button class="calm-chip" data-action="ct-start">${ic('chat')}${catchCount()} gesprekken om in te halen</button>` : ''}
       ${sp ? `<button class="calm-chip" data-action="go-sprint">${ic('git')}${esc(sp.name)} · nog ${sp.daysLeft} ${sp.daysLeft === 1 ? 'dag' : 'dagen'} · ${sp.donePts}/${sp.totalPts} pt${sp.mine ? ` · <b>${sp.mine} voor jou om te testen</b>` : ''}</button>` : ''}
       ${goals.length ? `<button class="calm-chip" data-action="ctab" data-tab="weekdoel">🎯 ${goals.map(g => g.raw.health ? HEALTH[g.raw.health][0] : '⚪').join('')} weekdoelen</button>` : ''}
     </div>
@@ -2446,26 +2581,592 @@ function renderListResults() {
 }
 
 /* ---------- Chat: laag over Slack + vraag Claude ---------- */
-function viewChat() {
-  const slack = allItems().filter(i => i.type === 'slack');
-  const chans = [...new Set(slack.filter(s => !s.dm).map(s => s.channel))];
-  const dms = [...new Set(slack.filter(s => s.dm).map(s => s.channel))];
-  const ch = S.chatChannel, isAI = ch === 'ai';
-  const msgs = isAI ? [] : slack.filter(s => ch === 'all' || s.channel === ch).sort((a, b) => when(a) - when(b));
-  const item = (key, label, iconName, n) => `<button class="nav-item${ch === key ? ' active' : ''}" data-chat="${esc(key)}">${ic(iconName)}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</span>${n ? `<span class="count">${n}</span>` : ''}</button>`;
-  return `<div class="chat">
-    <div class="chat-list"><div class="nav-group">${item('ai', 'Vraag Claude', 'spark')}${item('all', 'Alles voor jou', 'chat', slack.length)}</div>
-      ${chans.length ? `<div class="nav-group" style="margin-top:12px"><div class="nav-label">Kanalen</div>${chans.map(c => item(c, c.replace('#', ''), 'slack', slack.filter(s => s.channel === c).length)).join('')}</div>` : ''}
-      ${dms.length ? `<div class="nav-group" style="margin-top:12px"><div class="nav-label">Direct</div>${dms.map(c => item(c, c.replace(/^DM /, ''), 'users')).join('')}</div>` : ''}</div>
-    <div class="chat-main">
-      <div class="chat-head"><div><h3>${isAI ? 'Vraag Claude' : ch === 'all' ? 'Alles voor jou' : esc(ch)}</h3><div class="sub" style="font-size:12px">${isAI ? 'Antwoorden op basis van je agenda, mail, Slack, taken en toezeggingen' : 'Slack-berichten aan jou, waarin je genoemd wordt, en je eigen berichten van de laatste dagen'}</div></div></div>
-      <div class="msgs" id="msgs">${isAI ? aiMessages() : (sectionNote(['slackDm', 'slackMention', 'slackMine']) + msgs.map(m => `<div class="msg" data-k="${esc(m.id)}" data-kind="${kindOf(m)}">${avatar(m.fromMe ? 'Robert Verveen' : m.fromName)}<div class="msg-body"><div class="msg-meta"><b>${esc(m.fromMe ? 'Jij' : m.fromName)}</b>${ch === 'all' ? `<span>${esc(m.channel)}</span>` : ''}<span>${m.time ? dayLabel(when(m)) + ' ' + hm(when(m)) : ''}</span>${m.answered ? '<span class="chip ok">beantwoord</span>' : (!m.fromMe && !m.bot && (m.dm || m.mention)) ? '<span class="chip warn">wacht op jou</span>' : ''}${extLink(m.url, 'Open in Slack', 'ext-link')}</div><div class="msg-text">${esc(m.title).replace(/\n/g, '<br>')}</div></div></div>`).join('') || '<div class="empty">Geen berichten.</div>')}</div>
-      <form class="composer" id="composer">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="seg"><button type="button" class="${!isAI ? 'on' : ''}" data-mode="slack">Slack</button><button type="button" class="${isAI ? 'on' : ''}" data-mode="ai">Vraag Claude</button></div>
-          ${!isAI ? '<span class="sub" style="font-size:12px">Antwoorden gaat nog via Slack zelf (link per bericht)</span>' : ''}</div>
-        <div class="composer-box"><textarea id="composer-input" rows="1" placeholder="${isAI ? 'Bijv. wat moet ik vandaag nog beantwoorden?' : 'Schakel naar ‘Vraag Claude’ om een vraag te stellen'}" ${!isAI ? 'disabled' : ''}></textarea><button class="btn sm primary" type="submit" aria-label="Verstuur" ${!isAI ? 'disabled' : ''}>${ic('send')}</button></div>
-      </form></div></div>`;
+/* ---------- Gesprekken: alle Slack (kanalen, DM's, threads) en mail volledig in de workspace ---------- */
+// Alles wordt pas opgehaald als je een gesprek opent (of een item met context selecteert), en 2 minuten bewaard.
+// Zo blijft het snel en token-zuinig: de lijst zelf komt uit goedkope lijst-aanroepen.
+const CV = { conv: {}, thread: {}, open: {}, more: {}, filter: '', lastKey: null, focusTs: null, mobileList: true };
+const CV_TTL = 120000;
+const DEMO_CHANS = [
+  { id: 'CDEMOFEEN', kind: 'ch', name: 'feenstra-hz', purpose: 'Partnerkanaal Feenstra' },
+  { id: 'CDEMOINT', kind: 'ch', name: '02-intern', purpose: 'Intern overleg' },
+  { id: 'DDEMOMIKE', kind: 'dm', name: 'Mike' },
+  { id: 'GDEMOMR', kind: 'group', name: 'Mike, Rens' },
+  { id: 'CDEMOKL', kind: 'ch', name: '04-klanten', purpose: 'Interne updates na klantsessies' },
+  { id: 'CDEMOKANT', kind: 'ch', name: '00-kantine', purpose: 'Voor iedereen' },
+  { id: 'CDEMOTON', kind: 'ch', name: 'tonzon-hz', purpose: 'Partnerkanaal TonZon' },
+];
+const DEMO_MAILLIST = [
+  { id: 'demo-zsb', subject: 'Vraag over de ZSB-flow', sender: 'Marie-José <mj@feenstra.nl>', unread: true },
+  { id: 'demo-iso', subject: 'Notulen workshop isolatie', sender: 'Mike <mike@homezero.nl>', unread: true },
+  { id: 'demo-tz', subject: 'Re: Planning acceptatie isolatieflow', sender: 'Peter <peter@tonzon.nl>', unread: false },
+];
+const dts = (s) => String(Math.floor(new Date(s).getTime() / 1000)) + '.000100';
+const DM = (from, id, at, text, extra = {}) => ({ ts: dts(at), time: new Date(at).toISOString(), fromName: from, fromId: id, me: id === SLACK_ME, bot: false, text, replies: 0, files: [], reactions: '', ...extra });
+const DEMO_CONV = {
+  'sl:CDEMOFEEN': { msgs: [
+    DM('Lisanne', 'UL', '2026-10-28T15:02', 'De nieuwe ZSB-vragen staan op acceptatie. @Marie-José wil jij ze morgen doorlopen?'),
+    DM('Marie-José', 'UMJ', '2026-10-28T16:40', 'Top, doe ik morgenochtend :+1:'),
+    DM('Marie-José', 'UMJ', '2026-10-29T09:12', 'De leads van gisteravond staan niet in de planning, kan iemand kijken?', { replies: 2, latest: '2026-10-29T09:31:00+01:00' }),
+    DM('Robert Verveen', SLACK_ME, '2026-10-29T10:05', 'Dank voor het melden. Emiel heeft het gefixt, ze staan er nu in. Kun je even checken of het klopt?'),
+    DM('Marie-José', 'UMJ', '2026-10-29T10:20', 'Ja klopt, dank! Zie jullie vrijdag bij de check-in.', { reactions: 'heart (1)' }),
+  ] },
+  'sl:CDEMOINT': { msgs: [
+    DM('Weekly updates', 'B07', '2026-10-30T10:00', 'Het is vrijdag! Tijd voor een update over onze *Weekdoelen*:\n1. Zijn ze behaald?\n2. Waarom wel/niet?\n3. Heb je nog een hulpvraag?', { bot: true, replies: 3 }),
+    DM('Rens', 'URENS', '2026-10-30T08:10', '<@U04L22BRJQ7> Anna heeft nog 2 besluiten nodig voor de partnerovereenkomst 3.0. Kunnen we maandag sparren?'),
+    DM('Mike', 'UMIKE', '2026-10-30T08:22', 'Ik schuif ook aan, heb er nog wat input op vanuit sales.'),
+  ] },
+  'sl:DDEMOMIKE': { msgs: [
+    DM('Mike', 'UMIKE', '2026-10-28T17:12', 'Hoe ging de demo bij TonZon?'),
+    DM('Robert Verveen', SLACK_ME, '2026-10-28T17:30', 'Goed! Ze willen de isolatieflow volgende week op acceptatie zien.'),
+    DM('Mike', 'UMIKE', '2026-10-29T11:37', 'Kan jij Peter van TonZon nog een keer bellen? Hij twijfelt over het rekenmodel.'),
+  ] },
+  'sl:GDEMOMR': { msgs: [DM('Rens', 'URENS', '2026-10-27T12:00', 'Lunch donderdag bij het kantoor?'), DM('Mike', 'UMIKE', '2026-10-27T12:04', 'Ik ben erbij')] },
+  'sl:CDEMOKL': { msgs: [DM('Robert Verveen', SLACK_ME, '2026-10-29T10:30', '*Feenstra · werksessie ZSB-flow*\n• Personen + warmwatervraag combineren in één vraag\n• Lisanne past de flow aan, Marie-José test vrijdag')] },
+  'sl:CDEMOKANT': { msgs: [DM('Jade', 'UJADE', '2026-10-30T12:15', 'Er staat taart in de keuken :tada:')] },
+  'sl:CDEMOTON': { msgs: [DM('Peter', 'UPETER', '2026-10-27T14:00', 'Kunnen we het rekenmodel nog een keer samen doorlopen?')] },
+  'ml:demo-zsb': { mail: { subject: 'Vraag over de ZSB-flow', url: null, msgs: [
+    { fromName: 'Robert Verveen', from: 'robert@homezero.nl', to: ['mj@feenstra.nl'], cc: ['lisanne@homezero.nl'], time: '2026-10-29T10:45:00+01:00', body: 'Hoi Marie-José,\n\nDank voor de fijne sessie van vanochtend. Zoals besproken zetten we de nieuwe vragen deze week op acceptatie. Laat je weten of je nog iets mist?\n\nGroet,\nRobert', quoted: '', files: [] },
+    { fromName: 'Marie-José', from: 'mj@feenstra.nl', to: ['robert@homezero.nl'], cc: ['lisanne@homezero.nl'], time: '2026-10-30T07:24:00+01:00', body: 'Hoi Robert,\n\nKunnen we het aantal personen én de warmwatervraag combineren? Dan hoeven klanten één stap minder te doen. Ik heb een schets toegevoegd.\n\nGroet,\nMarie-José', quoted: 'Op 29 okt 2026 om 10:45 schreef Robert Verveen <robert@homezero.nl>:\n> Hoi Marie-José,\n> Dank voor de fijne sessie van vanochtend.', files: ['schets-zsb-flow.pdf'], unread: true },
+  ] } },
+  'ml:demo-iso': { mail: { subject: 'Notulen workshop isolatie', url: null, msgs: [
+    { fromName: 'Mike', from: 'mike@homezero.nl', to: ['team@isolatie.nl'], cc: ['robert@homezero.nl', 'rens@homezero.nl'], time: '2026-10-29T17:05:00+01:00', body: 'Hoi allemaal,\n\nTer info de notulen en acties van de workshop.\n\n1. Rekenmodel isolatie: Robert stuurt de aangepaste versie\n2. Leadflow: live op acceptatie volgende week\n3. Volgende sessie: 12 november\n\nGroet,\nMike', quoted: '', files: ['notulen-workshop.pdf'], unread: true },
+  ] } },
+  'ml:demo-tz': { mail: { subject: 'Planning acceptatie isolatieflow', url: null, msgs: [
+    { fromName: 'Peter', from: 'peter@tonzon.nl', to: ['robert@homezero.nl'], cc: [], time: '2026-10-27T09:10:00+01:00', body: 'Hoi Robert,\n\nWanneer kunnen we de isolatieflow op acceptatie verwachten?\n\nPeter', quoted: '', files: [] },
+    { fromName: 'Robert Verveen', from: 'robert@homezero.nl', to: ['peter@tonzon.nl'], cc: [], time: '2026-10-27T11:30:00+01:00', body: 'Hoi Peter,\n\nWe mikken op vrijdag 30 oktober. Ik laat het je weten zodra hij klaarstaat.\n\nRobert', quoted: 'Op 27 okt 2026 om 09:10 schreef Peter <peter@tonzon.nl>:\n> Wanneer kunnen we de isolatieflow op acceptatie verwachten?', files: [] },
+  ] } },
+};
+const DEMO_THREADS = {
+  ['CDEMOFEEN|' + dts('2026-10-29T09:12')]: [
+    DM('Marie-José', 'UMJ', '2026-10-29T09:12', 'De leads van gisteravond staan niet in de planning, kan iemand kijken?'),
+    DM('Emiel', 'UEMIEL', '2026-10-29T09:25', 'Ik kijk ernaar. Lijkt een sync die bleef hangen na de deploy van gisteravond.'),
+    DM('Emiel', 'UEMIEL', '2026-10-29T09:31', 'Opgelost, alle 6 leads staan er weer in.', { reactions: 'raised_hands (2)' }),
+  ],
+  ['CDEMOINT|' + dts('2026-10-30T10:00')]: [
+    DM('Weekly updates', 'B07', '2026-10-30T10:00', 'Het is vrijdag! Tijd voor een update over onze *Weekdoelen*.', { bot: true }),
+    DM('Rens', 'URENS', '2026-10-30T10:40', 'LOI\'s: 4 van 6 binnen. Hulpvraag: wie belt Dico?'),
+    DM('Mike', 'UMIKE', '2026-10-30T11:02', 'Doelen behaald, behalve de campagne. Die schuift naar volgende week.'),
+    DM('Robert Verveen', SLACK_ME, '2026-10-30T11:15', 'Isolatieflow TonZon staat op acceptatie. Release notes sprint 64 gaan vanmiddag de deur uit.'),
+  ],
+};
+
+const SL_TIME = s => { const m = String(s || '').match(/(\d{4}-\d\d-\d\d) (\d\d:\d\d(?::\d\d)?) (CEST|CET)/); return m ? new Date(`${m[1]}T${m[2]}${m[3] === 'CEST' ? '+02:00' : '+01:00'}`).toISOString() : null; };
+const tsIso = ts => ts ? new Date(parseFloat(ts) * 1000).toISOString() : null;
+const cvErr = e => ERR_COPY[e?.code] ? ERR_COPY[e.code](e.server || 'Deze bron') : ({ channel_not_found: 'Dit kanaal kan niet gelezen worden.', not_in_channel: 'Je zit niet in dit kanaal.' })[e?.code] || 'Ophalen lukte niet' + (e?.code ? ` (${e.code})` : '') + '.';
+
+function parseChannelList(p) {
+  const txt = typeof p === 'string' ? p : (p?.result || '');
+  const cursor = (txt.match(/Use cursor: "([^"]+)"/) || [])[1] || null;
+  const list = txt.split(/^### /m).slice(1).map(b => {
+    const head = b.split('\n')[0].trim();
+    const g = re => (b.match(re) || [])[1];
+    const type = g(/\*\*Type:\*\* (.+)/) || '';
+    const kind = /^Direct/.test(type) ? 'dm' : /^Group/.test(type) ? 'group' : 'ch';
+    const members = (g(/\*\*Members:\*\* Group messaging with: (.+)/) || '').split(',').map(s => s.trim().replace(/^@/, '')).filter(n => n && !/^robert/i.test(n));
+    const name = kind === 'dm' ? head.replace(/^DM with /, '') : kind === 'group' ? members.map(cap).join(', ') : head.replace(/^#/, '');
+    return { id: g(/\*\*ID:\*\* (\w+)/), kind, name, userId: g(/\*\*User ID:\*\* (\w+)/), priv: /Private/.test(type), purpose: (g(/\*\*(?:Purpose|Topic):\*\* (.+)/) || '').trim() };
+  }).filter(c => c.id && c.name);
+  return { list, cursor };
 }
+function slackMsg(from, rest, time) {
+  const f = String(from).match(/^(.*?)(?: <([^>]+)>)? \((\w+)\)\s*$/) || [];
+  const lines = String(rest).replace(/\s+$/, '').split('\n');
+  let ts = '';
+  while (lines.length && /^(Message TS|From|Time): /.test(lines[0])) { const l = lines.shift(); if (/^Message TS: /.test(l)) ts = l.slice(12).trim(); }
+  const meta = {};
+  while (lines.length && /^(Thread|Files|Reactions): /.test(lines[lines.length - 1])) { const l = lines.pop(); meta[l.split(':')[0]] = l.slice(l.indexOf(':') + 1).trim(); }
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  const name = (f[1] || from || '').trim(), id = f[3] || '';
+  if (id && name) LV.slackUsers[id] = name;
+  return { ts, time: tsIso(ts) || time, fromName: name || 'Workflow', fromId: id, bot: !id || /^B/.test(id), me: id === SLACK_ME, text: lines.join('\n').trim(),
+    replies: +((meta.Thread || '').match(/^(\d+)/) || [])[1] || 0, latest: SL_TIME(meta.Thread),
+    files: meta.Files ? [...meta.Files.matchAll(/(?:^|, )([^,(]+?) \(ID: /g)].map(m => m[1].trim()) : [], reactions: meta.Reactions || '' };
+}
+function parseSlackHistory(p) {
+  const txt = typeof p === 'string' ? p : (p?.messages || '');
+  const cursor = (String(p?.pagination_info || '').match(/cursor: `([^`]+)`/) || [])[1] || null;
+  const msgs = String(txt).split(/^=== Message/m).slice(1).map(b => {
+    const head = b.match(/^(?: from (.+?))? at (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d (?:CEST|CET)) ===/) || [];
+    return slackMsg(head[1] || '', b.slice(b.indexOf('\n') + 1), SL_TIME(head[2]));
+  }).filter(m => m.ts);
+  return { msgs: msgs.reverse(), cursor };
+}
+function parseSlackThread(p) {
+  const txt = String(typeof p === 'string' ? p : (p?.messages || '')).replace(/^=== THREAD REPLIES.*$/m, '');
+  return txt.split(/^(?:=== THREAD PARENT MESSAGE ===|--- Reply \d+ of \d+ ---)\s*$/m).slice(1).map(b => {
+    b = b.replace(/^\n+/, '');
+    return slackMsg((b.match(/^From: (.+)$/m) || [])[1] || '', b, SL_TIME((b.match(/^Time: (.+)$/m) || [])[1]));
+  }).filter(m => m.ts);
+}
+function mailSplit(body) {
+  const b = String(body || '').replace(/\r/g, '');
+  const m = b.match(/\n(?:On|Op) [^\n]{0,200}?(?:\n[^\n]{0,200}?)?(?:wrote|schreef)[^\n]*:[ \t]*\n/) || b.match(/\n-{2,} ?(?:Original Message|Oorspronkelijk bericht|Forwarded message|Doorgestuurd bericht)/i) || b.match(/\n(?:From|Van): [^\n]+\n(?:Sent|Verzonden|Date|Datum): /);
+  return m && m.index > 0 ? [b.slice(0, m.index).trim(), b.slice(m.index).trim()] : [b.trim(), ''];
+}
+function parseMailThread(p) {
+  const msgs = (p?.messages || []).map(m => {
+    const [body, quoted] = mailSplit(m.plaintextBody || m.snippet || '');
+    return { id: m.id, from: emailOf(m.sender), fromName: nameFromEmail(m.sender), to: (m.toRecipients || []).map(emailOf), cc: (m.ccRecipients || []).map(emailOf),
+      time: m.date || (m.internalDate ? new Date(+m.internalDate).toISOString() : null), body, quoted, unread: (m.labelIds || []).includes('UNREAD'), url: m.viewUrl, subject: m.subject,
+      files: (m.attachments || []).map(a => a.filename).filter(f => f && !/^(mail\d*|image\d*|logo[\w-]*|signature[\w-]*)\.(gif|png|jpe?g)$/i.test(f)) };
+  });
+  return { subject: String(msgs[0]?.subject || '').replace(/^((re|fw|fwd|antw|doorst):\s*)+/i, '') || '(geen onderwerp)', msgs, url: p?.viewUrl || msgs[0]?.url || null };
+}
+
+// ---- tekst netjes tonen ----
+const EMOJI = { newspaper: '📰', inbox_tray: '📥', outbox_tray: '📤', clipboard: '📋', zap: '⚡', speech_balloon: '💬', memo: '📝', pushpin: '📌', bar_chart: '📊', chart_with_upwards_trend: '📈', mag: '🔍', link: '🔗', sparkles: '✨', star: '⭐', sunny: '☀️', wave: '👋', handshake: '🤝', house: '🏠', battery: '🔋', electric_plug: '🔌', hammer_and_wrench: '🛠️', bell: '🔔', rotating_light: '🚨', red_circle: '🔴', large_green_circle: '🟢', large_orange_circle: '🟠', large_yellow_circle: '🟡', white_circle: '⚪', heavy_plus_sign: '➕', arrow_right: '➡️', point_down: '👇', raising_hand: '🙋', sob: '😭', grin: '😁', sunglasses: '😎', partying_face: '🥳', money_with_wings: '💸', moneybag: '💰', trophy: '🏆', books: '📚', '+1': '👍', thumbsup: '👍', raised_hands: '🙌', white_check_mark: '✅', heavy_check_mark: '✔️', eyes: '👀', pray: '🙏', fire: '🔥', tada: '🎉', rocket: '🚀', mega: '📣', heart: '❤️', joy: '😂', smile: '😄', slightly_smiling_face: '🙂', ok_hand: '👌', point_right: '👉', warning: '⚠️', dart: '🎯', muscle: '💪', clap: '👏', sweat_smile: '😅', thinking_face: '🤔', x: '❌', hourglass_flowing_sand: '⏳', calendar: '📅', bulb: '💡' };
+function slackFmt(t) {
+  return esc(t)
+    .replace(/&lt;(https?:\/\/[^\s|]+?)(?:\|(.+?))?&gt;/g, (m, u, l) => `<a href="${u}" target="_blank" rel="noopener">${l || esc(short(u.replace(/&amp;/g, '&'), 60))}</a>`)
+    .replace(/&lt;mailto:([^|]+?)(?:\|(.+?))?&gt;/g, (m, u, l) => l || u)
+    .replace(/&lt;@(\w+)(?:\|(.+?))?&gt;/g, (m, id, n) => `<span class="mention">@${esc(n || (id === SLACK_ME ? 'Robert' : LV.slackUsers[id] || 'iemand'))}</span>`)
+    .replace(/&lt;#(\w+)\|?(.*?)&gt;/g, (m, id, n) => `<span class="mention">#${n || 'kanaal'}</span>`)
+    .replace(/&lt;!(here|channel|everyone)&gt;/g, '<span class="mention">@$1</span>')
+    .replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,!?:;]|$)/gm, '$1<b>$2</b>')
+    .replace(/(^|[\s(])_([^_\n]+?)_(?=[\s).,!?:;]|$)/gm, '$1<i>$2</i>')
+    .replace(/(^|[\s(])~([^~\n]+?)~(?=[\s).,!?:;]|$)/gm, '$1<s>$2</s>')
+    .replace(/```([\s\S]+?)```/g, '<pre>$1</pre>').replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/^&gt; ?(.*)$/gm, '<span class="bq">$1</span>')
+    .replace(/:([a-z0-9_+-]+):/g, (m, n) => EMOJI[n] || m);
+}
+function mailFmt(t) {
+  return esc(t).replace(/\[image: ([^\]]+)\]/g, '<span class="att-inline">afbeelding</span>')
+    .replace(/https?:\/\/[^\s<>"]+?(?=[.,;:)]?(?:\s|$|&gt;))/g, u => `<a href="${u}" target="_blank" rel="noopener">${esc(short(u.replace(/&amp;/g, '&'), 64))}</a>`)
+    .replace(/^(&gt;.*)$/gm, '<span class="bq">$1</span>').replace(/\n{3,}/g, '\n\n');
+}
+const reactFmt = r => r ? r.split(/,\s*/).map(x => { const m = x.match(/^([\w+-]+) \((\d+)\)/); return m ? `<span class="react">${EMOJI[m[1]] || ':' + esc(m[1]) + ':'} ${m[2]}</span>` : ''; }).join('') : '';
+const slackBase = () => (allItems().find(i => i.type === 'slack' && /^https:\/\/[^/]+\.slack\.com/.test(i.url || ''))?.url.match(/^https:\/\/[^/]+/) || [])[0] || null;
+
+// ---- ophalen ----
+async function loadConv(key, opt = {}) {
+  const c = CV.conv[key] ||= { state: 'idle', msgs: [] };
+  if (c.state === 'loading') return;
+  if (!opt.force && !opt.more && !opt.around && (c.state === 'error' || (c.state === 'ok' && Date.now() - c.at < CV_TTL && !c.around))) return;
+  const quiet = c.state === 'ok' && !opt.more && !opt.around && !opt.force;
+  c.state = 'loading'; c.quiet = quiet; c.error = null; if (!quiet) scheduleRender();
+  try {
+    if (!MODE.live) {
+      await new Promise(r => setTimeout(r, 120));
+      const d = DEMO_CONV[key] || { msgs: [] };
+      c.msgs = d.msgs || []; c.mail = d.mail || null; c.cursor = null; c.around = false;
+    } else if (key.startsWith('sl:')) {
+      const input = { channel_id: key.slice(3), limit: opt.around ? 25 : 40 };
+      if (opt.more && c.cursor) input.cursor = c.cursor;
+      if (opt.around) input.latest = (parseFloat(opt.around) + 1).toFixed(6);
+      const h = parseSlackHistory(await call('Slack', 'slack_read_channel', input));
+      c.msgs = opt.more ? [...h.msgs, ...c.msgs.filter(m => !h.msgs.some(x => x.ts === m.ts))] : h.msgs;
+      c.cursor = h.cursor; c.around = !!opt.around || (opt.more && c.around);
+    } else if (key.startsWith('ml:')) {
+      c.mail = parseMailThread(await call('Gmail', 'get_thread', { threadId: key.slice(3), messageFormat: 'PLAIN_TEXT' }));
+    }
+    c.state = 'ok'; c.at = Date.now();
+  } catch (e) { c.state = quiet ? 'ok' : 'error'; c.error = cvErr(e); c.at = Date.now(); }
+  if (!opt.more) CV.scrollBottom = key;
+  scheduleRender();
+}
+async function loadThread(ch, ts, force) {
+  const k = ch + '|' + ts, t = CV.thread[k] ||= { state: 'idle', msgs: [] };
+  if (t.state === 'loading' || (!force && (t.state === 'error' || (t.state === 'ok' && Date.now() - t.at < CV_TTL)))) return;
+  t.state = 'loading'; scheduleRender();
+  try {
+    if (!MODE.live) { await new Promise(r => setTimeout(r, 120)); t.msgs = DEMO_THREADS[k] || (DEMO_CONV['sl:' + ch]?.msgs || []).filter(m => m.ts === ts); }
+    else t.msgs = parseSlackThread(await call('Slack', 'slack_read_thread', { channel_id: ch, message_ts: ts, limit: 200 }));
+    t.state = 'ok'; t.at = Date.now();
+  } catch (e) { t.state = 'error'; t.error = cvErr(e); t.at = Date.now(); }
+  scheduleRender();
+}
+
+// ---- lijst van gesprekken ----
+function convActivity() {
+  const act = {};
+  const feed = MODE.live ? [...LV.slack.dm, ...LV.slack.mention, ...LV.slack.mine, ...(LV.slack.recent || [])] : DEMO_ITEMS.filter(i => i.type === 'slack').map(i => ({ channelId: i.channelId, time: pd(i.time).toISOString(), text: i.title, fromName: i.fromName }));
+  for (const s of feed) if (s.channelId && s.time && (!act[s.channelId] || s.time > act[s.channelId].time)) act[s.channelId] = { time: s.time, text: s.text, from: s.fromName };
+  for (const [k, c] of Object.entries(CV.conv)) if (k.startsWith('sl:') && c.msgs?.length && !c.around) { const m = c.msgs[c.msgs.length - 1]; const id = k.slice(3); if (!act[id] || m.time > act[id].time) act[id] = { time: m.time, text: m.text, from: m.me ? 'Jij' : m.fromName }; }
+  return act;
+}
+function convLists() {
+  const act = convActivity();
+  const items = allItems();
+  const unreadSl = new Set(items.filter(i => i.type === 'slack' && !i.read && !i.fromMe && !i.bot && !i.answered).map(i => i.channelId));
+  const chans = MODE.live ? [...(LV.slackChans || []), ...(LV.slackDms || [])] : DEMO_CHANS;
+  const slack = chans.map(c => ({ key: 'sl:' + c.id, id: c.id, kind: c.kind, name: c.kind === 'ch' ? '#' + c.name : c.name, priv: c.priv,
+    sub: act[c.id] ? `${act[c.id].from ? act[c.id].from + ': ' : ''}${cleanSlack(act[c.id].text).replace(/\s+/g, ' ')}` : (c.purpose || ''),
+    time: act[c.id]?.time || null, unread: unreadSl.has(c.id) }));
+  const byTime = (a, b) => (b.time || '').localeCompare(a.time || '') || a.name.localeCompare(b.name, 'nl');
+  const unreadMail = new Set((MODE.live ? LV.mails : []).map(t => t.id));
+  const mailSrc = MODE.live ? (LV.mailAll?.length ? LV.mailAll : LV.mails).map(th => { const m = (th.messages || [])[th.messages.length - 1] || {}; return { id: th.id, subject: m.subject, sender: m.sender, unread: unreadMail.has(th.id), count: th.messageCount }; }) : DEMO_MAILLIST;
+  const mail = mailSrc.map(t => { const it = items.find(i => i.type === 'mail' && i.threadId === t.id); return { key: 'ml:' + t.id, id: t.id, kind: 'mail', name: nameFromEmail(t.sender) || 'Mail', sub: t.subject || '(geen onderwerp)', unread: t.unread && !it?.read, count: t.count }; });
+  return { mail, dm: slack.filter(s => s.kind !== 'ch').sort(byTime), ch: slack.filter(s => s.kind === 'ch').sort(byTime) };
+}
+function convName(key) {
+  if (key === 'all') return 'Voor jou';
+  if (key === 'ai') return 'Vraag Claude';
+  const l = convLists(); const r = [...l.mail, ...l.dm, ...l.ch].find(x => x.key === key);
+  if (r) return r.kind === 'mail' ? (CV.conv[key]?.mail?.subject || r.sub) : r.name;
+  const it = allItems().find(i => i.channelId && 'sl:' + i.channelId === key); return it ? it.channel : (CV.conv[key]?.mail?.subject || 'Gesprek');
+}
+function convRow(r) {
+  const icon = r.kind === 'mail' ? ic('mail') : r.kind === 'ch' ? ic('slack') : '';
+  return `<button class="cv-row${S.chatChannel === r.key ? ' active' : ''}${r.unread ? ' unread' : ''}" data-conv="${esc(r.key)}" data-k="cv:${esc(r.key)}">
+    <span class="cv-ico">${r.kind === 'mail' || r.kind === 'ch' ? icon : avatar(r.name, 22)}</span><span class="nm">${esc(r.name)}</span><span class="tm">${r.time ? esc(relShort(r.time)) : r.count > 1 ? r.count : ''}</span>${r.sub ? `<span class="pv">${esc(short(r.sub, 90))}</span>` : ''}</button>`;
+}
+function relShort(iso) { const t = pd(iso); const d = dayDiff(t); return d === 0 ? hm(t) : d === -1 ? 'gisteren' : d > -7 ? DAYS[t.getDay()].slice(0, 2) : `${t.getDate()} ${MONTHS[t.getMonth()].slice(0, 3)}`; }
+function convListHTML() {
+  const l = convLists(), f = CV.filter.trim().toLowerCase();
+  const match = r => !f || (r.name + ' ' + r.sub).toLowerCase().includes(f);
+  const group = (key, label, rows, cap) => {
+    rows = rows.filter(match); if (!rows.length) return '';
+    const all = CV.more[key] || f, shown = all ? rows : rows.slice(0, cap);
+    return `<div class="cv-group"><div class="cv-label"><span>${label}</span><span>${rows.length}</span></div>${shown.map(convRow).join('')}${rows.length > shown.length ? `<button class="cv-more" data-action="cv-more" data-g="${key}">Toon alle ${rows.length}</button>` : ''}</div>`;
+  };
+  const feedN = allItems().filter(i => i.type === 'slack').length;
+  const fixed = [['ai', 'Vraag Claude', 'spark', 0], ['all', 'Voor jou', 'chat', feedN]].filter(([, n]) => !f || n.toLowerCase().includes(f));
+  const status = MODE.live ? sectionNote(['slackChans', 'slackDms', 'mailAll']) : '';
+  const nCatch = catchCount();
+  const catchCard = !f ? `<button class="cv-catch felt plane-yellow-light" data-action="ct-start"><span class="shapes" aria-hidden="true"><svg viewBox="0 0 300 300" style="right:-30px;bottom:-60px;width:150px;height:150px"><circle cx="150" cy="150" r="100" fill="none" stroke="#f9b20b" stroke-width="26"/></svg></span><b>${nCatch ? nCatch + (nCatch === 1 ? ' gesprek' : ' gesprekken') + ' om in te halen' : 'Je bent bij'}</b><span>${nCatch ? 'Lees, reageer of plan, één voor één' : 'Niets ongelezens voor jou'}</span>${nCatch ? `<span class="cv-catch-go">Inhalen <span class="kbd">s</span></span>` : ''}</button>` : '';
+  return `${catchCard}${fixed.map(([k, n, i, c]) => `<button class="cv-row fixed${S.chatChannel === k ? ' active' : ''}" data-conv="${k}" data-k="cv:${k}"><span class="cv-ico">${ic(i)}</span><span class="nm">${n}</span><span class="tm">${c || ''}</span></button>`).join('')}
+    ${status}${group('mail', 'Mail', l.mail, 8)}${group('dm', 'Direct', l.dm, 8)}${group('ch', 'Kanalen', l.ch, 10)}
+    ${f && !['mail', 'dm', 'ch'].some(k => l[k].some(match)) ? '<div class="empty" style="padding:16px 8px">Geen gesprek gevonden.</div>' : ''}`;
+}
+function renderConvList() { const el = document.getElementById('cv-list'); if (el) { el.innerHTML = convListHTML(); renderMainHighlights(); } }
+
+// ---- berichten tonen ----
+function daySep(iso, prev) { const t = pd(iso); if (prev && ymd(pd(prev)) === ymd(t)) return ''; return `<div class="day-sep">${cap(dayLabel(t))}${dayDiff(t) < -6 ? ' ' + fmtDate(ymd(t)) : ''}</div>`; }
+function slackMsgHTML(m, ch, o = {}) {
+  const item = o.noItems ? null : allItems().find(i => i.type === 'slack' && i.ts === m.ts);
+  const tk = ch + '|' + m.ts, open = CV.open[tk], th = CV.thread[tk];
+  const nReplies = m.replies || (th?.msgs?.length > 1 ? th.msgs.length - 1 : 0);
+  return `<div class="msg${o.cont ? ' cont' : ''}${CV.focusTs === m.ts || o.focus === m.ts ? ' focus' : ''}${item ? ' is-item' : ''}" data-ts="${esc(m.ts)}"${item ? ` data-k="${esc(item.id)}" data-kind="${kindOf(item)}"` : ''}>
+    ${avatar(m.me ? 'Robert Verveen' : m.fromName, o.small ? 24 : undefined)}<div class="msg-body"><div class="msg-meta"><b>${esc(m.me ? 'Jij' : m.fromName)}</b><span>${m.time ? hm(pd(m.time)) : ''}</span>${item && !item.read && !item.fromMe ? '<span class="chip warn">voor jou</span>' : ''}</div>
+    <div class="msg-text">${slackFmt(m.text) || '<span class="sub">(bijlage of bericht zonder tekst)</span>'}</div>
+    ${m.files?.length ? `<div class="msg-files">${m.files.map(f => `<span class="file-pill">${ic('file')}${esc(f)}</span>`).join('')}</div>` : ''}
+    ${m.reactions ? `<div class="reacts">${reactFmt(m.reactions)}</div>` : ''}
+    ${!o.inThread && nReplies ? `<button class="thread-btn" data-thread="${esc(tk)}">${open ? 'Verberg' : nReplies === 1 ? '1 reactie' : nReplies + ' reacties'}${m.latest && !open ? ` · laatste ${relShort(m.latest)}` : ''}</button>` : ''}
+    ${open && !o.inThread ? threadHTML(ch, m.ts, o) : ''}</div></div>`;
+}
+function threadHTML(ch, ts, o = {}) {
+  const t = CV.thread[ch + '|' + ts];
+  if (!t || t.state === 'loading' && !t.msgs.length) return `<div class="thread"><div class="sub">Thread laden…</div></div>`;
+  if (t.state === 'error') return `<div class="thread"><div class="note err">${esc(t.error)} <button class="btn sm" data-action="thread-retry" data-t="${esc(ch + '|' + ts)}">Opnieuw</button></div></div>`;
+  const replies = o.withParent ? t.msgs : t.msgs.slice(1);
+  return `<div class="thread">${replies.length ? replies.map(r => slackMsgHTML(r, ch, { ...o, inThread: true, small: true })).join('') : '<div class="sub">Nog geen reacties.</div>'}</div>`;
+}
+function slackConvHTML(key) {
+  const c = CV.conv[key], ch = key.slice(3);
+  if (!c || (c.state === 'loading' && !c.quiet) || c.state === 'idle') return '<div class="empty">Berichten laden…</div>';
+  if (c.state === 'error') return `<div class="note err">${esc(c.error)} <button class="btn sm" data-action="conv-retry" data-conv="${esc(key)}">Opnieuw</button></div>`;
+  if (!c.msgs.length) return '<div class="empty">Nog geen berichten in dit gesprek.</div>';
+  let out = c.cursor ? `<button class="btn sm cv-older" data-action="conv-more" data-conv="${esc(key)}">Oudere berichten laden</button>` : '';
+  let prev = null, prevFrom = null;
+  for (const m of c.msgs) {
+    out += daySep(m.time, prev);
+    const cont = prev && prevFrom === m.fromName && ymd(pd(prev)) === ymd(pd(m.time)) && pd(m.time) - pd(prev) < 5 * 6e4;
+    out += slackMsgHTML(m, ch, { cont });
+    prev = m.time; prevFrom = m.fromName;
+  }
+  if (c.around) out += `<button class="btn sm cv-older" data-action="conv-latest" data-conv="${esc(key)}">Naar de nieuwste berichten</button>`;
+  return out;
+}
+function mailMsgHTML(m, o = {}) {
+  const others = [...m.to, ...m.cc];
+  const nm = e => o.names?.[e] || nameFromEmail(e);
+  return `<article class="mail-msg${m.unread ? ' unread' : ''}"><div class="mail-head">${avatar(m.fromName, o.small ? 24 : 32)}<div class="who"><b>${esc(m.fromName)}</b><span class="rcpt">${esc(m.from)}${others.length ? ' · aan ' + esc(m.to.map(nm).join(', ')) : ''}${m.cc.length ? ' · cc ' + esc(m.cc.map(nm).join(', ')) : ''}</span></div><time>${m.time ? (dayDiff(pd(m.time)) === 0 ? hm(pd(m.time)) : `${esc(relShort(m.time))} ${hm(pd(m.time))}`) : ''}</time></div>
+    <div class="mail-body">${mailFmt(m.body) || '<span class="sub">(geen tekst)</span>'}</div>
+    ${m.files?.length ? `<div class="msg-files">${m.files.map(f => `<span class="file-pill">${ic('file')}${esc(f)}</span>`).join('')}</div>` : ''}
+    ${m.quoted ? `<details class="mail-quoted"><summary>Eerdere tekst tonen</summary><div class="mail-body">${mailFmt(m.quoted)}</div></details>` : ''}</article>`;
+}
+function mailConvHTML(key, o = {}) {
+  const c = CV.conv[key];
+  if (!c || (c.state === 'loading' && !c.mail) || c.state === 'idle') return '<div class="empty">Mail laden…</div>';
+  if (c.state === 'error') return `<div class="note err">${esc(c.error)} <button class="btn sm" data-action="conv-retry" data-conv="${esc(key)}">Opnieuw</button></div>`;
+  const ms = c.mail?.msgs || [];
+  if (!ms.length) return '<div class="empty">Geen berichten in deze thread.</div>';
+  const keepOpen = o.small ? 1 : 2;
+  o = { ...o, names: Object.fromEntries(ms.map(m => [m.from, m.fromName])) };
+  return ms.map((m, i) => i < ms.length - keepOpen
+    ? `<details class="mail-msg folded"><summary><span class="mail-head">${avatar(m.fromName, 24)}<span class="who"><b>${esc(m.fromName)}</b><span class="rcpt">${esc(short(m.body.replace(/\s+/g, ' '), 110))}</span></span><time>${m.time ? esc(relShort(m.time)) : ''}</time></span></summary>${mailMsgHTML(m, o).replace(/^<article class="mail-msg[^"]*">/, '<div>').replace(/<\/article>$/, '</div>')}</details>`
+    : mailMsgHTML(m, o)).join('');
+}
+function feedHTML() {
+  const slack = allItems().filter(i => i.type === 'slack').sort((a, b) => when(a) - when(b));
+  let prev = null;
+  return sectionNote(['slackDm', 'slackMention', 'slackMine']) + (slack.length ? slack.map(m => {
+    const tk = m.channelId && m.ts ? m.channelId + '|' + ((m.url || '').match(/thread_ts=([\d.]+)/)?.[1] || m.ts) : null;
+    const sep = m.time ? daySep(pd(m.time).toISOString(), prev) : ''; prev = m.time ? pd(m.time).toISOString() : prev;
+    return `${sep}<div class="msg" data-k="${esc(m.id)}" data-kind="${kindOf(m)}">${avatar(m.fromMe ? 'Robert Verveen' : m.fromName)}<div class="msg-body"><div class="msg-meta"><b>${esc(m.fromMe ? 'Jij' : m.fromName)}</b><button class="linklike" data-conv="${esc(m.channelId ? 'sl:' + m.channelId : '')}" data-focus="${esc(m.ts || '')}">${esc(m.channel)}</button><span>${m.time ? hm(when(m)) : ''}</span>${m.read ? '<span>gelezen</span>' : ''}</div>
+      <div class="msg-text">${slackFmt(m.title)}</div>${tk ? `<button class="thread-btn" data-thread="${esc(tk)}" data-always="1">${CV.open[tk] ? 'Verberg gesprek' : 'Toon gesprek'}</button>${CV.open[tk] ? threadHTML(tk.split('|')[0], tk.split('|')[1], { withParent: true, focus: m.ts, noItems: true }) : ''}` : ''}</div></div>`;
+  }).join('') : '<div class="empty">Niets voor jou op dit moment.</div>');
+}
+
+function viewChat() {
+  const key = S.chatChannel || 'all', isAI = key === 'ai', isFeed = key === 'all';
+  const isSl = key.startsWith('sl:'), isMl = key.startsWith('ml:');
+  if (isSl || isMl) loadConv(key);
+  const c = CV.conv[key];
+  let title = convName(key), sub = '', acts = '';
+  if (isAI) sub = 'Antwoorden op basis van je agenda, mail, Slack, taken en toezeggingen';
+  else if (isFeed) sub = 'Slack-berichten aan jou, waarin je genoemd wordt, en je eigen berichten. Klik een kanaal of "Toon gesprek" voor alle context.';
+  else if (isSl) {
+    const r = [...convLists().dm, ...convLists().ch].find(x => x.key === key);
+    sub = r?.kind === 'ch' ? (MODE.live ? (LV.slackChans || []).find(x => x.id === key.slice(3))?.purpose : DEMO_CHANS.find(x => x.id === key.slice(3))?.purpose) || 'Slack-kanaal' : r?.kind === 'group' ? 'Groepsgesprek' : 'Direct bericht';
+    const base = slackBase();
+    acts = `<button class="btn sm" data-action="conv-read" data-conv="${esc(key)}">Alles gelezen</button><button class="btn sm" data-action="conv-retry" data-conv="${esc(key)}" title="Vernieuwen">${ic('refresh')}Vernieuwen</button>${base ? extLink(`${base}/archives/${key.slice(3)}`, ic('out') + 'Slack') : ''}`;
+  } else if (isMl) {
+    const m = c?.mail;
+    if (m) { const ppl = [...new Set(m.msgs.flatMap(x => [x.from, ...x.to, ...x.cc]))].filter(e => e && e !== (LV.selfEmail || 'robert@homezero.nl')); const nmap = Object.fromEntries(m.msgs.map(x => [x.from, x.fromName])); sub = ppl.map(e => nmap[e] || nameFromEmail(e)).join(', '); title = m.subject; }
+    acts = `<button class="btn sm" data-action="conv-read" data-conv="${esc(key)}">Gelezen</button>${extLink(m?.url || `https://mail.google.com/mail/u/0/#all/${key.slice(3)}`, ic('out') + 'Gmail')}`;
+  }
+  const body = isAI ? aiMessages() : isFeed ? feedHTML() : isSl ? slackConvHTML(key) : mailConvHTML(key);
+  return `<div class="chat conv${CV.mobileList ? ' m-list' : ''}">
+    <div class="chat-list"><input class="cv-filter" id="cv-filter" type="search" placeholder="Filter mail, kanalen en mensen" value="${esc(CV.filter)}" aria-label="Filter gesprekken"><div id="cv-list">${convListHTML()}</div></div>
+    <div class="chat-main">
+      <div class="chat-head"><button class="iconbtn cv-back" data-action="cv-back" aria-label="Terug naar gesprekken">${ic('arrow')}</button><div style="min-width:0;flex:1"><h3>${esc(title)}</h3><div class="sub" style="font-size:12px">${esc(sub || '')}</div></div><div class="cv-acts">${acts}</div></div>
+      <div class="msgs${isMl ? ' mail' : ''}" id="msgs">${body}</div>
+      ${isAI ? `<form class="composer" id="composer"><div class="composer-box"><textarea id="composer-input" rows="1" placeholder="Bijv. wat moet ik vandaag nog beantwoorden?"></textarea><button class="send-btn" type="submit" aria-label="Verstuur">${ic('arrow')}</button></div></form>`
+        : (isSl || isMl) ? `<form class="composer" id="cv-compose"><div class="composer-box"><textarea id="cv-input" rows="1" placeholder="${esc(isMl ? 'Antwoord op deze mail' : 'Bericht aan ' + title)}">${esc(CV.drafts[key] || '')}</textarea><button class="send-btn" type="submit" aria-label="Verstuur">${ic('arrow')}</button></div><div class="cv-foot">${isMl ? `<label><input type="checkbox" id="cv-all"${CV.replyAll[key] ? ' checked' : ''}> Allen beantwoorden</label> · ` : ''}<span class="kbd">↵</span> versturen · <span class="kbd">⇧↵</span> nieuwe regel · <span class="kbd">o</span> openen in ${isMl ? 'Gmail' : 'Slack'}</div></form>`
+        : `<div class="cv-foot" style="padding:10px 20px 14px"><span class="kbd">s</span> inhalen · <span class="kbd">1–5</span> plant een bericht · <span class="kbd">e</span> gelezen · <span class="kbd">i</span> vraag Claude</div>`}
+    </div></div>`;
+}
+function openConv(key, focusTs) {
+  if (!key) return;
+  S.chatChannel = key; CV.focusTs = focusTs || null; CV.mobileList = false; S.selected = null;
+  if (key.startsWith('sl:') && focusTs) {
+    const c = CV.conv[key];
+    if (!(c?.msgs || []).some(m => m.ts === focusTs)) loadConv(key, { around: focusTs });
+  }
+  CV.scrollBottom = key;
+  if (S.route.view !== 'chat') go({ view: 'chat' }); else render();
+}
+async function convMarkRead(key) {
+  const items = allItems().filter(i => (key.startsWith('sl:') && i.type === 'slack' && 'sl:' + i.channelId === key) || (key.startsWith('ml:') && i.type === 'mail' && 'ml:' + i.threadId === key));
+  items.forEach(i => setState(stateKey(i), { read: true }));
+  if (key.startsWith('ml:')) {
+    if (!items.length) setState(key.replace(/[^A-Za-z0-9_\-.~:@+]/g, '_'), { read: true });
+    if (MODE.live) { try { await call('Gmail', 'unlabel_thread', { threadId: key.slice(3), labelIds: ['UNREAD'] }); await CAP.mcp.invalidate('Gmail').catch(() => {}); } catch (e) { return toast(`Gelezen in Gmail lukte niet (${esc(e?.code || 'fout')}); hier wel.`); } }
+    return toast(`${ic('mail')} Gelezen${MODE.live ? ', ook in Gmail' : ''}`);
+  }
+  toast(items.length ? `Gelezen in de workspace (${items.length})` : 'Niets ongelezens voor jou in dit gesprek');
+}
+
+// ---- volledige context bij een item (detailpaneel) ----
+function ctxRef(it) {
+  if (!it) return null;
+  if (it.type === 'slack' && it.channelId && it.ts) return { kind: 'slack', ch: it.channelId, ts: (it.url || '').match(/thread_ts=([\d.]+)/)?.[1] || it.ts, at: it.ts };
+  if (it.type === 'mail' && it.threadId) return { kind: 'mail', id: it.threadId };
+  if (it.ctx) return it.ctx;
+  const txt = [it.notes, it.url, it.body, it.raw?.bron?.url, it.raw?.bron?.key, it.raw?.citaat && ''].filter(Boolean).join(' ');
+  const s = txt.match(/archives\/(\w+)\/p(\d{10})(\d{6})(?:[^\s]*?[?&]thread_ts=(\d+\.\d+))?/);
+  if (s) return { kind: 'slack', ch: s[1], ts: s[4] || `${s[2]}.${s[3]}`, at: `${s[2]}.${s[3]}` };
+  const sk = txt.match(/\bsl:(\d+\.\d+)/); if (sk) { const src = allItems().find(i => i.id === 'sl:' + sk[1]); if (src) return ctxRef(src); }
+  const mk = txt.match(/\bml:([0-9a-f]{12,20})\b/) || txt.match(/#(?:inbox|all|sent)\/([0-9a-f]{12,20})\b/); if (mk) return { kind: 'mail', id: mk[1] };
+  const tf = txt.match(/thread-f:(\d{15,22})/); if (tf) { try { return { kind: 'mail', id: BigInt(tf[1]).toString(16) }; } catch {} }
+  return null;
+}
+function ctxHTML(it) {
+  const ref = ctxRef(it); if (!ref) return '';
+  let body = '', btn = '';
+  if (ref.kind === 'slack') {
+    loadThread(ref.ch, ref.ts);
+    const t = CV.thread[ref.ch + '|' + ref.ts];
+    body = !t || t.state === 'loading' && !t.msgs.length ? '<div class="sub">Gesprek laden…</div>' : t.state === 'error' ? `<div class="note err">${esc(t.error)}</div>`
+      : t.msgs.map(m => slackMsgHTML(m, ref.ch, { inThread: true, small: true, focus: ref.at, noItems: true })).join('');
+    btn = `<button class="btn sm" data-conv="sl:${esc(ref.ch)}" data-focus="${esc(ref.at)}">${ic('chat')}Toon in kanaal</button>`;
+  } else {
+    const key = 'ml:' + ref.id; loadConv(key);
+    body = mailConvHTML(key, { small: true });
+    btn = `<button class="btn sm" data-conv="${esc(key)}">${ic('mail')}Open in Gesprekken</button>`;
+  }
+  return `<div class="insp-section"><h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${ref.kind === 'slack' ? 'Volledig gesprek' : 'Volledige mail'}</span>${btn}</h2><div class="ctx-box">${body}</div></div>`;
+}
+
+// Voorbeelddata koppelen aan de voorbeeldgesprekken
+(() => {
+  const set = (id, patch) => { const it = DEMO_ITEMS.find(i => i.id === id); if (it) Object.assign(it, patch); };
+  set('s1', { channelId: 'CDEMOFEEN', ts: dts('2026-10-29T09:12') });
+  set('s10', { channelId: 'DDEMOMIKE', ts: dts('2026-10-29T11:37') });
+  set('s11', { channelId: 'CDEMOINT', ts: dts('2026-10-30T08:10') });
+  set('e5', { threadId: 'demo-zsb' });
+  set('e4', { threadId: 'demo-iso' });
+  set('t1', { ctx: { kind: 'mail', id: 'demo-tz' } });
+})();
+
+/* ---------- Inhalen: per gesprek één kaart, zoals "Catch up" in Slack mobiel ---------- */
+// Gelezen (→/e), ongelezen laten (←/u), taak maken (1–5), direct antwoorden (r, Enter verstuurt), ongedaan maken (z).
+CV.kept = new Set(); CV.drafts = {}; CV.replyAll = {};
+function catchGroups() {
+  const groups = new Map();
+  for (const it of allItems()) {
+    let key = null;
+    if (it.type === 'slack' && !it.read && !it.fromMe && !it.bot && !it.answered && it.channelId) key = 'sl:' + it.channelId;
+    else if (it.type === 'mail' && !it.read && it.threadId) key = 'ml:' + it.threadId;
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(it);
+  }
+  return [...groups.entries()].map(([key, items]) => {
+    items.sort((a, b) => when(a) - when(b));
+    const last = items[items.length - 1];
+    const prio = items.some(i => i.dm || i.mention || i.mega || i.direct) ? 1 : 0;
+    return { key, items, last, prio, time: +when(last) };
+  }).sort((a, b) => b.prio - a.prio || b.time - a.time);
+}
+const catchCount = () => catchGroups().filter(g => !CV.kept.has(g.key)).length;
+function startCatch() {
+  const q = catchGroups().filter(g => !CV.kept.has(g.key)).map(g => g.key);
+  if (!q.length) return toast('Niets meer om in te halen');
+  S.catch = { q, i: 0, hist: [], done: 0 };
+  renderCatch(true);
+}
+function stopCatch() { S.catch = null; document.getElementById('overlay').innerHTML = ''; render(); }
+function catchCur() {
+  const C = S.catch; if (!C) return null;
+  const groups = catchGroups();
+  while (C.i < C.q.length) { const g = groups.find(x => x.key === C.q[C.i]); if (g) return g; C.i++; }
+  return null;
+}
+function catchTarget(g) {
+  // Antwoorden: in de thread als het laatste bericht in een thread staat, anders in het gesprek zelf
+  if (g.key.startsWith('ml:')) return { kind: 'mail' };
+  const tt = (g.last.url || '').match(/thread_ts=([\d.]+)/)?.[1];
+  return tt ? { kind: 'thread', ts: tt } : { kind: 'channel' };
+}
+function catchBodyHTML(g) {
+  if (g.key.startsWith('ml:')) { loadConv(g.key); return mailConvHTML(g.key); }
+  const ch = g.key.slice(3), t = catchTarget(g);
+  if (t.kind === 'thread') {
+    loadThread(ch, t.ts);
+    const th = CV.thread[ch + '|' + t.ts];
+    if (!th || th.state === 'loading' && !th.msgs.length) return '<div class="empty">Gesprek laden…</div>';
+    if (th.state === 'error') return `<div class="note err">${esc(th.error)}</div>`;
+    const unread = new Set(g.items.map(i => i.ts));
+    return `<div class="sub" style="font-size:12px;margin-bottom:4px">Thread in ${esc(convName(g.key))}</div>` + th.msgs.map((m, i) => slackMsgHTML(m, ch, { inThread: true, noItems: true, focus: unread.has(m.ts) ? m.ts : null })).join('');
+  }
+  loadConv(g.key);
+  const c = CV.conv[g.key];
+  if (!c || c.state === 'idle' || (c.state === 'loading' && !c.msgs.length)) return '<div class="empty">Gesprek laden…</div>';
+  if (c.state === 'error') return `<div class="note err">${esc(c.error)}</div>`;
+  const unread = new Set(g.items.map(i => i.ts));
+  const first = c.msgs.findIndex(m => unread.has(m.ts));
+  const from = Math.max(0, (first < 0 ? c.msgs.length : first) - 6);
+  let prev = null, out = from > 0 ? `<div class="sub" style="font-size:12px;text-align:center">${from} eerdere berichten · <button class="linklike" data-conv="${esc(g.key)}">open het hele gesprek</button></div>` : '';
+  for (const m of c.msgs.slice(from)) { out += daySep(m.time, prev); out += slackMsgHTML(m, ch, { noItems: true, focus: unread.has(m.ts) ? m.ts : null }); prev = m.time; }
+  return out;
+}
+function renderCatch(full) {
+  const ov = document.getElementById('overlay'), C = S.catch; if (!C) return;
+  if (full) rebuild();
+  const g = catchCur();
+  const left = C.q.length - C.i;
+  const top = `<div class="ct-top"><button class="ct-link" data-action="ct-stop">${ic('arrow')}Stoppen</button><b>${left ? left + ' over' : 'Klaar'}</b><button class="ct-link" data-action="ct-undo"${C.hist.length ? '' : ' disabled'}>Ongedaan <span class="kbd inv">z</span></button></div>`;
+  if (!g) {
+    ov.innerHTML = `<div class="scrim sw-scrim">${SW_DECO}<div class="ct" role="dialog" aria-label="Inhalen">${top}<div class="ct-card ct-end"><div class="eyebrow">Inhalen klaar</div><h2 class="sw-title">Je bent bij.</h2><p class="sub">${C.done} gesprekken afgehandeld${CV.kept.size ? ` · ${CV.kept.size} ongelezen gelaten` : ''}.</p><button class="btn primary big" data-action="ct-stop">Terug naar de workspace ${ic('arrow')}</button></div></div></div>`;
+    return;
+  }
+  const existing = ov.querySelector('.ct-card[data-key]');
+  if (!full && existing && existing.dataset.key === g.key) {
+    const b = document.getElementById('ct-body'); if (b) { const st = b.scrollTop, atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 40; b.innerHTML = catchBodyHTML(g); b.scrollTop = st; if (!b.dataset.scrolled || atEnd) catchScroll(b); }
+    const t = ov.querySelector('.ct-top'); if (t) t.outerHTML = top;
+    return;
+  }
+  const tg = catchTarget(g), isMail = tg.kind === 'mail';
+  const name = convName(g.key);
+  const mail = isMail ? CV.conv[g.key]?.mail : null;
+  const placeholder = isMail ? `Antwoord aan ${g.last.fromName}` : tg.kind === 'thread' ? 'Antwoord in de thread' : `Bericht aan ${name}`;
+  const others = isMail ? [...new Set((mail?.msgs || []).flatMap(m => [m.from, ...m.to, ...m.cc]))].filter(e => e && e !== (LV.selfEmail || 'robert@homezero.nl') && e !== emailOf(g.last.fromEmail || '')).length : 0;
+  ov.innerHTML = `<div class="scrim sw-scrim">${SW_DECO}<div class="ct" role="dialog" aria-label="Inhalen">${top}
+    <div class="ct-card" data-key="${esc(g.key)}">
+      <div class="ct-head"><button class="ct-title" data-conv="${esc(g.key)}" title="Open het hele gesprek">${isMail ? ic('mail') : ''}<span>${esc(isMail ? g.last.title : name)}</span>${ic('chev')}</button>
+        <span class="sub">${isMail ? 'Mail · ' + esc(g.last.fromName) : g.items.length > 1 ? g.items.length + ' berichten voor jou' : g.last.mention ? 'Je wordt genoemd' : g.last.dm ? 'Direct bericht' : 'Voor jou'}</span></div>
+      <div class="ct-body" id="ct-body">${catchBodyHTML(g)}</div>
+      <form class="ct-compose" id="ct-compose"><div class="composer-box"><textarea id="ct-input" rows="1" placeholder="${esc(placeholder)}">${esc(CV.drafts[g.key] || '')}</textarea><button class="send-btn" type="submit" aria-label="Verstuur">${ic('arrow')}</button></div>
+        <div class="ct-meta">${isMail && others ? `<label><input type="checkbox" id="ct-all"${CV.replyAll[g.key] ? ' checked' : ''}> Allen beantwoorden</label>` : ''}<span><span class="kbd">r</span> typen · <span class="kbd">↵</span> versturen en klaar · <span class="kbd">⇧↵</span> nieuwe regel</span></div></form>
+      <div class="ct-plan"><span class="sub">Taak maken</span>${[1, 2, 3, 4, 5].map(n => `<button class="btn sm" data-action="ct-plan" data-n="${n}" title="${BUCKETS[n]}"><span class="kbd">${n}</span>${BUCKETS[n]}</button>`).join('')}${!isMail && MODE.live ? '' : ''}<button class="btn sm" data-action="ct-react" title="Gelezen en een ✅ in Slack"${isMail ? ' hidden' : ''}><span class="kbd">⇧E</span>✅ in Slack</button></div>
+    </div>
+    <div class="ct-actions"><button class="ct-btn" data-action="ct-keep">Ongelezen laten <span class="kbd">←</span></button><button class="ct-btn primary" data-action="ct-read">Gelezen <span class="kbd inv">→</span></button></div>
+  </div></div>`;
+  const b = document.getElementById('ct-body'); if (b) catchScroll(b);
+}
+function catchScroll(b) {
+  const f = b.querySelector('.msg.focus, .mail-msg.unread');
+  if (f) { b.scrollTop = Math.max(0, f.offsetTop - b.offsetTop - 60); } else b.scrollTop = b.scrollHeight;
+  if (b.querySelector('.msg, .mail-msg')) b.dataset.scrolled = '1';
+}
+async function catchMarkRead(g, react) {
+  const prev = g.items.map(i => [stateKey(i), !!LV.state[stateKey(i)]?.read]);
+  g.items.forEach(i => setState(stateKey(i), { read: true }));
+  const at = S.catch.q.indexOf(g.key);
+  S.catch.hist.push({ i: at, key: g.key, prev, gmail: g.key.startsWith('ml:') });
+  S.catch.done++; S.catch.i = at + 1;
+  renderCatch(true);
+  if (!MODE.live) return;
+  if (g.key.startsWith('ml:')) { try { await call('Gmail', 'unlabel_thread', { threadId: g.key.slice(3), labelIds: ['UNREAD'] }); CAP.mcp.invalidate('Gmail').catch(() => {}); } catch (e) { toast(`Gelezen in Gmail lukte niet (${esc(e?.code || 'fout')}); hier wel.`); } }
+  else if (react) { try { await call('Slack', 'slack_add_reaction', { channel_id: g.last.channelId, message_ts: g.last.ts, emoji: 'white_check_mark' }); } catch (e) { toast(`✅-reactie lukte niet (${esc(e?.code || 'fout')})`); } }
+}
+async function catchUndo() {
+  const C = S.catch, h = C?.hist.pop(); if (!h) return;
+  if (h.keep) CV.kept.delete(h.key);
+  else { h.prev.forEach(([k, was]) => setState(k, { read: was })); C.done = Math.max(0, C.done - 1); }
+  C.i = h.i; renderCatch(true);
+  if (h.gmail && !h.keep && MODE.live) { try { await call('Gmail', 'label_thread', { threadId: h.key.slice(3), labelIds: ['UNREAD'] }); CAP.mcp.invalidate('Gmail').catch(() => {}); } catch {} }
+  toast('Ongedaan gemaakt');
+}
+async function sendReply(key, text, opt = {}) {
+  text = String(text || '').trim(); if (!text) return false;
+  if (!MODE.live) {
+    const msg = DM('Robert Verveen', SLACK_ME, new Date(S.clock).toISOString(), text);
+    if (key.startsWith('sl:')) { if (opt.thread) (DEMO_THREADS[key.slice(3) + '|' + opt.thread] ||= []).push(msg); else (DEMO_CONV[key] ||= { msgs: [] }).msgs.push(msg); }
+    else { const d = DEMO_CONV[key]?.mail; if (d) d.msgs.push({ fromName: 'Robert Verveen', from: 'robert@homezero.nl', to: [d.msgs[d.msgs.length - 1].from], cc: [], time: new Date(S.clock).toISOString(), body: text, quoted: '', files: [] }); }
+    if (opt.thread) { const k = key.slice(3) + '|' + opt.thread; if (CV.thread[k]) CV.thread[k].at = 0; }
+    if (CV.conv[key]) CV.conv[key].at = 0;
+    toast('Voorbeeld: verstuurd in deze demo, niet echt in Slack of Gmail');
+    return true;
+  }
+  try {
+    if (key.startsWith('sl:')) {
+      await call('Slack', 'slack_send_message', { channel_id: key.slice(3), message: text, ...(opt.thread ? { thread_ts: opt.thread } : {}) });
+      if (opt.thread) loadThread(key.slice(3), opt.thread, true);
+      loadConv(key, { force: true });
+      toast(`${ic('arrow')} Verstuurd in Slack`);
+    } else {
+      if (!CV.conv[key]?.mail) await loadConv(key, { force: true });
+      const last = (CV.conv[key]?.mail?.msgs || []).filter(m => m.id).slice(-1)[0];
+      if (!last) throw { code: 'geen_bericht' };
+      await call('Gmail', 'reply', { messageId: last.id, body: text, replyAll: !!opt.all, includeSignature: true });
+      CAP.mcp.invalidate('Gmail').catch(() => {});
+      loadConv(key, { force: true });
+      toast(`${ic('arrow')} Verstuurd vanuit Gmail`);
+    }
+    return true;
+  } catch (e) { toast(`Versturen lukte niet (${esc(e?.code || 'fout')}). Je tekst staat er nog.`); return false; }
+}
+async function catchSend() {
+  const g = catchCur(); const inp = document.getElementById('ct-input'); if (!g || !inp) return;
+  const text = inp.value; if (!text.trim()) return;
+  inp.disabled = true;
+  const t = catchTarget(g);
+  const ok = await sendReply(g.key, text, { thread: t.kind === 'thread' ? t.ts : null, all: !!document.getElementById('ct-all')?.checked });
+  inp.disabled = false;
+  if (ok) { delete CV.drafts[g.key]; await catchMarkRead(g); }
+  else inp.focus();
+}
+async function catchKey(k, ev) {
+  const g = catchCur();
+  if (k === 'Escape') return stopCatch();
+  if (k === 'z' || k === 'Backspace') return catchUndo();
+  if (!g) { if (k === 'Enter') stopCatch(); return; }
+  if (k === 'ArrowRight' || k === 'e') return catchMarkRead(g);
+  if (k === 'E') return catchMarkRead(g, true);
+  if (k === 'ArrowLeft' || k === 'u') { CV.kept.add(g.key); const at = S.catch.q.indexOf(g.key); S.catch.hist.push({ i: at, key: g.key, keep: true }); S.catch.i = at + 1; return renderCatch(true); }
+  if (k === 'r') { ev.preventDefault(); return document.getElementById('ct-input')?.focus(); }
+  if (k === 'o') { const u = g.last.url; if (u) { try { window.open(u, '_blank', 'noopener'); } catch {} } return; }
+  if (/^[1-5]$/.test(k)) {
+    const n = +k; const it = g.last;
+    await planItem(it, n);
+    return catchMarkRead(g);
+  }
+  if (k === 'ArrowDown' || k === 'ArrowUp' || k === 'j' || k === 'k') { const b = document.getElementById('ct-body'); if (b) b.scrollBy({ top: (k === 'ArrowDown' || k === 'j') ? 120 : -120 }); }
+}
+
 function aiMessages() {
   if (!S.aiThread.length) {
     const sugg = ['Wat moet ik vandaag nog beantwoorden?', 'Welke toezeggingen lopen het meeste risico?', 'Waar moet ik op letten bij mijn externe afspraken deze week?'];
@@ -2560,8 +3261,8 @@ function renderInspector() {
   } else if (it.type === 'context') { meta = 'Contextlaag · voorbeeld'; body = it.body; }
   el.innerHTML = `<div class="insp-head">${srcLabel(it.type)}<button class="iconbtn" data-action="close-insp" aria-label="Sluiten">${ic('x')}</button></div>
     <div class="insp-title">${esc(it.title.length > 220 ? short(it.title, 220) : it.title)}</div><div class="sub" style="font-size:12.5px">${meta}</div>
-    ${body && body !== it.title || (it.type === 'slack' && it.title.length > 220) ? `<div class="insp-body">${esc(short(body, 3000))}</div>` : ''}
-    <div class="actions">${actions}</div>${extra}
+    ${(it.type === 'slack' || it.type === 'mail') && ctxRef(it) ? '' : body && body !== it.title || (it.type === 'slack' && it.title.length > 220) ? `<div class="insp-body">${esc(short(body, 3000))}</div>` : ''}
+    <div class="actions">${actions}</div>${ctxHTML(it)}${extra}
     ${(it.entities || []).length ? `<div class="insp-section"><h2>Gekoppeld aan</h2><div style="display:flex;gap:6px;flex-wrap:wrap">${it.entities.map(entityChip).join('')}</div></div>` : ''}
     ${rel.length ? `<div class="insp-section"><h2>Uit dezelfde context</h2><div class="list">${rel.map(rowHTML).join('')}</div></div>` : ''}`;
 }
@@ -2601,6 +3302,7 @@ const COMMANDS = [
   { label: 'Meeting wegschrijven (concept)', hint: 'demo', icon: 'context', run: () => go({ view: 'wegschrijven' }) },
   { label: 'Inplannen met collega’s', hint: 'n', icon: 'users', run: () => openPlanner() },
   { label: 'Haal weekdoelen op uit #02-intern', hint: 'Slack', icon: 'commit', run: () => importWeekgoals() },
+  { label: 'Inhalen: Slack en mail één voor één', hint: 'chat', icon: 'chat', run: () => startCatch() },
   { label: 'Vraag Claude…', hint: 'chat', icon: 'spark', run: q => q ? ask(q) : (S.chatChannel = 'ai', go({ view: 'chat' })) },
   { label: 'Nieuwe toezegging…', hint: 'tracker', icon: 'plus', run: q => q ? (commitAdd({ wat: q }), toast('Toezegging toegevoegd'), go({ view: 'toezeggingen' })) : go({ view: 'toezeggingen' }) },
   { label: 'Haal toezeggingen op uit Slack en mail', hint: 'Claude', icon: 'spark', run: () => runExtraction('scan') },
@@ -2739,6 +3441,7 @@ function render() {
   renderSidebar();
   const r = S.route, main = document.getElementById('main');
   const keepScroll = main.scrollTop;
+  const prevMsgs = document.getElementById('msgs')?.scrollTop;
   let html = '';
   if (r.view === 'dagstart') html = viewDagstart();
   else if (r.view === 'agenda') html = viewAgenda();
@@ -2757,8 +3460,18 @@ function render() {
     const qb = document.getElementById('qbar');
     qb.addEventListener('input', () => { S.route.q = qb.value; renderListResults(); renderMainHighlights(); });
   }
-  if (r.view === 'chat') { const m = document.getElementById('msgs'); if (m) m.scrollTop = m.scrollHeight; }
+  if (r.view === 'chat') {
+    const m = document.getElementById('msgs');
+    if (m) {
+      const f = CV.focusTs && m.querySelector('.msg.focus');
+      if (f && CV.focusScroll) { f.scrollIntoView({ block: 'center' }); CV.focusScroll = false; }
+      else if (CV.lastKey !== S.chatChannel || CV.scrollBottom === S.chatChannel || prevMsgs == null) { m.scrollTop = m.scrollHeight; if (!(CV.conv[S.chatChannel]?.state === 'loading')) CV.scrollBottom = null; }
+      else m.scrollTop = prevMsgs;
+      CV.lastKey = S.chatChannel;
+    }
+  }
   renderInspector(); renderMainHighlights(); applyFocus(false);
+  if (S.catch) renderCatch(false);
   if (S.help) renderHelp();
   mainDirty = false;
 }
@@ -2775,6 +3488,9 @@ const GO_KEYS = { d: 'dagstart', p: 'planning', a: 'agenda', t: 'toezeggingen', 
 const typing = el => el && (/INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable);
 async function keyAction(key, ev, over) {
   const it = over || focusedItem();
+  const kf = document.querySelector('#main .kf');
+  if (key === 'Enter' && kf?.dataset.conv) { openConv(kf.dataset.conv); return true; }
+  if (key === 'Enter' && kf?.querySelector?.(':scope > .msg-body > .thread-btn')) { kf.querySelector(':scope > .msg-body > .thread-btn').click(); return true; }
   if (key === 'Enter') { if (it) openItem(it.id); return true; }
   if (key === 'o') { if (it) { const url = it.type === 'meeting' ? (it.meet && pd(it.start) - S.clock < 15 * 6e4 && pd(it.end) > S.clock ? it.meet : it.url) : it.url; if (!url) toast('Geen link voor dit item'); else { let w = null; try { w = window.open(url, '_blank', 'noopener'); } catch {} if (!w) toast(`<a href="${esc(url)}" target="_blank" rel="noopener" style="color:inherit">Openen ${ic('out')}</a>`); } } return true; }
   if (!it) return false;
@@ -2794,6 +3510,14 @@ document.addEventListener('keydown', async ev => {
   if (/^(j|k|ArrowUp|ArrowDown|[1-5]|x|e|w|b)$/.test(k) && !typing(document.activeElement)) document.body.classList.add('kbd-mode');
   if ((ev.metaKey || ev.ctrlKey) && k.toLowerCase() === 'k') { ev.preventDefault(); S.help = false; S.palette ? closePalette() : openPalette(); return; }
   if (S.palette) return;                     // het palet regelt zijn eigen toetsen
+  if (S.catch) {
+    if (ev.target.id === 'ct-input') { if (k === 'Enter' && !ev.shiftKey) { ev.preventDefault(); catchSend(); } else if (k === 'Escape') { ev.preventDefault(); ev.target.blur(); } return; }
+    if (typing(document.activeElement) || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Backspace', 'Enter', 'e', 'E', 'u', 'r', 'z', 'o', 'j', 'k', '1', '2', '3', '4', '5'].includes(k)) { ev.preventDefault(); catchKey(k, ev); }
+    return;
+  }
+  if (ev.target.id === 'cv-input') { if (k === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ev.target.form.requestSubmit(); } else if (k === 'Escape') ev.target.blur(); return; }
+  if (k === 's' && S.route.view === 'chat' && !typing(document.activeElement) && !ev.metaKey && !ev.ctrlKey) { ev.preventDefault(); startCatch(); return; }
   if (S.swipe) {
     if (ev.target.id === 'sw-note') { if (k === 'Enter' || k === 'Escape') { ev.preventDefault(); ev.target.blur(); } return; }
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
@@ -2832,7 +3556,7 @@ document.addEventListener('keydown', async ev => {
     const sh = { '!': 0, '@': 1, '#': 2, '$': 3, '%': 4, '^': 5, '&': 6, '*': 7, '(': 8 }[k];
     if (ev.shiftKey && (sh !== undefined || /^Digit[1-9]$/.test(ev.code))) { ev.preventDefault(); const i = sh ?? (+ev.code.slice(5) - 1); S.commitTab = ['alles', 'mijn', 'aan_mij', 'bespreken', 'weekdoel', 'roadmap', 'voornemen', 'taken', 'afgerond'][i]; S.fIdx = 0; S.fId = null; render(); return; }
   }
-  if (S.route.view === 'chat' && k === 'i') { ev.preventDefault(); S.chatChannel = 'ai'; render(); document.getElementById('composer-input')?.focus(); return; }
+  if (S.route.view === 'chat' && k === 'i') { ev.preventDefault(); S.chatChannel = 'ai'; CV.mobileList = false; render(); document.getElementById('composer-input')?.focus(); return; }
   const handled = await keyAction(k === 'Enter' ? 'Enter' : k, ev);
   if (handled) ev.preventDefault();
 });
@@ -2841,9 +3565,26 @@ document.addEventListener('click', ev => {
   if (t.closest('a[href]')) return;
   const pi = t.closest('[data-pi]'); if (pi) { palPick(+pi.dataset.pi); return; }
   const cand = t.closest('[data-cand]'); if (cand) { S.sheet.items[+cand.dataset.cand].keep = cand.checked; const b = document.querySelector('[data-action="accept-cands"]'); if (b) b.textContent = `Toevoegen (${S.sheet.items.filter(x => x.keep).length})`; return; }
+  const cvb = t.closest('[data-conv]'); if (cvb && cvb.dataset.conv) { ev.stopPropagation(); if (S.catch) { S.catch = null; document.getElementById('overlay').innerHTML = ''; } if (cvb.dataset.focus) CV.focusScroll = true; return openConv(cvb.dataset.conv, cvb.dataset.focus || null); }
+  const thb = t.closest('[data-thread]');
+  if (thb) { const tk = thb.dataset.thread; CV.open[tk] = !CV.open[tk]; if (CV.open[tk]) { const [c, ts] = tk.split('|'); loadThread(c, ts); } return render(); }
   const a = t.closest('[data-action]');
   if (a) {
     const act = a.dataset.action, id = a.dataset.id;
+    if (act === 'ct-start') return startCatch();
+    if (act === 'ct-stop') return stopCatch();
+    if (act === 'ct-undo') return catchUndo();
+    if (act === 'ct-keep') return catchKey('ArrowLeft', ev);
+    if (act === 'ct-read') return catchKey('ArrowRight', ev);
+    if (act === 'ct-react') return catchKey('E', ev);
+    if (act === 'ct-plan') return catchKey(a.dataset.n, ev);
+    if (act === 'cv-more') { CV.more[a.dataset.g] = true; return renderConvList(); }
+    if (act === 'cv-back') { CV.mobileList = true; return render(); }
+    if (act === 'conv-more') return loadConv(a.dataset.conv, { more: true });
+    if (act === 'conv-retry') { CV.scrollBottom = a.dataset.conv; return loadConv(a.dataset.conv, { force: true }); }
+    if (act === 'conv-latest') { CV.focusTs = null; CV.scrollBottom = a.dataset.conv; return loadConv(a.dataset.conv, { force: true }); }
+    if (act === 'conv-read') return convMarkRead(a.dataset.conv);
+    if (act === 'thread-retry') { const [c, ts] = a.dataset.t.split('|'); return loadThread(c, ts, true); }
     if (act === 'close-pal') { if (t === a) closePalette(); return; }
     if (act === 'close-sheet') { if (t === a) closeSheet(); return; }
     if (act === 'close-sheet-btn') return closeSheet();
@@ -2916,8 +3657,8 @@ document.addEventListener('click', ev => {
   const tab = t.closest('[data-ctab]'); if (tab) { S.commitTab = tab.dataset.ctab; S.fIdx = 0; S.fId = null; return render(); }
   const kr = t.closest('#main [data-k]'); if (kr) { const rows = [...document.querySelectorAll('#main [data-k]')]; S.fIdx = rows.indexOf(kr); S.fId = kr.dataset.k; applyFocus(); }
   const o = t.closest('[data-open]'); if (o && o.dataset.open) return openItem(o.dataset.open);
-  const ch = t.closest('[data-chat]'); if (ch) { S.chatChannel = ch.dataset.chat; return render(); }
-  const co = t.closest('[data-chat-open]'); if (co) { S.chatChannel = co.dataset.chatOpen; S.selected = null; return go({ view: 'chat' }); }
+  const ch = t.closest('[data-chat]'); if (ch) return openConv(ch.dataset.chat);
+  const co = t.closest('[data-chat-open]'); if (co) return openConv(co.dataset.chatOpen);
   const md = t.closest('[data-mode]'); if (md) { S.chatChannel = md.dataset.mode === 'ai' ? 'ai' : 'all'; return render(); }
   if (document.getElementById('app').classList.contains('nav-open') && !t.closest('.sidebar')) document.getElementById('app').classList.remove('nav-open');
 });
@@ -2928,8 +3669,10 @@ document.addEventListener('change', ev => {
   if (t.dataset.calScope) return setCal(t.dataset.calScope, { scope: t.checked ? 'overal' : 'agenda' });
   if (t.id === 'pl-dur' && S.planner) { S.planner.dur = +t.value; if (S.planner.sel) S.planner.sel.end = new Date(+S.planner.sel.start + S.planner.dur * 6e4); return plannerSuggest(); }
   if (t.id === 'pl-meet' && S.planner) S.planner.meet = t.checked;
+  if (t.id === 'ct-all' && S.catch) { const g = catchCur(); if (g) CV.replyAll[g.key] = t.checked; }
+  if (t.id === 'cv-all') CV.replyAll[S.chatChannel] = t.checked;
 });
-document.addEventListener('input', ev => { if (ev.target.id === 'pl-title' && S.planner) S.planner.title = ev.target.value; });
+document.addEventListener('input', ev => { if (ev.target.id === 'pl-title' && S.planner) S.planner.title = ev.target.value; if (ev.target.id === 'cv-filter') { CV.filter = ev.target.value; renderConvList(); } if (ev.target.id === 'ct-input' && S.catch) { const g = catchCur(); if (g) CV.drafts[g.key] = ev.target.value; } if (ev.target.id === 'cv-input') CV.drafts[S.chatChannel] = ev.target.value; if (ev.target.tagName === 'TEXTAREA' && /ct-input|cv-input|composer-input/.test(ev.target.id)) { ev.target.style.height = 'auto'; ev.target.style.height = Math.min(160, ev.target.scrollHeight) + 'px'; } });
 document.addEventListener('submit', async ev => {
   ev.preventDefault();
   if (ev.target.id === 'addcommit') {
@@ -2940,6 +3683,15 @@ document.addEventListener('submit', async ev => {
     document.getElementById('ac-wat').value = ''; document.getElementById('ac-org').value = ''; document.activeElement?.blur?.();
     toast(`${ic('commit')} Toegevoegd${['mijn', 'voornemen'].includes(stroom) ? ': plan hem met 1–5' : ''}`);
     mainDirty = false; render();
+  }
+  if (ev.target.id === 'ct-compose') return catchSend();
+  if (ev.target.id === 'cv-compose') {
+    const inp = document.getElementById('cv-input'), key = S.chatChannel; if (!inp.value.trim()) return;
+    inp.disabled = true;
+    const ok = await sendReply(key, inp.value, { all: !!document.getElementById('cv-all')?.checked });
+    inp.disabled = false;
+    if (ok) { delete CV.drafts[key]; inp.value = ''; CV.scrollBottom = key; render(); } else inp.focus();
+    return;
   }
   if (ev.target.id === 'composer') { const inp = document.getElementById('composer-input'); const v = inp.value.trim(); if (v && S.chatChannel === 'ai') ask(v); }
 });

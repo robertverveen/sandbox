@@ -15,8 +15,38 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
 | **Plan session** | `s` | Card by card on a felt blue plane: week goals and roadmap first (`g` on track, `o` at risk, `r` blocked, `x` done, `n` note), then everything that needs a decision (`1`–`5` plan, `e`, `w`, `b`, `x`). `s` skip, `u` back. |
 | **Agenda** | `g a`, `[` `]`, `l`, `n` | All Google calendars in one week view, in Dutch time, with Google Tasks in the all-day row. `l` opens the layers (Werk, Privé, Lou, Collega's); `n` plans something with colleagues (free slots via `suggest_time`). |
 | **Tracker** | `g t`, `⇧1–7` | Ik beloofde (I promised) · Wachten op (waiting for) · Bespreken (raise at next contact) · Voornemens (intentions) · Weekdoelen (week goals) · Roadmap · Afgerond (done). Replaces the Slack canvas "⏳ Wachten op". |
-| **Chat** | `g c`, `i` | Slack addressed to you, plus Vraag Claude (ask Claude) about all sources. |
+| **Chat (Gesprekken)** | `g c`, `s`, `i` | All mail threads, DMs, group DMs and channels you are in, readable in full: channel history with day separators, threads that unfold inline, and complete mail threads (older messages folded, quoted text hidden, attachment names). Reply directly from the app. **Inhalen** (`s`) works through everything unread, one conversation at a time. |
 | **⌘K** | `⌘K` `/` | Search and commands. Keywords: `@feenstra type:mail when:week is:reageren`. |
+
+## Gesprekken and Inhalen
+
+- **Full context everywhere.** Selecting a Slack message, mail, task or tracker item opens the inspector with the complete thread or mail. Tasks and commitments created from Slack or mail keep the permalink, so their context comes back too.
+- **Inhalen (catch up)** works like Catch up in Slack mobile: one card per unread conversation, with the unread messages highlighted. The keys are:
+  - `→`/`e` read
+  - `←`/`u` keep unread
+  - `1`–`5` make a Google Task (today … backlog) and mark read
+  - `r` type a reply; `↵` sends it and marks the conversation done
+  - `⇧E` read plus ✅ in Slack
+  - `z` undo
+  - `Esc` stop
+- **Replying.** Slack replies go to the conversation, or to the thread when the unread message was in a thread (`slack_send_message`). Mail replies use Gmail `reply`, with your signature and optional reply-all.
+- **Read state.**
+  - Mail is marked read in Gmail. Undo puts `UNREAD` back.
+  - The Slack connector can neither read nor set Slack's own read marker. A message therefore counts as handled when you mark it here, reply to it here or in Slack, or post later in the same conversation or thread.
+  - Real two-way read sync needs the Slack API (see below).
+- **Token-efficient loading.** The lists come from cheap list calls, refreshed hourly for channels and every 5 minutes for mail. A conversation's history is fetched only when you open it and is cached for 2 minutes.
+
+## From artifact to web app: own APIs instead of MCP
+
+The artifact talks to Slack and Gmail through the claude.ai connectors (MCP). That is fine for the prototype. For a real web or Mac app, connect them directly:
+
+| | Prototype (MCP) | Web app (own API) |
+|---|---|---|
+| **Slack** | search, `read_channel`, `read_thread`, `send_message`; no read state, polling | Own Slack app with a user token: `conversations.history/replies`, `chat.postMessage`, **`conversations.mark`** (real mark as read), unread counts via `client.counts`, and Events API or Socket Mode for live updates |
+| **Gmail** | `search_threads` (no dates in the summary), `get_thread`, `reply`, labels | Gmail API with `users.watch` and Pub/Sub push plus `history.list` for instant changes; full headers, attachments and drafts |
+| **Auth and storage** | the connectors hold the tokens; `db` for state | OAuth on the server, tokens encrypted in your own backend, state in Postgres |
+
+All source calls sit in a few functions: `loadConv`, `loadThread`, `sendReply`, `convMarkRead`, `markRead` and the watches. In the web app only those functions are swapped for your own `/api/slack/*` and `/api/gmail/*` routes. The UI, keyboard model and data model stay the same.
 
 ## Agenda colours and layers
 
