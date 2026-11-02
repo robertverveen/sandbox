@@ -854,6 +854,124 @@ form.composer, form.ct-compose { position: relative; }
 @keyframes ctFromLeft { from { transform: translateX(-40px) scale(.98); opacity: 0; } }
 @keyframes ctFromRight { from { transform: translateX(40px) scale(.98); opacity: 0; } }
 @keyframes ctFromBelow { from { transform: translateY(24px) scale(.98); opacity: 0; } }
+
+/* v10: zoeken, tijdlijn, vastgezette views */
+.nav-group.pins { margin-top: 18px; }
+.nav-group.pins .nav-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 0 10px 6px; }
+.nav-item.pin { position: relative; }
+.nav-item.pin .pin-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; text-align: left; }
+.nav-item.pin .unpin { display: none; width: 20px; height: 20px; border-radius: 6px; place-items: center; color: var(--muted); }
+.nav-item.pin .unpin .i { width: 12px; height: 12px; }
+.nav-item.pin:hover .unpin { display: inline-grid; }
+.nav-item.pin:hover .nav-kbd { display: none; }
+.nav-item.pin .unpin:hover { background: var(--hover); color: var(--fg); }
+.pal-tip { font-size: 12px; color: var(--muted); align-self: center; margin-left: 4px; }
+.pal-live .row-title b { font-weight: 650; }
+.sq-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; border-radius: 999px; padding: 4px 12px; background: var(--hover); color: var(--fg); }
+.sq-chip .i { width: 13px; height: 13px; }
+.sq-chip.org { background: var(--blue-100); color: var(--blue-500); }
+.sq-chip.kw { background: var(--yellow-100); color: #5c3d00; }
+.sq-chip.kw small { font-weight: 500; opacity: .75; }
+.sq-chip.mode { background: var(--blue-500); color: #fff; }
+.pal-chips .sq-chip { font-size: 12px; padding: 3px 10px; }
+.search-page .page-head { align-items: flex-end; }
+.sr-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sr-acts .seg button { font-size: 13px; padding: 6px 14px; }
+.sr-acts .seg button.on { background: var(--panel); color: var(--fg); font-weight: 600; }
+.qbar.sq { display: flex; align-items: center; gap: 10px; border: 1px solid var(--grey-200); border-radius: 999px; padding: 6px 6px 6px 18px; background: var(--panel); margin: 4px 0 10px; }
+.qbar.sq:focus-within { border-color: var(--blue-500); }
+.qbar.sq input { flex: 1; border: 0; outline: none; background: transparent; font: inherit; font-size: 15px; color: var(--fg); min-width: 0; }
+.qbar.sq .sq-ico { color: var(--muted); display: grid; }
+.sq-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+.sr-sect { margin-bottom: 18px; }
+.tl-sum { display: flex; flex-direction: column; gap: 10px; background: var(--yellow-100); border-radius: var(--corner-l); padding: 14px 18px; margin-bottom: 18px; font-size: 14px; }
+.tl-people { display: flex; gap: 6px; flex-wrap: wrap; }
+.tl-people .person { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border-radius: 999px; padding: 3px 10px 3px 3px; font-size: 12.5px; }
+.tl-people small { color: var(--muted); font-weight: 600; }
+.tl { position: relative; display: flex; flex-direction: column; padding-left: 4px; }
+.tl::before { content: ""; position: absolute; left: 21px; top: 8px; bottom: 8px; width: 2px; background: var(--blue-100); }
+.tl-day { position: relative; margin: 14px 0 6px 44px; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.tl-ev { position: relative; display: grid; grid-template-columns: 36px 46px minmax(0, 1fr); gap: 0 10px; align-items: start; text-align: left; border: 0; background: transparent; padding: 8px 10px 8px 0; border-radius: 12px; cursor: pointer; font: inherit; color: var(--fg); width: 100%; }
+.tl-ev:hover { background: var(--hover); }
+.tl-ev.sel, .tl-ev.kf { background: var(--blue-100); }
+.tl-dot { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--panel); border: 2px solid var(--blue-100); color: var(--blue-500); z-index: 1; }
+.tl-ev.slack .tl-dot { color: var(--fg); }
+.tl-ev.meeting .tl-dot { border-color: var(--yellow-300); color: #8a5a00; }
+.tl-dot .i { width: 15px; height: 15px; }
+.tl-ev time { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 8px; }
+.tl-main { display: flex; flex-direction: column; gap: 2px; padding-top: 5px; min-width: 0; }
+.tl-who { font-size: 13.5px; overflow-wrap: anywhere; }
+.tl-who b { font-weight: 600; }
+.tl-org { font-size: 11px; font-weight: 600; color: var(--blue-500); background: var(--blue-100); border-radius: 999px; padding: 0 7px; margin-left: 2px; }
+.tl-cc { color: var(--muted); font-size: 12.5px; }
+.tl-subj { font-weight: 600; font-size: 14px; }
+.tl-snip { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .tl-ev { grid-template-columns: 36px minmax(0, 1fr); } .tl-ev time { display: none; } .tl-day { margin-left: 44px; } .search-page .page-head { flex-direction: column; align-items: flex-start; } }
+
+/* v10: huisstijl in Tracker, Planning en Zoeken */
+.hz-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 24px; align-items: end; border-radius: var(--corner-xl); padding: 28px 32px; margin-bottom: 18px; }
+.hz-head h1 { font-size: 44px; font-weight: 560; letter-spacing: -0.055em; line-height: 1; margin: 6px 0 0; color: var(--ink, #292f38); }
+.hz-head .eyebrow { color: #3a4560; }
+.hz-lead { padding-right: 110px; }
+.hz-lead p { margin: 0 0 12px; color: #3a4560; font-size: 15px; line-height: 1.5; max-width: 52ch; }
+.tlinks { display: flex; gap: 6px 18px; flex-wrap: wrap; }
+.tlink { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 0; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--blue-500); cursor: pointer; }
+.tlink .i { width: 14px; height: 14px; transform: rotate(-45deg); transition: transform .2s; }
+.tlink:hover .i { transform: rotate(-45deg) translate(2px, 0); }
+.tlink:disabled { opacity: .5; cursor: default; }
+.addform { display: flex; align-items: center; gap: 8px; border: 1px solid var(--grey-200); border-radius: 999px; padding: 6px 6px 6px 20px; background: var(--panel); margin-bottom: 16px; }
+.addform:focus-within { border-color: var(--blue-500); }
+.addform #ac-wat { flex: 1; font-size: 14.5px; padding: 6px 0; }
+.addform select, .addform input[type="date"], .addform #ac-org { border: 1px solid var(--grey-200) !important; border-radius: 999px !important; padding: 6px 10px !important; background: var(--bg) !important; font-size: 12.5px; }
+.addform .send-btn { width: 36px; height: 36px; }
+.tabs { gap: 6px; margin-bottom: 14px; }
+.tab { border: 1px solid var(--grey-200); border-radius: 999px; padding: 6px 14px; font-size: 13px; color: var(--fg); background: var(--panel); display: inline-flex; align-items: center; gap: 6px; }
+.tab:hover { border-color: var(--grey-300); }
+.tab.on { background: var(--blue-500); border-color: var(--blue-500); color: #fff; font-weight: 600; }
+.tab.on .count-badge { background: transparent; color: rgba(255,255,255,.85); }
+.tab .tab-kbd { display: none; }
+body.kbd-mode .tab .tab-kbd { display: inline; }
+.toez-page .card, .page .card:has(> .commit-row) { border-radius: var(--corner-l); border: 1px solid var(--line); overflow: hidden; }
+.commit-row { padding: 14px 18px; }
+.commit-row .wat { font-size: 14.5px; }
+.commit-row .st { border-radius: 999px; padding: 1px 9px; }
+.commit-row .st-te_laat { background: var(--yellow-500); color: #292f38; }
+.week-strip { background: var(--yellow-100); border-radius: var(--corner-l); padding: 10px 12px; }
+.week-strip .ws { border-color: transparent; }
+/* Planning: vandaag als warm vilt-vlak, de rest rustig */
+.plan-col { border-radius: var(--corner-l); padding: 14px 14px 10px; border: 1px solid transparent; }
+.plan-col.today { padding: 18px 16px 12px; }
+.plan-col.today .calm-title h2 { color: var(--ink, #292f38); }
+.plan-col.today .row:hover { background: rgba(255,255,255,.55); }
+.plan-col.today .ic { background: rgba(255,255,255,.7); }
+.plan-col.late { border-color: transparent; background: var(--bg); box-shadow: inset 3px 0 0 var(--yellow-500); }
+.plan-col.late .calm-title h2 { color: #8a5a00; }
+.plan-empty { font-size: 13px; color: var(--faint); padding: 10px 4px; display: flex; align-items: center; gap: 8px; }
+.plan-empty::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--grey-200); }
+.big-seg { background: var(--panel); border: 1px solid var(--grey-200); border-radius: 999px; padding: 3px; }
+.big-seg button { border-radius: 999px !important; }
+.big-seg button.on { background: var(--blue-500) !important; color: #fff !important; }
+/* Zoekvenster */
+.scrim:has(.palette) { background: rgba(11, 26, 110, .28); backdrop-filter: blur(2px); }
+.palette { max-width: 720px; border: 1px solid var(--line); }
+.pal-input { padding: 18px 22px; }
+.pal-input > .i { color: var(--blue-500); width: 18px; height: 18px; }
+.pal-input input { font-size: 18px; letter-spacing: -0.01em; }
+.pal-chips:not(:empty) { padding: 10px 22px 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.pal-results { padding: 8px 12px 10px; }
+.pal-results .group-label { padding: 12px 10px 4px; }
+.pal-item { border-radius: 12px; padding: 9px 12px; }
+.pal-item.active { background: var(--blue-100); }
+.pal-item.active .row-title { color: var(--blue-500); }
+.pal-live .ic { background: var(--yellow-500); color: #292f38; border-radius: 50%; }
+.pal-live.active { background: var(--yellow-100); }
+.pal-live.active .row-title { color: var(--fg); }
+.pal-entity { border-radius: var(--corner-l); border-color: var(--line); }
+.pal-entity.active { border-color: var(--blue-500); background: var(--blue-100); }
+.pal-entity .entity-logo { border-radius: 50%; }
+.pal-foot { padding: 12px 22px; }
+.pal-foot .save { color: var(--blue-500); font-weight: 600; }
+@media (max-width: 760px) { .hz-lead { padding-right: 0; } .hz-head { grid-template-columns: minmax(0, 1fr); padding: 22px 20px; } .hz-head h1 { font-size: 36px; } .addform { flex-wrap: wrap; border-radius: var(--corner-l); padding: 10px 12px; } .addform #ac-wat { flex-basis: 100%; } }
 </style>
 
 <div class="app" id="app">
@@ -1038,7 +1156,7 @@ store.set('lastSeen', Date.now());
 const CAP = { mcp: null, db: null, sample: null };
 const MODE = { live: false, checked: false };
 const ST = {};            // status per bron: 'loading' | 'ok' | {code, message, retry}
-const LV = { briefings: [], calendars: [], ranges: {}, mails: [], slack: { dm: [], mention: [], mine: [], mega: [], recaps: [] }, tasks: [], tasklists: [], wispr: [], commits: [], state: {}, selfEmail: null, updated: {}, slackUsers: {}, slackChans: [], slackDms: [], mailAll: [] };
+const LV = { briefings: [], calendars: [], ranges: {}, mails: [], slack: { dm: [], mention: [], mine: [], mega: [], recaps: [] }, tasks: [], tasklists: [], wispr: [], commits: [], state: {}, selfEmail: null, updated: {}, slackUsers: {}, slackChans: [], slackDms: [], mailAll: [], searchItems: {} };
 let ORGS = {};
 let LIVE_ITEMS = [];
 let AGENDA_EVENTS = [];
@@ -1085,7 +1203,7 @@ const ENT = () => MODE.live ? ORGS : DEMO_ENTITIES;
 const entityName = id => ENT()[id]?.short || id;
 const entityChip = id => ENT()[id] ? `<span class="chip entity" data-entity="${esc(id)}">${esc(ENT()[id].short)}</span>` : '';
 const allItems = () => LIVE_ITEMS;
-const byId = id => allItems().find(i => i.id === id) || AGENDA_EVENTS.find(i => i.id === id) || (LV.jira || []).find(i => i.id === id) || DEMO_ITEMS.find(i => i.id === id);
+const byId = id => allItems().find(i => i.id === id) || LV.searchItems?.[id] || AGENDA_EVENTS.find(i => i.id === id) || (LV.jira || []).find(i => i.id === id) || DEMO_ITEMS.find(i => i.id === id);
 const extLink = (url, label, cls = 'btn sm') => url ? `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener">${label}</a>` : '';
 
 function nameFromEmail(email) {
@@ -1103,7 +1221,9 @@ function orgSlugFromEmail(email) {
   const dom = domainOf(email);
   if (!dom || dom === selfDomain() || GENERIC_DOMAINS.some(g => dom === g || dom.endsWith('.' + g))) return null;
   const parts = dom.split('.');
-  return parts.length > 2 ? parts[parts.length - 2] : parts[0];
+  const slug = parts.length > 2 ? parts[parts.length - 2] : parts[0];
+  try { (ORG_DOM[slug.replace(/[^a-z0-9]/g, '')] ||= new Set()).add(dom); } catch {}
+  return slug;
 }
 function registerOrg(slug, hint) {
   if (!slug) return null;
@@ -1240,7 +1360,7 @@ function startWatches() {
   watch('slackRecaps', 'Slack', 'slack_search_public_and_private', { ...base, filters: `in:<#${CH_KLANTEN}> from:<@${SLACK_ME}> after:${ymd(addDays(S.clock, -21))}` }, p => { LV.slack.recaps = p ? parseSlack(p) : []; }, 900000);
   setTimeout(checkReactions, 5000); setInterval(checkReactions, 180000);
   watch('slackRecent', 'Slack', 'slack_search_public_and_private', { ...base, filters: `after:${ymd(addDays(S.clock, -2))}` }, p => { LV.slack.recent = p ? parseSlack(p) : []; }, 600000);
-  watch('slackChans', 'Slack', 'slack_list_user_channels', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200 }, p => { LV.slackChans = p ? parseChannelList(p).list : []; }, 3600000);
+  watch('slackChans', 'Slack', 'slack_list_user_channels', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200 }, p => { LV.slackChans = p ? parseChannelList(p).list : []; LV.slackChans.forEach(c => { const m = c.name.match(/^(.+)-hz$/); if (m) { const id = registerOrg(m[1].replace(/-/g, ''), cap(m[1].replace(/-/g, ' '))); if (id) ORG_CH[id] = c.id; } }); }, 3600000);
   watch('slackDms', 'Slack', 'slack_list_user_channels', { types: 'im,mpim', exclude_archived: true, limit: 200 }, p => { LV.slackDms = p ? parseChannelList(p).list : []; }, 3600000);
   watch('mailAll', 'Gmail', 'search_threads', { query: 'in:inbox newer_than:21d -category:promotions -category:social -category:forums', pageSize: 50, view: 'THREAD_VIEW_SUMMARY' }, p => { LV.mailAll = p ? (p.threads || []) : []; });
   watch('tasks', 'Google Tasks', 'list_tasks', { max_results: 200 }, p => { LV.tasks = p ? (p.tasks || []) : []; });
@@ -2022,11 +2142,12 @@ function routeFromHash() {
   if (!h || h === 'dagstart') return { view: 'dagstart' };
   if (['agenda', 'chat', 'toezeggingen', 'planning', 'wegschrijven'].includes(h)) return { view: h };
   if (h.startsWith('o-')) return { view: 'entity', id: h.slice(2) };
+  if (h.startsWith('zoek=')) { let q = ''; try { q = decodeURIComponent(h.slice(5)); } catch {} const pin = pins().find(x => x.q === q); return { view: 'search', q, pin: pin?.id }; }
   const b = BUILTIN_VIEWS.find(v => v.id === h); if (b) return { view: 'list', q: b.q, title: b.name, key: b.id };
   const s = S.saved.find(v => v.id === h); if (s) return { view: 'list', q: s.q, title: s.name, key: s.id, saved: true };
   return { view: 'dagstart' };
 }
-const hashFor = r => r.view === 'entity' ? 'o-' + r.id : r.view === 'list' ? (r.key || '') : r.view;
+const hashFor = r => r.view === 'entity' ? 'o-' + r.id : r.view === 'list' ? (r.key || '') : r.view === 'search' ? 'zoek=' + encodeURIComponent(r.q || '') : r.view;
 function go(r) {
   S.route = r; S.fIdx = 0; S.fId = null;
   const h = hashFor(r);
@@ -2054,7 +2175,7 @@ function renderSidebar() {
       ${item('agenda', 'meeting', 'Agenda', '', 'a')}
       ${item('toezeggingen', 'commit', 'Tracker', late || '', 't', late > 0)}
       ${item('chat', 'chat', 'Chat', '', 'c')}
-    </div></nav>
+    </div>${pins().length ? `<div class="nav-group pins"><div class="nav-label">Vastgezet</div>${pins().map((p, i) => `<button class="nav-item pin${r.view === 'search' && searchKey(r.q || '') === searchKey(p.q) ? ' active' : ''}" data-pin="${esc(p.id)}" title="${esc(p.q)}">${ic(/timeline|tijdlijn/i.test(p.q) ? 'meeting' : 'bookmark')}<span class="pin-name">${esc(p.name)}</span>${i < 9 ? `<span class="kbd nav-kbd">g ${i + 1}</span>` : ''}<span class="unpin" data-unpin="${esc(p.id)}" role="button" aria-label="Losmaken">${ic('x')}</span></button>`).join('')}</div>` : ''}</nav>
     <button class="sources quiet-foot" data-action="help"><span class="sd" style="background:${MODE.live ? 'var(--accent)' : 'var(--faint)'}"></span><span class="kbd">?</span></button>`;
 }
 const topbar = () => `<div class="topbar"><button class="iconbtn" data-action="nav" aria-label="Menu">${ic('menu')}</button><button class="searchbtn" data-action="palette">${ic('search')}<span>Zoeken</span><span class="kbd">⌘K</span></button></div>`;
@@ -2130,13 +2251,13 @@ function viewPlanning() {
   const bucket = it => it.type === 'task' ? bucketOf(it.due, it.backlog) : bucketOf(it.plan, it.backlog);
   const cols = [[-1, 'Te laat'], [1, BUCKETS[1]], [2, BUCKETS[2]], [3, BUCKETS[3]], [4, BUCKETS[4]], [0, 'Zonder datum'], [5, BUCKETS[5]]];
   return `<div class="page">${modeBanner()}
-    <div class="page-head"><div><h1>Planning</h1></div>${tabs}</div>
+    <div class="page-head"><div><div class="eyebrow">${cap(longDay(S.clock))} · week ${isoWeek(baseDay()).slice(6)}</div><h1>Planning</h1></div>${tabs}</div>
     <div class="plan-cols calm-cols">${cols.map(([n, label]) => {
       const items = all.filter(it => n === 4 ? [4, 6].includes(bucket(it)) : bucket(it) === n);
       if ((n === -1 || n === 0) && !items.length) return '';
       const cap = n === 1 || n === 2;
-      return `<section class="plan-col${n === -1 ? ' late' : ''}"><div class="calm-title"><h2>${label}</h2>${cap ? capBar(items.length) : ''}<span class="count-badge">${items.length}${cap ? '/' + DAY_CAP : ''}</span></div>
-        ${items.length ? `<div class="list">${items.sort((a, b) => String(a.due || a.plan || '').localeCompare(String(b.due || b.plan || ''))).map(it => rowHTML(it, { chip: false })).join('')}</div>` : '<div class="empty" style="padding:10px">—</div>'}</section>`;
+      return `<section class="plan-col${n === -1 ? ' late' : ''}${n === 1 ? ' today felt plane-yellow-light' : ''}"><div class="calm-title"><h2>${label}</h2>${cap ? capBar(items.length) : ''}<span class="count-badge">${items.length}${cap ? '/' + DAY_CAP : ''}</span></div>
+        ${items.length ? `<div class="list">${items.sort((a, b) => String(a.due || a.plan || '').localeCompare(String(b.due || b.plan || ''))).map(it => rowHTML(it, { chip: false })).join('')}</div>` : `<div class="plan-empty">${n === 5 ? 'Leeg. Mooi.' : 'Nog niets'}</div>`}</section>`;
     }).join('')}</div>
     <p class="hint"><span class="kbd">1</span>–<span class="kbd">5</span> verplaatsen · <span class="kbd">x</span> klaar · <span class="kbd">s</span> plansessie · <span class="kbd">v</span> sprint</p></div>`;
 }
@@ -2199,14 +2320,16 @@ function viewToezeggingen() {
         ${['mijn', 'voornemen'].includes(it.stroom) ? `<button class="btn sm" data-action="c-hand" data-id="${esc(it.docId)}" title="Wordt een Jira-story: de tracker laat hem los">Naar Jira</button>` : ''}`}
         <button class="iconbtn" data-action="c-del" data-id="${esc(it.docId)}" aria-label="Verwijder">${ic('trash')}</button></div></div>`;
   return `<div class="page">${modeBanner()}
-    <div class="page-head"><div><div class="eyebrow">Commitment tracker · alles op één plek</div><h1>Tracker</h1><div class="sub" style="margin-top:4px;max-width:70ch">Wat jij toezegt, waar je op wacht, wat je bij het volgende contact bespreekt, en je Google Tasks. Wat je plant, staat ook in Google Tasks. Wachten op wordt nooit een taak.</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="extract-scan">${ic('spark')}Haal op uit Slack en mail</button><button class="btn" data-action="sweep" ${S.busy.sweep ? 'disabled' : ''}>${ic('check')}${S.busy.sweep ? 'Bewijs zoeken…' : 'Zoek bewijs'}</button><button class="btn" data-action="import-canvas" ${S.busy.canvas ? 'disabled' : ''}>${ic('refresh')}${S.busy.canvas ? 'Canvas lezen…' : 'Canvas Wachten op'}</button><button class="btn" data-action="import-goals" ${S.busy.goals ? 'disabled' : ''}>🎯 ${S.busy.goals ? 'Ophalen…' : 'Weekdoelen uit #02-intern'}</button></div></div>
+    <header class="hz-head felt plane-blue-light"><div class="shapes" aria-hidden="true"><svg viewBox="0 0 300 300" style="right:0;bottom:0;width:230px;height:230px"><path d="M258 128 334 196V336H182V196Z" stroke-width="16" stroke-linejoin="round" fill="#b8c6ff" stroke="#b8c6ff"/></svg></div>
+      <div><div class="eyebrow">Commitment tracker</div><h1>Tracker</h1></div>
+      <div class="hz-lead"><p>Wat jij belooft, waar je op wacht en wat je bij het volgende contact bespreekt. Wat je plant, staat ook in Google Tasks.</p>
+        <div class="tlinks"><button class="tlink" data-action="extract-scan">Haal op uit Slack en mail${ic('arrow')}</button><button class="tlink" data-action="sweep" ${S.busy.sweep ? 'disabled' : ''}>${S.busy.sweep ? 'Bewijs zoeken…' : 'Zoek bewijs'}${ic('arrow')}</button><button class="tlink" data-action="import-canvas" ${S.busy.canvas ? 'disabled' : ''}>${S.busy.canvas ? 'Canvas lezen…' : 'Canvas Wachten op'}${ic('arrow')}</button><button class="tlink" data-action="import-goals" ${S.busy.goals ? 'disabled' : ''}>${S.busy.goals ? 'Ophalen…' : 'Weekdoelen uit #02-intern'}${ic('arrow')}</button></div></div></header>
     ${statusRow()}${sectionNote(['commits'])}
     <form class="addform" id="addcommit"><input id="ac-wat" placeholder="Nieuw, bijv. ‘DNS-instructies naar Liselot sturen’   (n om hier te typen)" autocomplete="off" required>
       <select id="ac-stroom" aria-label="Stroom"><option value="mijn">Ik beloofde</option><option value="aan_mij">Wachten op</option><option value="bespreken">Bespreken</option><option value="weekdoel">Weekdoel</option><option value="roadmap">Roadmap</option><option value="voornemen">Voornemen</option></select>
       <input id="ac-date" type="date" aria-label="Deadline of doeldatum">
       <input id="ac-org" placeholder="Partner" aria-label="Partner" style="max-width:120px;border:1px solid var(--line);border-radius:7px;padding:4px 6px;background:var(--bg);font-size:12.5px">
-      <button class="btn sm primary" type="submit">${ic('plus')}Toevoegen</button></form>
+      <button class="send-btn" type="submit" aria-label="Toevoegen" title="Toevoegen">${ic('plus')}</button></form>
     <div class="tabs" role="tablist">${tabs.map(([k, l], i) => `<button class="tab${sel === k ? ' on' : ''}" role="tab" data-ctab="${k}">${l}<span class="count-badge">${count(k)}</span><span class="kbd tab-kbd">${i + 1}</span></button>`).join('')}</div>
     ${sel === 'weekdoel' ? weekdoelStrip() : ''}
     <div class="card">${list.length ? list.map(row).join('') : `<div class="empty">${sel === 'afgerond' ? 'Nog niets afgerond.' : 'Niets in deze lijst.'}</div>`}</div>
@@ -3396,6 +3519,262 @@ function catchAnimate(dir, then) {
   setTimeout(() => { C.animating = false; C.enter = dir === 'right' ? 'from-left' : dir === 'left' ? 'from-right' : 'from-below'; then(); }, 210);
 }
 
+/* ---------- Zoeken: organisatie, onderwerp en tijdlijn over Slack, mail en de rest ---------- */
+// Syntax: segmenten gescheiden door komma's. "Solarwatt, berekening, timeline"
+//   organisatie (herkend uit mail-domeinen, -hz-kanalen en de contextlaag) · onderwerp(en) · bron (mail, slack, meetings, taken)
+//   · periode (vandaag, deze week, maand, 30d) · weergave (timeline/tijdlijn).
+const SR = {};                     // cache per zoekopdracht
+const ORG_DOM = {}, ORG_CH = {};   // organisatie → mail-domeinen / Slack-kanaal
+const SEARCH_MODES = { timeline: 'timeline', tijdlijn: 'timeline', lijst: 'list' };
+const SEARCH_TYPES = { mail: 'mail', mails: 'mail', email: 'mail', 'e-mail': 'mail', slack: 'slack', chat: 'slack', meeting: 'meeting', meetings: 'meeting', agenda: 'meeting', afspraken: 'meeting', taken: 'task', taak: 'task', tracker: 'commit', toezeggingen: 'commit', opnames: 'rec', wispr: 'rec' };
+const SEARCH_WHEN = { vandaag: 1, gisteren: 2, week: 7, 'deze week': 7, 'vorige week': 14, maand: 31, 'deze maand': 31, kwartaal: 92, jaar: 365 };
+const idTime = id => { try { return new Date(Number(BigInt('0x' + id) >> 20n)).toISOString(); } catch { return null; } };
+function entityExact(cand) {
+  const E = ENT(), low = String(cand || '').toLowerCase().trim(), slug = low.replace(/[^a-z0-9]/g, '');
+  if (slug.length < 3) return null;
+  const ids = Object.keys(E);
+  const exact = ids.find(id => id === slug || (E[id].aliases || []).includes(slug) || normOrg(E[id].name) === slug);
+  if (exact) return exact;
+  if (slug.length >= 4) { const pre = ids.filter(id => id.startsWith(slug) || normOrg(E[id].name).startsWith(slug)); if (pre.length === 1) return pre[0]; }
+  return null;
+}
+function parseSearch(q) {
+  const P = { entities: [], keywords: [], types: [], mode: 'list', days: null, raw: q };
+  const seg = s => {
+    s = s.trim().replace(/^@/, ''); if (!s) return;
+    const low = s.toLowerCase();
+    if (SEARCH_MODES[low]) { P.mode = SEARCH_MODES[low]; return; }
+    if (low in SEARCH_TYPES) { P.types.push(SEARCH_TYPES[low]); return; }
+    if (SEARCH_WHEN[low]) { P.days = SEARCH_WHEN[low]; return; }
+    const md = low.match(/^(?:laatste\s+)?(\d+)\s*(d|dag|dagen|w|wk|weken|m|mnd|maanden)$/);
+    if (md) { P.days = +md[1] * (/^w/.test(md[2]) ? 7 : /^m/.test(md[2]) ? 30 : 1); return; }
+    const legacy = low.match(/^(type|in|from|van):(.+)$/);
+    if (legacy) { if (legacy[1] === 'type' && TYPE_ALIAS[legacy[2]]) P.types.push(TYPE_ALIAS[legacy[2]]); else P.keywords.push(legacy[2]); return; }
+    const words = s.split(/\s+/);
+    for (let n = Math.min(3, words.length); n >= 1; n--) {
+      const id = entityExact(words.slice(0, n).join(' '));
+      if (id) { if (!P.entities.includes(id)) P.entities.push(id); words.slice(n).forEach(w => seg(w)); return; }
+    }
+    // losse woorden zonder komma: types/periodes eruit pikken, de rest is onderwerp
+    if (words.length > 1 && !s.includes('"')) { const rest = []; words.forEach(w => { const l = w.toLowerCase(); if (l in SEARCH_TYPES || SEARCH_MODES[l] || SEARCH_WHEN[l]) seg(w); else rest.push(w); }); if (rest.length) P.keywords.push(rest.join(' ')); return; }
+    P.keywords.push(s);
+  };
+  q.split(',').forEach(seg);
+  P.types = [...new Set(P.types)];
+  return P;
+}
+function stemNL(w) { w = w.toLowerCase(); const s = w.replace(/(ingen|ing|eren|en|ers|er|e|s|d|t)$/, ''); return s.length >= 4 ? s : w; }
+function variants(w) { w = w.toLowerCase(); if (w.includes(' ')) return [w]; const s = stemNL(w); return [...new Set([w, s, s + 'en', s + 'ing', s + 'ingen', s + 'd', s + 't'])].filter(x => x.length >= 3); }
+const kwMatch = (text, kw, extra = []) => { const t = String(text || '').toLowerCase(); return [stemNL(kw), ...extra.map(x => x.toLowerCase())].some(v => t.includes(v)); };
+function searchKey(q) { const P = parseSearch(q); return JSON.stringify([P.entities.sort(), P.keywords.map(k => k.toLowerCase()).sort(), P.types.sort(), P.days]); }
+function searchTitle(P) { return [...P.entities.map(id => ENT()[id]?.short || id), ...P.keywords, ...P.types.map(t => SRC[t]?.plural || t), P.days ? `${P.days} dagen` : ''].filter(Boolean).join(' · ') || 'Zoeken'; }
+function orgOf(email) { const s = orgSlugFromEmail(email); return s ? (ENT()[s.replace(/[^a-z0-9]/g, '')]?.short || cap(s)) : ''; }
+
+// Gmail- en Slack-zoekopdrachten
+function gmailQuery(P, extra) {
+  const parts = [];
+  for (const id of P.entities) {
+    const e = ENT()[id] || { name: id }, doms = [...(ORG_DOM[id] || [])];
+    const terms = doms.length ? doms.flatMap(d => [`from:${d}`, `to:${d}`, `cc:${d}`]) : [`from:${id}`, `to:${id}`, `cc:${id}`];
+    parts.push('(' + [...terms, `"${e.name}"`].join(' OR ') + ')');
+  }
+  for (const k of P.keywords) parts.push(k.includes(' ') ? `"${k}"` : '(' + [...variants(k), ...(extra?.[k] || [])].join(' OR ') + ')');
+  if (P.days) parts.push(`newer_than:${P.days}d`);
+  return parts.join(' ');
+}
+function orgChannel(id) {
+  if (ORG_CH[id]) return ORG_CH[id];
+  const ch = (MODE.live ? LV.slackChans || [] : DEMO_CHANS).find(c => c.kind === 'ch' && normOrg(c.name.replace(/-hz$/, '')) === id);
+  return ch ? ch.id : null;
+}
+function slackQueries(P, extra) {
+  const base = { limit: 20, response_format: 'detailed', include_context: false, sort: 'timestamp', natural_language_query: '' };
+  const kw = P.keywords.map(k => k.includes(' ') ? `"${k}"` : stemNL(k).length >= 4 ? stemNL(k) + '*' : k);
+  const after = P.days ? `after:${ymd(addDays(S.clock, -P.days))}` : '';
+  const qs = [];
+  for (const id of P.entities.slice(0, 2)) {
+    const ch = orgChannel(id);
+    if (ch) qs.push({ ...base, ...(kw.length ? { keywords: kw } : {}), filters: `in:<#${ch}> ${after}`.trim() });
+    qs.push({ ...base, keywords: [ENT()[id]?.name || id, ...kw], ...(after ? { filters: after } : {}) });
+  }
+  if (!P.entities.length && kw.length) qs.push({ ...base, keywords: kw, ...(after ? { filters: after } : {}) });
+  for (const [k, xs] of Object.entries(extra || {})) xs.slice(0, 3).forEach(x => qs.push({ ...base, keywords: [...P.entities.map(id => ENT()[id]?.name || id), x], ...(after ? { filters: after } : {}) }));
+  return qs;
+}
+function mailHit(th) {
+  const ms = th.messages || [], m = ms[ms.length - 1] || {}, first = ms[0] || {};
+  const lastId = ms.length ? ms[ms.length - 1].id : th.id;
+  const all = [m.sender, ...(m.toRecipients || []), ...(m.ccRecipients || [])];
+  return { id: 'ml:' + th.id, threadId: th.id, type: 'mail', live: true, search: true, title: first.subject || m.subject || '(geen onderwerp)', fromName: nameFromEmail(m.sender), fromEmail: emailOf(m.sender),
+    to: (m.toRecipients || []).map(emailOf), ccList: (m.ccRecipients || []).map(emailOf), body: m.snippet || '', time: m.date || idTime(lastId), count: th.messageCount, url: th.viewUrl || `https://mail.google.com/mail/u/0/#all/${th.id}`,
+    entities: [...new Set(all.map(e => registerOrg(orgSlugFromEmail(e))).filter(Boolean))], direct: (m.toRecipients || []).map(emailOf).includes(LV.selfEmail || 'robert@homezero.nl') };
+}
+function slackHit(s) {
+  const hz = (s.channelName.match(/#([\w-]+?)-hz\b/) || [])[1];
+  return { id: 'sl:' + s.ts, ts: s.ts, type: 'slack', live: true, search: true, title: s.text || '(bestand of bericht zonder tekst)', channel: s.channelName, channelId: s.channelId, fromName: s.fromName, fromMe: s.fromId === SLACK_ME,
+    bot: s.bot, dm: s.dm, time: s.time, url: s.url, entities: hz ? [registerOrg(hz.replace(/-/g, ''))].filter(Boolean) : [] };
+}
+function localSearch(P, extra) {
+  return allItems().filter(it => {
+    if (it.search) return false;
+    if (P.types.length && !P.types.includes(it.type)) return false;
+    if (P.days && !it.nodate && dayDiff(when(it)) < -P.days) return false;
+    const h = haystack(it);
+    if (P.entities.length && !P.entities.some(id => (it.entities || []).includes(id) || h.includes((ENT()[id]?.name || id).toLowerCase()))) return false;
+    return P.keywords.every(k => kwMatch(h, k, extra?.[k]));
+  });
+}
+function demoSearch(P, R, extra) {
+  const entOk = (txt) => !P.entities.length || P.entities.some(id => txt.toLowerCase().includes(id) || txt.toLowerCase().includes((ENT()[id]?.name || id).toLowerCase()));
+  const kwOk = (txt) => P.keywords.every(k => kwMatch(txt, k, extra?.[k]));
+  for (const [key, c] of Object.entries(DEMO_CONV)) {
+    if (key.startsWith('ml:') && c.mail && (!P.types.length || P.types.includes('mail'))) {
+      const txt = [c.mail.subject, ...c.mail.msgs.flatMap(m => [m.body, m.from, ...m.to, ...m.cc, m.fromName])].join(' ');
+      if (entOk(txt) && kwOk(txt)) { const last = c.mail.msgs[c.mail.msgs.length - 1]; R.mail.push({ id: 'ml:' + key.slice(3), threadId: key.slice(3), type: 'mail', search: true, title: c.mail.subject, fromName: last.fromName, fromEmail: last.from, to: last.to, ccList: last.cc, body: last.body.replace(/\s+/g, ' ').slice(0, 160), time: last.time, count: c.mail.msgs.length, entities: [...new Set([last.from, ...last.to].map(e => orgSlugFromEmail(e)).filter(s => s && ENT()[s]))], direct: true }); }
+    }
+    if (key.startsWith('sl:') && (!P.types.length || P.types.includes('slack'))) {
+      const ch = DEMO_CHANS.find(x => 'sl:' + x.id === key); const chName = ch ? (ch.kind === 'ch' ? '#' + ch.name : 'DM ' + ch.name) : '';
+      for (const m of [...(c.msgs || []), ...Object.entries(DEMO_THREADS).filter(([k]) => k.startsWith(key.slice(3) + '|')).flatMap(([, v]) => v.slice(1))]) {
+        if (entOk(chName + ' ' + m.text) && kwOk(m.text) && (P.keywords.length || P.entities.length)) R.slack.push({ ts: m.ts, channelId: key.slice(3), channelName: chName, fromName: m.fromName, fromId: m.fromId, time: m.time, text: m.text, dm: ch?.kind !== 'ch', url: null });
+      }
+    }
+  }
+}
+async function runSearch(q, force) {
+  const key = searchKey(q), P = parseSearch(q);
+  const R = SR[key] ||= { state: 'idle', mail: [], slack: [], extra: {} };
+  if (R.state === 'loading' || (!force && R.state !== 'idle' && Date.now() - R.at < 180000)) return R;
+  R.state = 'loading'; R.mail = []; R.slack = []; R.err = []; R.tl = null; scheduleRender();
+  const wantMail = !P.types.length || P.types.includes('mail'), wantSlack = !P.types.length || P.types.includes('slack');
+  if (!P.entities.length && !P.keywords.length) { R.state = 'ok'; R.at = Date.now(); scheduleRender(); return R; }
+  if (!MODE.live) { await new Promise(r => setTimeout(r, 150)); demoSearch(P, R, R.extra); }
+  else {
+    const jobs = [];
+    if (wantMail) jobs.push(call('Gmail', 'search_threads', { query: gmailQuery(P, R.extra), pageSize: 25, view: 'THREAD_VIEW_MINIMAL' }).then(p => { R.mail = (p?.threads || []).map(mailHit); }).catch(e => R.err.push('Gmail: ' + cvErr({ ...e, server: 'Gmail' }))));
+    if (wantSlack) for (const input of slackQueries(P, R.extra)) jobs.push(call('Slack', 'slack_search_public_and_private', input).then(async p => {
+      let hits = parseSlack(p);
+      if (!hits.length && (input.keywords || []).some(k => k.endsWith('*'))) hits = parseSlack(await call('Slack', 'slack_search_public_and_private', { ...input, keywords: input.keywords.map(k => k.replace(/\*$/, '')) }).catch(() => ''));
+      R.slack.push(...hits);
+    }).catch(e => R.err.push('Slack: ' + cvErr({ ...e, server: 'Slack' }))));
+    await Promise.all(jobs);
+  }
+  const seen = new Set(); R.slack = R.slack.filter(s => s.ts && !seen.has(s.ts) && seen.add(s.ts)).sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+  R.mailItems = R.mail.map(m => m.type ? m : mailHit(m)); R.slackItems = R.slack.map(slackHit);
+  [...R.mailItems, ...R.slackItems].forEach(it => { if (!allItems().some(i => i.id === it.id)) LV.searchItems[it.id] = it; });
+  R.state = 'ok'; R.at = Date.now();
+  scheduleRender();
+  if (P.mode === 'timeline') loadTimeline(q);
+  return R;
+}
+// Tijdlijn: per mailthread alle berichten (wie → aan wie, wanneer), plus Slack en meetings
+async function loadTimeline(q, force) {
+  const key = searchKey(q), R = SR[key], P = parseSearch(q);
+  if (!R || R.state !== 'ok' || (R.tl && !force && R.tl.state !== 'error')) return;
+  R.tl = { state: 'loading', events: [] }; scheduleRender();
+  const ev = [];
+  const threads = (R.mailItems || []).slice(0, 15);
+  for (let i = 0; i < threads.length; i += 4) {
+    await Promise.all(threads.slice(i, i + 4).map(async th => {
+      try {
+        const msgs = MODE.live ? ((await call('Gmail', 'get_thread', { threadId: th.threadId, messageFormat: 'MINIMAL' }))?.messages || []).map(m => ({ from: emailOf(m.sender), fromName: nameFromEmail(m.sender), to: (m.toRecipients || []).map(emailOf), cc: (m.ccRecipients || []).map(emailOf), time: m.date || (m.internalDate ? new Date(+m.internalDate).toISOString() : idTime(m.id)), subject: m.subject, snippet: m.snippet }))
+          : (DEMO_CONV['ml:' + th.threadId]?.mail?.msgs || []).map(m => ({ ...m, subject: DEMO_CONV['ml:' + th.threadId].mail.subject, snippet: m.body.replace(/\s+/g, ' ').slice(0, 160) }));
+        msgs.forEach(m => ev.push({ kind: 'mail', id: th.id, ...m }));
+      } catch { ev.push({ kind: 'mail', id: th.id, from: th.fromEmail, fromName: th.fromName, to: th.to || [], cc: th.ccList || [], time: th.time, subject: th.title, snippet: th.body }); }
+    }));
+  }
+  (R.slackItems || []).forEach(s => ev.push({ kind: 'slack', id: s.id, fromName: s.fromMe ? 'Robert Verveen' : s.fromName, channel: s.channel, time: s.time, snippet: cleanSlack(s.title) }));
+  localSearch(P, R.extra).filter(i => ['meeting', 'rec'].includes(i.type)).forEach(m => ev.push({ kind: 'meeting', id: m.id, time: pd(m.start).toISOString(), subject: m.title, people: m.attendeeNames || [] }));
+  ev.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+  R.tl = { state: 'ok', events: ev };
+  scheduleRender();
+}
+// Breder zoeken: Claude bedenkt verwante zoektermen (alleen op verzoek)
+async function widenSearch(q) {
+  const key = searchKey(q), R = SR[key], P = parseSearch(q);
+  if (!R || !P.keywords.length) return toast('Breder zoeken werkt op een onderwerp, bijv. “Solarwatt, berekening”');
+  if (!CAP.sample) { R.extra = Object.fromEntries(P.keywords.map(k => [k, ['rekenmodel', 'calculatie'].filter(x => !k.includes(x))])); toast('Voorbeeld: verwante termen toegevoegd'); return runSearch(q, true); }
+  R.widening = true; scheduleRender();
+  try {
+    const r = await CAP.sample(`Geef voor elk zoekwoord maximaal 4 verwante Nederlandse of Engelse zoektermen zoals collega's ze in Slack en mail zouden schrijven (synoniemen, vaktermen, samenstellingen), context: HomeZero, software voor installateurs (warmtepomp, zonnepanelen, thuisbatterij, offertes). Antwoord alleen met JSON: {"woord": ["term", ...]}.\nZoekwoorden: ${JSON.stringify(P.keywords)}`, { cache: true });
+    const j = JSON.parse((r.text.match(/\{[\s\S]*\}/) || ['{}'])[0]);
+    R.extra = Object.fromEntries(P.keywords.map(k => [k, (j[k] || []).map(String).filter(x => x && x.length < 30).slice(0, 4)]));
+  } catch { toast('Claude kon nu geen verwante termen bedenken'); }
+  R.widening = false;
+  runSearch(q, true);
+}
+
+// Vastgezette views in de zijbalk (bewaard in de opslag van de workspace)
+const pins = () => LV.state['_pins']?.list || store.get('pins', []);
+function setPins(list) { store.set('pins', list); setState('_pins', { list }); renderSidebar(); }
+function togglePin(q) {
+  const k = searchKey(q), list = pins();
+  if (list.some(p => searchKey(p.q) === k)) { setPins(list.filter(p => searchKey(p.q) !== k)); return toast('Losgemaakt uit de zijbalk'); }
+  const P = parseSearch(q);
+  setPins([...list, { id: 'p' + Date.now().toString(36), q: q.trim(), name: searchTitle(P) + (P.mode === 'timeline' ? ' · tijdlijn' : '') }]);
+  toast(`${ic('bookmark')} Vastgezet in de zijbalk`);
+}
+
+// ---- weergave ----
+function searchChips(P, R) {
+  const c = [];
+  P.entities.forEach(id => c.push(`<span class="sq-chip org">${ic('users')}${esc(ENT()[id]?.name || id)}</span>`));
+  P.keywords.forEach(k => c.push(`<span class="sq-chip kw" title="Zoekt ook op: ${esc(variants(k).join(', '))}">${esc(k)}${R?.extra?.[k]?.length ? `<small>+ ${esc(R.extra[k].join(', '))}</small>` : ''}</span>`));
+  P.types.forEach(t => c.push(`<span class="sq-chip">${esc(SRC[t]?.plural || t)}</span>`));
+  if (P.days) c.push(`<span class="sq-chip">laatste ${P.days} dagen</span>`);
+  if (P.mode === 'timeline') c.push('<span class="sq-chip mode">tijdlijn</span>');
+  return c.join('');
+}
+function hitRow(it) { return rowHTML(it, { chip: false }); }
+function timelineHTML(R, P) {
+  const T = R.tl;
+  if (!T || T.state === 'loading') return '<div class="empty">Tijdlijn opbouwen: wie mailde wat, wanneer en aan wie…</div>';
+  if (!T.events.length) return '<div class="empty">Niets gevonden om op een tijdlijn te zetten.</div>';
+  const names = {}; T.events.forEach(e => { if (e.from && e.fromName) names[e.from] = e.fromName; });
+  const nm = e => names[e] || nameFromEmail(e);
+  const who = e => { const o = orgOf(e); return `${esc(nm(e))}${o ? ` <span class="tl-org">${esc(o)}</span>` : ''}`; };
+  const people = {}; T.events.forEach(e => { const n = e.kind === 'mail' ? nm(e.from) : e.fromName; if (n) people[n] = (people[n] || 0) + 1; });
+  const top = Object.entries(people).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const times = T.events.map(e => e.time).filter(Boolean).sort();
+  const nMail = T.events.filter(e => e.kind === 'mail').length, nSl = T.events.filter(e => e.kind === 'slack').length, nMt = T.events.filter(e => e.kind === 'meeting').length;
+  let out = `<div class="tl-sum"><div><b>${nMail}</b> mails · <b>${nSl}</b> Slack-berichten${nMt ? ` · <b>${nMt}</b> meetings` : ''}${times.length ? ` · ${fmtDate(times[0].slice(0, 10))} tot ${fmtDate(times[times.length - 1].slice(0, 10))}` : ''}</div>
+    ${top.length ? `<div class="tl-people">${top.map(([n, c]) => `<span class="person">${avatar(n, 20)}${esc(n)} <small>${c}</small></span>`).join('')}</div>` : ''}</div><div class="tl">`;
+  let lastDay = null;
+  for (const e of T.events) {
+    const d = e.time ? ymd(pd(e.time)) : '';
+    if (d !== lastDay) { out += `<div class="tl-day">${e.time ? cap(dayLabel(pd(e.time))) + (dayDiff(pd(e.time)) < -6 ? ' ' + fmtDate(d) + (pd(e.time).getFullYear() !== S.clock.getFullYear() ? ' ' + pd(e.time).getFullYear() : '') : '') : 'Zonder datum'}</div>`; lastDay = d; }
+    const t = e.time ? hm(pd(e.time)) : '';
+    if (e.kind === 'mail') out += `<button class="tl-ev mail" data-open="${esc(e.id)}"><span class="tl-dot">${ic('mail')}</span><time>${t}</time><span class="tl-main"><span class="tl-who"><b>${who(e.from)}</b> → ${e.to.map(who).join(', ') || '—'}${e.cc?.length ? ` <span class="tl-cc">cc ${e.cc.map(x => esc(nm(x))).join(', ')}</span>` : ''}</span><span class="tl-subj">${esc(e.subject || '')}</span>${e.snippet ? `<span class="tl-snip">${esc(short(String(e.snippet).replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&'), 180))}</span>` : ''}</span></button>`;
+    else if (e.kind === 'slack') out += `<button class="tl-ev slack" data-open="${esc(e.id)}"><span class="tl-dot">${ic('slack')}</span><time>${t}</time><span class="tl-main"><span class="tl-who"><b>${esc(e.fromName)}</b> in ${esc(e.channel || 'Slack')}</span><span class="tl-snip">${slackFmt(short(e.snippet, 220))}</span></span></button>`;
+    else out += `<button class="tl-ev meeting" data-open="${esc(e.id)}"><span class="tl-dot">${ic('meeting')}</span><time>${t}</time><span class="tl-main"><span class="tl-who"><b>${esc(e.subject)}</b></span><span class="tl-snip">${esc((e.people || []).slice(0, 6).join(', '))}</span></span></button>`;
+  }
+  return out + '</div>';
+}
+function viewSearch(r) {
+  const q = r.q || '', P = parseSearch(q);
+  runSearch(q);
+  const R = SR[searchKey(q)] || {};
+  if (P.mode === 'timeline' && R.state === 'ok') loadTimeline(q);
+  const pinned = pins().some(p => searchKey(p.q) === searchKey(q));
+  const local = localSearch(P, R.extra).filter(i => !['mail', 'slack'].includes(i.type) || !(R.mailItems || []).concat(R.slackItems || []).some(x => x.id === i.id));
+  const mails = R.mailItems || [], slack = R.slackItems || [];
+  const loading = R.state === 'loading';
+  const nAll = mails.length + slack.length + local.length;
+  const toggleMode = P.mode === 'timeline' ? q.split(',').filter(s => !SEARCH_MODES[s.trim().toLowerCase()]).join(',').trim() : (q.trim() ? q.trim() + ', timeline' : 'timeline');
+  const sect = (label, icon, items, more) => items.length ? `<section class="sr-sect"><div class="group-label">${srcLabel(icon)}<span>${items.length}${more ? '+' : ''}</span></div><div class="list">${items.map(hitRow).join('')}</div></section>` : '';
+  return `<div class="page search-page">${modeBanner()}
+    <div class="page-head"><div><div class="eyebrow">${r.pin ? 'Vastgezette view' : 'Zoeken in Slack, mail en je workspace'}</div><h1>${esc(searchTitle(P))}</h1></div>
+      <div class="sr-acts"><div class="seg"><button class="${P.mode !== 'timeline' ? 'on' : ''}" data-search="${esc(P.mode === 'timeline' ? toggleMode : q)}">Lijst</button><button class="${P.mode === 'timeline' ? 'on' : ''}" data-search="${esc(P.mode === 'timeline' ? q : toggleMode)}">Tijdlijn</button></div>
+        ${P.keywords.length ? `<button class="btn" data-action="sr-widen" ${R.widening ? 'disabled' : ''}>${ic('spark')}${R.widening ? 'Claude denkt mee…' : 'Breder zoeken'}</button>` : ''}
+        <button class="btn${pinned ? '' : ' primary'}" data-action="sr-pin">${ic('bookmark')}${pinned ? 'Vastgezet' : 'Vastzetten'}</button></div></div>
+    <form class="qbar sq" id="sq-form"><span class="sq-ico">${ic('search')}</span><input id="sq" value="${esc(q)}" spellcheck="false" autocomplete="off" placeholder="Organisatie, onderwerp, timeline  · bijv. Solarwatt, berekening, timeline"><button class="send-btn" type="submit" aria-label="Zoeken">${ic('arrow')}</button></form>
+    <div class="sq-chips">${searchChips(P, R)}<span class="sub" style="font-size:12px">${loading ? 'Zoeken in Slack en Gmail…' : R.state === 'ok' ? `${nAll} resultaten` : ''}</span></div>
+    ${(R.err || []).map(e => `<div class="note err">${esc(e)}</div>`).join('')}
+    ${!P.entities.length && !P.keywords.length ? `<div class="empty">Typ een organisatie of onderwerp. Verfijn met komma's: <b>Solarwatt, berekening, timeline</b>.</div>`
+      : P.mode === 'timeline' ? timelineHTML(R, P)
+      : `${loading && !nAll ? '<div class="empty">Zoeken in Slack en Gmail…</div>' : ''}${sect('Mail', 'mail', mails, mails.length >= 25)}${sect('Slack', 'slack', slack)}${grouped(local).map(([t, its]) => sect(SRC[t].plural, t, its)).join('')}${R.state === 'ok' && !nAll ? '<div class="empty">Niets gevonden. Probeer een ander woord of “Breder zoeken”.</div>' : ''}`}
+  </div>`;
+}
+
 function aiMessages() {
   if (!S.aiThread.length) {
     const sugg = ['Wat moet ik vandaag nog beantwoorden?', 'Welke toezeggingen lopen het meeste risico?', 'Waar moet ik op letten bij mijn externe afspraken deze week?'];
@@ -3567,15 +3946,21 @@ function palEntries() {
     return out;
   }
   if (!q) {
+    pins().forEach(p => out.push({ kind: 'pin', p }));
     SUGGESTED.forEach(s => out.push({ kind: 'query', q: s.q, label: s.label }));
     S.recent.slice(0, 4).forEach(r => out.push({ kind: 'recent', q: r }));
     COMMANDS.slice(0, 3).forEach(c => out.push({ kind: 'cmd', c, arg: '' }));
     return out;
   }
-  const { items, entityHits } = runQuery(q);
+  const legacy = /\b(is|from|in|when|wanneer|van):/.test(q);
+  const P = parseSearch(q);
+  if (!legacy && (P.entities.length || P.keywords.length)) out.push({ kind: 'live', q });
+  const last = q.split(',').pop().trim().replace(/^@/, '');
+  const sugg = last.length >= 2 ? matchEntityToken(last.split(/\s+/)[0]).filter(id => !P.entities.includes(id) || entityExact(last) === id) : [];
+  const { items, entityHits } = legacy ? runQuery(q) : { items: localSearch(P), entityHits: [...new Set([...sugg, ...P.entities])] };
   entityHits.slice(0, 2).forEach(id => out.push({ kind: 'entity', id }));
   grouped(items).forEach(([, its]) => its.slice(0, 5).forEach(it => out.push({ kind: 'item', it })));
-  out.push({ kind: 'all', count: items.length });
+  if (legacy) out.push({ kind: 'all', count: items.length });
   if (/\?$/.test(q) || q.split(' ').length > 3) out.splice(entityHits.length ? 1 : 0, 0, { kind: 'ask', q });
   return out;
 }
@@ -3584,10 +3969,11 @@ function renderPalette() {
   const q = S.palette.q.trim();
   const entries = palEntries(); S.palette.entries = entries;
   if (S.palette.active >= entries.length) S.palette.active = Math.max(0, entries.length - 1);
-  document.getElementById('pal-chips').innerHTML = q && !q.startsWith('>') ? queryChips(q) : '';
-  const counts = q && !q.startsWith('>') ? runQuery(q).items.reduce((m, x) => (m[x.type] = (m[x.type] || 0) + 1, m), {}) : {};
+  const legacyQ = /\b(is|from|in|when|wanneer|van):/.test(q), PQ = parseSearch(q);
+  document.getElementById('pal-chips').innerHTML = q && !q.startsWith('>') ? (legacyQ ? queryChips(q) : searchChips(PQ) + (PQ.entities.length && !q.includes(',') ? '<span class="pal-tip">Typ een komma om te verfijnen, bijv. <b>' + esc(ENT()[PQ.entities[0]]?.short || '') + ', berekening, timeline</b></span>' : '')) : '';
+  const counts = q && !q.startsWith('>') ? (legacyQ ? runQuery(q).items : localSearch(PQ)).reduce((m, x) => (m[x.type] = (m[x.type] || 0) + 1, m), {}) : {};
   let html = '', last = null;
-  const titles = { query: 'Views opbouwen met keywords', recent: 'Recent gezocht', cmd: 'Commando’s', entity: 'Organisatie', ask: 'Vraag', all: '' };
+  const titles = { live: 'Zoeken', pin: 'Vastgezet', query: 'Views opbouwen met keywords', recent: 'Recent gezocht', cmd: 'Commando’s', entity: 'Organisatie', ask: 'Vraag', all: '' };
   entries.forEach((en, i) => {
     const g = en.kind === 'item' ? en.it.type : en.kind;
     if (g !== last) {
@@ -3609,6 +3995,11 @@ function renderPalette() {
       html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic">${ic(en.c.icon)}</span><div class="row-main"><div class="row-title">${esc(en.c.label.replace('…', ''))}${en.arg ? `: <span class="sub">${esc(en.arg)}</span>` : en.c.label.endsWith('…') ? '…' : ''}</div></div><span class="row-meta">${esc(en.c.hint)}</span></div>`;
     } else if (en.kind === 'ask') {
       html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic context">${ic('spark')}</span><div class="row-main"><div class="row-title">Vraag Claude: “${esc(en.q)}”</div><div class="row-sub">Antwoord op basis van al je bronnen</div></div><span class="enter kbd">↵</span></div>`;
+    } else if (en.kind === 'live') {
+      const LP = parseSearch(en.q);
+      html += `<div class="pal-item pal-live${a}" data-pi="${i}"><span class="ic">${ic(LP.mode === 'timeline' ? 'meeting' : 'search')}</span><div class="row-main"><div class="row-title">${LP.mode === 'timeline' ? 'Tijdlijn' : 'Zoek overal'}: <b>${esc(searchTitle(LP))}</b></div><div class="row-sub">Live in Slack en Gmail, plus agenda, taken en tracker</div></div><span class="enter kbd">↵</span></div>`;
+    } else if (en.kind === 'pin') {
+      html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic">${ic('bookmark')}</span><div class="row-main"><div class="row-title">${esc(en.p.name)}</div><div class="row-sub mono">${esc(en.p.q)}</div></div></div>`;
     } else if (en.kind === 'all') {
       html += `<div class="pal-item${a}" data-pi="${i}" style="margin-top:4px"><span class="ic">${ic('arrow')}</span><div class="row-main"><div class="row-title">Toon alle ${en.count} resultaten als view</div></div><span class="enter kbd">↵</span></div>`;
     }
@@ -3616,16 +4007,16 @@ function renderPalette() {
   if (q && !q.startsWith('>') && entries.length === 1) html = `<div class="empty">Niets gevonden voor “${esc(q)}”.</div>` + html;
   const res = document.getElementById('pal-res'); res.innerHTML = html;
   res.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
-  document.getElementById('pal-foot').innerHTML = `<span><span class="kbd">↑↓</span>navigeer</span><span><span class="kbd">↵</span>open</span><span><span class="kbd">&gt;</span>commando’s</span>${q && !q.startsWith('>') ? `<button class="save" data-action="pal-save">${ic('bookmark')} Bewaar als view <span class="kbd">⌘↵</span></button>` : ''}`;
+  document.getElementById('pal-foot').innerHTML = `<span><span class="kbd">↑↓</span>navigeer</span><span><span class="kbd">↵</span>open</span><span><span class="kbd">&gt;</span>commando’s</span>${q && !q.startsWith('>') ? `<button class="save" data-action="pal-save">${ic('bookmark')} Vastzetten in zijbalk <span class="kbd">⌘↵</span></button>` : ''}`;
 }
 function palKeys(ev) {
   const p = S.palette;
   if (ev.key === 'ArrowDown') { ev.preventDefault(); p.active = Math.min(p.active + 1, p.entries.length - 1); renderPalette(); }
   else if (ev.key === 'ArrowUp') { ev.preventDefault(); p.active = Math.max(p.active - 1, 0); renderPalette(); }
-  else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); if (p.q.trim()) saveView(p.q.trim()); }
+  else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); const qq = p.q.trim(); if (qq) { closePalette(); if (!pins().some(x => searchKey(x.q) === searchKey(qq))) togglePin(qq); go({ view: 'search', q: qq }); } }
   else if (ev.key === 'Enter') { ev.preventDefault(); palPick(p.active); }
   else if (ev.key === 'Escape') { ev.preventDefault(); closePalette(); }
-  else if (ev.key === 'Tab' && p.entries[p.active]?.kind === 'entity') { ev.preventDefault(); const inp = document.getElementById('pal-q'); inp.value = '@' + p.entries[p.active].id + ' '; p.q = inp.value; renderPalette(); }
+  else if (ev.key === 'Tab' && (p.entries.find(e => e.kind === 'entity'))) { ev.preventDefault(); const en = p.entries.find(e => e.kind === 'entity'); const inp = document.getElementById('pal-q'); const segs = inp.value.split(','); segs[segs.length - 1] = (segs.length > 1 ? ' ' : '') + (ENT()[en.id]?.name || en.id); inp.value = segs.join(',') + ', '; p.q = inp.value; p.active = 0; renderPalette(); }
 }
 function remember(q) { if (!q) return; S.recent = [q, ...S.recent.filter(x => x !== q)].slice(0, 6); store.set('recent2', S.recent); }
 function palPick(i) {
@@ -3636,6 +4027,8 @@ function palPick(i) {
   if (en.kind === 'cmd') return en.c.run(en.arg);
   remember(q);
   if (en.kind === 'entity') return go({ view: 'entity', id: en.id });
+  if (en.kind === 'live') return go({ view: 'search', q });
+  if (en.kind === 'pin') return go({ view: 'search', q: en.p.q, pin: en.p.id });
   if (en.kind === 'ask') return ask(q);
   if (en.kind === 'all') return go({ view: 'list', q, title: 'Zoeken' });
   if (en.kind === 'item') return openItem(en.it.id, q);
@@ -3649,7 +4042,7 @@ function saveView(q) {
   const ent = p.entities.flatMap(matchEntityToken)[0] || p.text.flatMap(t => matchEntityToken(t))[0];
   const name = [p.types.map(t => SRC[t].plural).join(' + '), ent && ENT()[ent].short, ...p.is, p.when].filter(Boolean).join(' · ') || q;
   const v = { id: 'v-' + Date.now().toString(36), name: cap(name), q };
-  S.saved.push(v); store.set('saved2', S.saved);
+  S.saved.push(v); store.set('saved3', S.saved);
   closePalette(); toast(`${ic('bookmark')}View “${esc(v.name)}” bewaard`);
   go({ view: 'list', q, title: v.name, key: v.id, saved: true });
 }
@@ -3680,6 +4073,7 @@ function render() {
   else if (r.view === 'toezeggingen') html = viewToezeggingen();
   else if (r.view === 'entity') html = viewEntity(r.id);
   else if (r.view === 'list') html = viewList(r);
+  else if (r.view === 'search') html = viewSearch(r);
   else if (r.view === 'chat') html = viewChat();
   else if (r.view === 'wegschrijven') html = viewWegschrijven();
   main.classList.toggle('is-chat', r.view === 'chat');
@@ -3773,6 +4167,7 @@ document.addEventListener('keydown', async ev => {
   if (typing(document.activeElement) || ev.metaKey || ev.ctrlKey || ev.altKey) return;
   if (k === '?') { ev.preventDefault(); S.help = !S.help; renderHelp(); return; }
   if (S.help) return;
+  if (S.gPending && /^[1-9]$/.test(k)) { S.gPending = false; const pp = pins()[+k - 1]; if (pp) { ev.preventDefault(); go({ view: 'search', q: pp.q, pin: pp.id }); } return; }
   if (S.gPending) { S.gPending = false; const v = GO_KEYS[k.toLowerCase()]; if (v) { ev.preventDefault(); if (['inbox', 'taken'].includes(v)) location.hash = v; else go({ view: v }); } return; }
   if (k === 'g') { S.gPending = true; setTimeout(() => S.gPending = false, 1200); return; }
   if (k === '/') { ev.preventDefault(); openPalette(); return; }
@@ -3799,6 +4194,9 @@ document.addEventListener('click', ev => {
   const pi = t.closest('[data-pi]'); if (pi) { palPick(+pi.dataset.pi); return; }
   const cand = t.closest('[data-cand]'); if (cand) { S.sheet.items[+cand.dataset.cand].keep = cand.checked; const b = document.querySelector('[data-action="accept-cands"]'); if (b) b.textContent = `Toevoegen (${S.sheet.items.filter(x => x.keep).length})`; return; }
   const cvb = t.closest('[data-conv]'); if (cvb && cvb.dataset.conv) { ev.stopPropagation(); if (S.catch) { S.catch = null; document.getElementById('overlay').innerHTML = ''; } if (cvb.dataset.focus) CV.focusScroll = true; return openConv(cvb.dataset.conv, cvb.dataset.focus || null); }
+  const unp = t.closest('[data-unpin]'); if (unp) { ev.stopPropagation(); setPins(pins().filter(x => x.id !== unp.dataset.unpin)); return toast('Losgemaakt uit de zijbalk'); }
+  const pnb = t.closest('[data-pin]'); if (pnb) { const pp = pins().find(x => x.id === pnb.dataset.pin); if (pp) return go({ view: 'search', q: pp.q, pin: pp.id }); }
+  const srb = t.closest('[data-search]'); if (srb) return go({ view: 'search', q: srb.dataset.search, pin: S.route.pin });
   const acb = t.closest('[data-ac]'); if (acb) { ev.preventDefault(); return acAccept(+acb.dataset.ac); }
   const rb = t.closest('[data-react]'); if (rb) { ev.stopPropagation(); const [c, ts, n] = rb.dataset.react.split('|'); return reactTo(c, ts, n); }
   const thb = t.closest('[data-thread]');
@@ -3807,6 +4205,8 @@ document.addEventListener('click', ev => {
   if (a) {
     const act = a.dataset.action, id = a.dataset.id;
     if (act === 'plan-claude') return openClaude(planWeekPrompt());
+    if (act === 'sr-pin') return togglePin(S.route.q || '');
+    if (act === 'sr-widen') return widenSearch(S.route.q || '');
     if (act === 'ct-start') return startCatch();
     if (act === 'ct-stop') return stopCatch();
     if (act === 'ct-undo') return catchUndo();
@@ -3831,7 +4231,7 @@ document.addEventListener('click', ev => {
     if (act === 'accept-cands') return acceptCandidates();
     if (act === 'palette') return openPalette();
     if (act === 'palette-q') return openPalette(a.dataset.q);
-    if (act === 'pal-save') return saveView(S.palette.q.trim());
+    if (act === 'pal-save') { const qq = S.palette.q.trim(); closePalette(); if (!pins().some(x => searchKey(x.q) === searchKey(qq))) togglePin(qq); return go({ view: 'search', q: qq }); }
     if (act === 'nav') return document.getElementById('app').classList.toggle('nav-open');
     if (act === 'close-insp') { S.selected = null; renderInspector(); renderMainHighlights(); return; }
     if (act === 'toast') return toast(esc(a.dataset.msg));
@@ -3921,6 +4321,7 @@ document.addEventListener('submit', async ev => {
     toast(`${ic('commit')} Toegevoegd${['mijn', 'voornemen'].includes(stroom) ? ': plan hem met 1–5' : ''}`);
     mainDirty = false; render();
   }
+  if (ev.target.id === 'sq-form') { const v = document.getElementById('sq').value.trim(); document.activeElement?.blur?.(); return go({ view: 'search', q: v }); }
   if (ev.target.id === 'ct-compose') return catchSend();
   if (ev.target.id === 'cv-compose') {
     const inp = document.getElementById('cv-input'), key = S.chatChannel; if (!inp.value.trim()) return;

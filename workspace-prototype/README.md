@@ -16,7 +16,7 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
 | **Agenda** | `g a`, `[` `]`, `l`, `n` | All Google calendars in one week view, in Dutch time, with Google Tasks in the all-day row. `l` opens the layers (Werk, Privé, Lou, Collega's); `n` plans something with colleagues (free slots via `suggest_time`). |
 | **Tracker** | `g t`, `⇧1–7` | Ik beloofde (I promised) · Wachten op (waiting for) · Bespreken (raise at next contact) · Voornemens (intentions) · Weekdoelen (week goals) · Roadmap · Afgerond (done). Replaces the Slack canvas "⏳ Wachten op". |
 | **Chat (Gesprekken)** | `g c`, `s`, `i` | All mail threads, DMs, group DMs and channels you are in, readable in full: channel history with day separators, threads that unfold inline, and complete mail threads (older messages folded, quoted text hidden, attachment names). Reply directly from the app. **Inhalen** (`s`) works through everything unread, one conversation at a time. |
-| **⌘K** | `⌘K` `/` | Search and commands. Keywords: `@feenstra type:mail when:week is:reageren`. |
+| **⌘K and Zoeken** | `⌘K`, `g 1–9` | Type an organisation and refine with commas: `Solarwatt, berekening, timeline`. See *Zoeken* below. |
 
 ## Gesprekken and Inhalen
 
@@ -38,6 +38,20 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
   - The Slack connector can neither read nor set Slack's own read marker. A message therefore counts as handled when you mark it here, reply to it here or in Slack, or post later in the same conversation or thread.
   - Real two-way read sync needs the Slack API (see below).
 - **Token-efficient loading.** The lists come from cheap list calls, refreshed hourly for channels and every 5 minutes for mail. A conversation's history is fetched only when you open it and is cached for 2 minutes.
+
+## Zoeken (search)
+
+- **Organisations are recognised as you type.** They come from mail domains, `-hz` Slack channels and the context layer. `Tab` completes the name and adds a comma.
+- **Comma-separated segments:**
+  - an organisation
+  - one or more topics: Dutch word forms are included, so "berekening" also finds berekenen and berekend
+  - a source: `mail`, `slack`, `meetings`, `taken`
+  - a period: `deze week`, `maand`, `30d`
+  - `timeline`
+- **Live search.** Gmail (by the organisation's domains, sender, recipient and cc, plus the name) and Slack (the organisation's `-hz` channel plus mentions elsewhere, with stem wildcards). It also covers local agenda, tasks, tracker and Wispr items. Every result opens with its full context in the inspector.
+- **Timeline.** For up to 15 matching mail threads, every message shows who → to whom (cc), when, the subject and a snippet. Slack messages and meetings are merged in, with a summary of volume, period and who was most involved.
+- **Breder zoeken (search wider).** On request only, Claude suggests related terms (for example rekenmodel or calculatie) and the search reruns with them.
+- **Pinned views.** `Vastzetten` (or `⌘↵` in the palette) pins a search to the sidebar under the five main items. `g 1`–`g 9` opens a pin. Pins are stored in the workspace database.
 
 ## Week rhythm
 
