@@ -36,17 +36,39 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
   - Real two-way read sync needs the Slack API (see below).
 - **Token-efficient loading.** The lists come from cheap list calls, refreshed hourly for channels and every 5 minutes for mail. A conversation's history is fetched only when you open it and is cached for 2 minutes.
 
-## From artifact to web app: own APIs instead of MCP
+## Week rhythm
 
-The artifact talks to Slack and Gmail through the claude.ai connectors (MCP). That is fine for the prototype. For a real web or Mac app, connect them directly:
+Borrowed from Standupy, a friend's standup app:
 
-| | Prototype (MCP) | Web app (own API) |
+- **Week review.** At the start of a new week, last week's open goals come first in the plan session. Each gets one of four outcomes:
+  - `x` gehaald (achieved)
+  - `m` meenemen (carry over): a copy becomes this week's goal
+  - `d` doorgeschoven (slipped): it stays open as a commitment, so it is still owed
+  - `l` losgelaten (dropped): consciously let go
+
+  The difference between slipped and dropped is the point: slipped work is debt, dropped work is not.
+- **Week score.** The Weekdoelen tab shows, for the last four weeks, how many goals were achieved, dropped or still open.
+- **Plan je week met Claude.** This opens claude.ai with a prefilled prompt. The prompt holds last week's outcomes, this week's goals, open commitments, waiting-for items and meetings per day. It coaches you through review → 2–3 outcomes → timebox → record, using `zondag-weekprep` when available. The recap flow uses the same link when starting a Claude session fails.
+
+## Team web app: one-time login instead of MCP
+
+The artifact talks to Slack and Gmail through the claude.ai connectors (MCP). For a web app that every colleague can use, each person logs in once with OAuth, the same way you add an account to Apple Mail or Spark.
+
+| | How | Effort |
 |---|---|---|
-| **Slack** | search, `read_channel`, `read_thread`, `send_message`; no read state, polling | Own Slack app with a user token: `conversations.history/replies`, `chat.postMessage`, **`conversations.mark`** (real mark as read), unread counts via `client.counts`, and Events API or Socket Mode for live updates |
-| **Gmail** | `search_threads` (no dates in the summary), `get_thread`, `reply`, labels | Gmail API with `users.watch` and Pub/Sub push plus `history.list` for instant changes; full headers, attachments and drafts |
-| **Auth and storage** | the connectors hold the tokens; `db` for state | OAuth on the server, tokens encrypted in your own backend, state in Postgres |
+| **Google (Gmail, Agenda, Taken)** | One "Log in met Google" screen requesting `gmail.modify`, `calendar.events` (+ `calendar.readonly`) and `tasks`, with `access_type=offline` for a refresh token. Set the consent screen to **Internal** in Google Cloud. Then only @homezero.nl accounts can log in, and Google requires no verification or yearly security assessment, which is otherwise mandatory for Gmail scopes. | ~1 week incl. token storage, refresh and API routes |
+| **Slack** | A HomeZero-internal Slack app with OAuth v2 user scopes. "Koppel Slack" is one click; you get a user token (`xoxp-`, optionally with token rotation). The user scopes are: `channels/groups/im/mpim:history`, `…:read`, `…:write` (for `conversations.mark`, real mark as read), `chat:write`, `reactions:write`, `search:read`, `users:read`. Keep it internal: Slack's 2025 rate-limit cuts on `conversations.history` apply to commercially distributed non-Marketplace apps, not to an app built for your own workspace. | 3–5 days; live updates (Events API or Socket Mode) +2–3 days |
+| **Live updates** | Gmail `users.watch` → Pub/Sub (renew within 7 days), Calendar `events.watch` channels. Tasks has no push, so poll it. | 2–3 days |
 
-All source calls sit in a few functions: `loadConv`, `loadThread`, `sendReply`, `convMarkRead`, `markRead` and the watches. In the web app only those functions are swapped for your own `/api/slack/*` and `/api/gmail/*` routes. The UI, keyboard model and data model stay the same.
+Suggested stack (as in Standupy): React + Vite, Supabase (Postgres with RLS, Auth with the Google provider, Edge Functions) and Vercel.
+
+- Supabase returns the Google `provider_refresh_token` at login but does not refresh it. Store it encrypted and refresh it in an edge function.
+- A `team_members` table is the allowlist.
+- Like Standupy, the app can expose its own **MCP server with OAuth 2.1**. Each colleague's Claude (routines and skills) can then read and write their own workspace directly, which replaces the ArtifactData dual landing.
+
+Not recommended: Google domain-wide delegation via a service account. It needs no user login, but it can read everyone's mail.
+
+In the code, all source calls sit in a few functions: `loadConv`, `loadThread`, `sendReply`, `convMarkRead`, `markRead` and the watches. The web app swaps only those for `/api/slack/*` and `/api/gmail/*` routes.
 
 ## Agenda colours and layers
 

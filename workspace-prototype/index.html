@@ -818,6 +818,12 @@ body:not(.kbd-mode) .hintbar { display: none; }
   .ct { max-height: calc(100dvh - 16px); }
   .ct-plan .btn { font-size: 12px; }
 }
+
+.week-strip { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 12px; }
+.week-strip .ws { font-size: 12.5px; border: 1px solid var(--grey-200); border-radius: 999px; padding: 5px 12px; background: var(--panel); }
+.week-strip .ws b { font-weight: 650; margin-right: 2px; }
+.week-strip .warn-t { color: var(--yellow-600, #b47a00); font-weight: 600; }
+.week-strip .btn.primary { margin-left: auto; }
 </style>
 
 <div class="app" id="app">
@@ -894,7 +900,8 @@ const SRC = {
 };
 const TYPE_ORDER = ['commit', 'task', 'context', 'meeting', 'rec', 'mail', 'slack', 'file'];
 const STROOM = { mijn: 'Ik beloofde', aan_mij: 'Wachten op', voornemen: 'Eigen voornemen', bespreken: 'Bespreken bij contact', weekdoel: 'Weekdoel', roadmap: 'Roadmap' };
-const STATUS = { open: 'Open', waarschijnlijk_klaar: 'Waarschijnlijk klaar', klaar: 'Klaar', te_laat: 'Te laat', overgedragen: 'Overgedragen' };
+const STATUS = { open: 'Open', waarschijnlijk_klaar: 'Waarschijnlijk klaar', klaar: 'Klaar', te_laat: 'Te laat', overgedragen: 'Overgedragen', losgelaten: 'Losgelaten' };
+const OUTCOME = { gehaald: 'Gehaald', meegenomen: 'Meegenomen', doorgeschoven: 'Doorgeschoven', losgelaten: 'Losgelaten' };
 const BUCKETS = { 1: 'Vandaag', 2: 'Morgen', 3: 'Later deze week', 4: 'Volgende week', 5: 'Backlog' };
 
 /* ---------- Voorbeelddata (alleen zonder live verbinding, en voor de wegschrijf-demo) ---------- */
@@ -940,6 +947,9 @@ const DEMO_BRIEFING = { date: '2026-10-30', title: '☀️ Briefing vr 30 okt �
   { title: '🎯 Weekdoelen', items: [{ text: '🟢 Isolatieflow TonZon live op acceptatie' }] } ] };
 DEMO_COMMITS.push(
   { id: 'dg1', wat: 'Isolatieflow TonZon live op acceptatie', stroom: 'weekdoel', week: '2026-W44', deadline: '2026-10-30', status: 'open', health: 'groen', lastCheck: '2026-10-29', checks: [{ d: '2026-10-28', h: 'groen' }, { d: '2026-10-29', h: 'groen' }], bron: { label: 'Weekdoelen 2026-W44' }, created: '2026-10-26' },
+  { id: 'dg0', wat: 'Release notes sprint 63 naar alle partners', stroom: 'weekdoel', week: '2026-W43', deadline: '2026-10-23', status: 'open', health: 'oranje', lastCheck: '2026-10-22', checks: [{ d: '2026-10-22', h: 'oranje', note: 'Wacht op input Lisanne' }] },
+  { id: 'dg00', wat: 'Feenstra ZSB-flow op acceptatie', stroom: 'weekdoel', week: '2026-W43', deadline: '2026-10-23', status: 'klaar', outcome: 'gehaald', health: 'af', closedAt: '2026-10-23' },
+  { id: 'dg01', wat: 'Concurrentieradar opzetten', stroom: 'weekdoel', week: '2026-W43', deadline: '2026-10-23', status: 'losgelaten', outcome: 'losgelaten', closedAt: '2026-10-26' },
   { id: 'dg2', wat: 'Qvantum: voorstel communicatietriggers installateursopvolging klaar', stroom: 'weekdoel', week: '2026-W44', deadline: '2026-10-30', status: 'open', health: 'oranje', lastCheck: '2026-10-29', checks: [{ d: '2026-10-29', h: 'oranje', note: 'Wacht op input Lisanne' }], bron: { label: 'Weekdoelen 2026-W44' }, created: '2026-10-26' },
   { id: 'dr1', wat: 'Rekenmodellen in Pico (thuisbatterij, warmtepomp, isolatie)', stroom: 'roadmap', deadline: '2026-12-15', status: 'open', health: 'groen', lastCheck: '2026-10-20', checks: [{ d: '2026-10-20', h: 'groen' }], bron: { label: 'Roadmap Q4' }, created: '2026-09-01' });
 const WRITEBACK_DEMO = {
@@ -1411,7 +1421,7 @@ const isWork = dt => dt.getDay() > 0 && dt.getDay() < 6;
 const nextWork = dt => { let x = addDays(dt, 1); while (!isWork(x)) x = addDays(x, 1); return x; };
 const baseDay = () => { const t = startOfDay(S.clock); return isWork(t) ? t : nextWork(t); };
 function addWorkdays(dt, n) { let x = startOfDay(dt); for (let i = 0; i < n; i++) x = nextWork(x); return x; }
-const isDone = it => it.type === 'commit' && ['klaar', 'overgedragen'].includes(it.status);
+const isDone = it => it.type === 'commit' && ['klaar', 'overgedragen', 'losgelaten'].includes(it.status);
 function plannedOn(date) {
   // op een weekenddag tellen taken van vandaag t/m de eerstvolgende werkdag mee voor 'Vandaag'
   const lo = date === ymd(baseDay()) ? today() : date;
@@ -1488,7 +1498,7 @@ function inbox() {
 }
 // Compatibel met de samenvatting (briefMe)
 const attention = () => inbox();
-const KIND = { late: ['k-late', 'Te laat'], commit: ['k-commit', 'Toezegging'], prep: ['k-prep', 'Prep'], invite: ['k-invite', 'Uitnodiging'], reply: ['k-reply', 'Reageren'], mega: ['k-reply', '📣 To-do'],
+const KIND = { review: ['k-prep', 'Weekreview'], late: ['k-late', 'Te laat'], commit: ['k-commit', 'Toezegging'], prep: ['k-prep', 'Prep'], invite: ['k-invite', 'Uitnodiging'], reply: ['k-reply', 'Reageren'], mega: ['k-reply', '📣 To-do'],
   task: ['k-task', 'Taak'], process: ['k-process', 'Verwerken'], waiting: ['k-wait', 'Wachten op'], bespreken: ['k-prep', 'Bespreken'], meeting: ['k-process', 'Meeting'], other: ['k-process', ''] };
 function focusDay() {
   const evs = allItems().filter(i => i.type === 'meeting' && !i.allDay && !i.ooo);
@@ -1697,7 +1707,7 @@ async function recapWithClaude(it) {
     `Deelnemers: ${(it.attendeeNames || []).slice(0, 8).join(', ')}`, '', 'Gestart vanuit de Home Zero Workspace. Zet de Slack-drafts klaar en werk het partnerportaal bij zoals de skill beschrijft.'];
   const prompt = lines.join('\n');
   const key = stateKey(rec || it);
-  if (!MODE.live) { copyText(prompt); return toast('Demo: de opdracht voor Claude staat op je klembord'); }
+  if (!MODE.live) { copyText(prompt); return toast(`Demo: de opdracht staat op je klembord · <a href="https://claude.ai/new?q=${encodeURIComponent(prompt)}" target="_blank" rel="noopener" style="color:inherit">open in Claude ${ic('out')}</a>`); }
   S.busy[it.id] = true; render();
   try {
     const p = await call('Claude Code Remote', 'create_session', { environment_id: CLAUDE_ENV, title: `Klant-recap ${org || it.title}`.slice(0, 120), prompt });
@@ -1706,8 +1716,7 @@ async function recapWithClaude(it) {
     await setState(key, { recapSession: url || 'gestart' });
     toast(url ? `${ic('spark')} Claude maakt de recap · <a href="${esc(url)}" target="_blank" rel="noopener" style="color:inherit">open sessie</a>` : `${ic('spark')} Claude-sessie gestart voor de recap`);
   } catch (e) {
-    copyText(prompt);
-    toast(`Sessie starten lukte niet (${esc(e?.code || 'fout')}). De opdracht staat op je klembord: plak hem in Claude.`);
+    openClaude(prompt);
   }
   delete S.busy[it.id]; render();
 }
@@ -2168,8 +2177,56 @@ function viewToezeggingen() {
       <input id="ac-org" placeholder="Partner" aria-label="Partner" style="max-width:120px;border:1px solid var(--line);border-radius:7px;padding:4px 6px;background:var(--bg);font-size:12.5px">
       <button class="btn sm primary" type="submit">${ic('plus')}Toevoegen</button></form>
     <div class="tabs" role="tablist">${tabs.map(([k, l], i) => `<button class="tab${sel === k ? ' on' : ''}" role="tab" data-ctab="${k}">${l}<span class="count-badge">${count(k)}</span><span class="kbd tab-kbd">${i + 1}</span></button>`).join('')}</div>
+    ${sel === 'weekdoel' ? weekdoelStrip() : ''}
     <div class="card">${list.length ? list.map(row).join('') : `<div class="empty">${sel === 'afgerond' ? 'Nog niets afgerond.' : 'Niets in deze lijst.'}</div>`}</div>
     <p class="hint" style="margin-top:12px">Tabs wisselen met <span class="kbd">⇧</span>+<span class="kbd">1</span>–<span class="kbd">7</span>. Een toezegging telt als er een eigenaar is, iets controleerbaars te leveren, en iemand het merkt als het niet gebeurt. Wordt het een Jira-story, dan laat de tracker hem los.</p></div>`;
+}
+
+/* ---------- Weekritme: score per week en plannen met Claude ---------- */
+function weekScore(week) {
+  const g = commitItems().filter(c => c.raw.week === week && (c.stroom === 'weekdoel' || c.raw.outcome));
+  if (!g.length) return null;
+  const hit = g.filter(c => c.raw.outcome === 'gehaald' || (!c.raw.outcome && c.status === 'klaar')).length;
+  const open = g.filter(c => !c.raw.outcome && !isDone(c)).length;
+  return { week, total: g.length, hit, open, dropped: g.filter(c => c.raw.outcome === 'losgelaten').length };
+}
+function weekdoelStrip() {
+  const weeks = [...new Set(commitItems().map(c => c.raw.week).filter(Boolean))].sort().reverse().filter(w => w < thisWeek()).slice(0, 4);
+  const sc = weeks.map(weekScore).filter(Boolean);
+  const pending = openCommits().filter(isOldGoal).length;
+  return `<div class="week-strip">${sc.map(x => `<span class="ws"><b>${esc(x.week.replace(/^\d{4}-/, ''))}</b> ${x.hit}/${x.total} gehaald${x.dropped ? ` · ${x.dropped} losgelaten` : ''}${x.open ? ` · <span class="warn-t">${x.open} open</span>` : ''}</span>`).join('')}
+    ${pending ? `<button class="btn sm" data-action="swipe">${pending} ${pending === 1 ? 'doel' : 'doelen'} van vorige week afsluiten <span class="kbd">s</span></button>` : ''}
+    <button class="btn sm primary" data-action="plan-claude">${ic('spark')}Plan je week met Claude</button></div>`;
+}
+function planWeekPrompt() {
+  const wk = thisWeek(), prev = isoWeek(addDays(baseDay(), -7));
+  const line = c => `- ${c.raw.outcome ? '[' + OUTCOME[c.raw.outcome] + '] ' : c.raw.health ? '[' + HEALTH[c.raw.health][1] + '] ' : ''}${c.title}`;
+  const prevGoals = commitItems().filter(c => c.raw.week === prev && (c.stroom === 'weekdoel' || c.raw.outcome)).map(line);
+  const nowGoals = openCommits().filter(c => c.stroom === 'weekdoel' && c.raw.week === wk).map(line);
+  const mine = openCommits().filter(c => c.stroom === 'mijn').slice(0, 12).map(c => `- ${c.title}${c.aan ? ' (aan ' + c.aan + ')' : ''}${c.deadline ? ' · deadline ' + c.deadline : ''}`);
+  const wait = openCommits().filter(c => c.stroom === 'aan_mij').slice(0, 8).map(c => `- ${c.title}${c.aan ? ' (van ' + c.aan + ')' : ''}`);
+  const ws = weekStart(0, baseDay()), meetings = allItems().filter(i => i.type === 'meeting' && !i.agendaOnly && !i.allDay && pd(i.start) >= ws && pd(i.start) < addDays(ws, 5));
+  const perDay = [0, 1, 2, 3, 4].map(d => { const day = addDays(ws, d); return `${DAYS[day.getDay()].slice(0, 2)} ${meetings.filter(m => ymd(pd(m.start)) === ymd(day)).length}`; }).join(', ');
+  const s = ['Help me mijn werkweek plannen, als scherpe en warme planningscoach. Gebruik de skill zondag-weekprep als die beschikbaar is.', '',
+    `Week: ${wk}. Meetings per dag: ${perDay}.`, '',
+    `Weekdoelen vorige week (${prev}):`, ...(prevGoals.length ? prevGoals : ['- geen vastgelegd']), '',
+    ...(nowGoals.length ? ['Al vastgelegd voor deze week:', ...nowGoals, ''] : []),
+    'Open toezeggingen (Ik beloofde):', ...(mine.length ? mine : ['- geen']), '',
+    'Wachten op:', ...(wait.length ? wait : ['- niets']), '',
+    'Neem me in deze stappen mee, één voor één, kort tussen de stappen:',
+    '1) Terugblik: per doel van vorige week gehaald, doorgeschoven (blijft een toezegging), meenemen naar deze week of bewust losgelaten. Vraag wat goed ging en wat in de weg zat.',
+    '2) Plan: 2 à 3 uitkomsten voor deze week, geen activiteiten. Duw terug bij meer dan drie.',
+    '3) Timebox: stel focusblokken in mijn agenda voor, en zet ze pas na mijn akkoord.',
+    '4) Vastleggen: zet de weekdoelen in de HomeZero workspace (artifact-database, collectie commitments, doc weekdoel-<week>-<n> met stroom weekdoel) en maak de Slack-draft voor #02-intern zoals de skill beschrijft.',
+    '', 'Alles is een concept tot ik het bevestig.'];
+  return s.join('\n').slice(0, 6000);
+}
+function openClaude(prompt) {
+  const url = 'https://claude.ai/new?q=' + encodeURIComponent(prompt);
+  let w = null; try { w = window.open(url, '_blank', 'noopener'); } catch {}
+  copyText(prompt);
+  if (!w) toast(`<a href="${esc(url)}" target="_blank" rel="noopener" style="color:inherit">Open Claude ${ic('out')}</a> · de prompt staat ook op je klembord`);
+  else toast(`${ic('spark')} Claude geopend met je weekoverzicht`);
 }
 
 /* ---------- Plansessie: kaart voor kaart (swipe) ---------- */
@@ -2179,11 +2236,14 @@ function goalDue(c) {
   if (c.stroom === 'weekdoel') return last !== T;
   return !last || dayDiff(pd(last)) <= -7 || (['oranje', 'rood'].includes(c.raw.health) && last !== T);
 }
+const thisWeek = () => isoWeek(baseDay());
+const isOldGoal = c => c.stroom === 'weekdoel' && c.raw.week && c.raw.week < thisWeek();
 function swipeQueue() {
-  const goals = openCommits().filter(c => ['weekdoel', 'roadmap'].includes(c.stroom) && goalDue(c))
+  const reviews = openCommits().filter(isOldGoal).map(c => ({ id: c.id, kind: 'review', why: `Weekdoel ${c.raw.week} · hoe is het afgelopen?` }));
+  const goals = openCommits().filter(c => ['weekdoel', 'roadmap'].includes(c.stroom) && !isOldGoal(c) && goalDue(c))
     .sort((a, b) => (a.stroom === 'weekdoel' ? 0 : 1) - (b.stroom === 'weekdoel' ? 0 : 1))
     .map(c => ({ id: c.id, kind: 'goal', why: c.stroom === 'weekdoel' ? `Weekdoel${c.raw.week ? ' ' + c.raw.week : ''} · hoe staat het ervoor?` : 'Roadmap · wekelijkse check' }));
-  return [...goals, ...inbox().map(b => ({ id: b.it.id, kind: b.kind, why: b.why }))];
+  return [...reviews, ...goals, ...inbox().map(b => ({ id: b.it.id, kind: b.kind, why: b.why }))];
 }
 function startSwipe() {
   const q = swipeQueue();
@@ -2199,6 +2259,7 @@ function swipeCurrent() {
   return null;
 }
 const SWIPE_KEYS = {
+  review: [['x', '✅ Gehaald'], ['m', 'Meenemen naar deze week'], ['d', 'Doorgeschoven: blijft staan als toezegging'], ['l', 'Losgelaten']],
   goal: [['g', '🟢 Op koers'], ['o', '🟠 Risico'], ['r', '🔴 Blokkade'], ['x', '✅ Af'], ['n', 'Notitie']],
   invite: [['y', 'Ja'], ['m', 'Misschien'], ['n', 'Nee']],
   waiting: [['x', 'Binnen'], ['1', 'Nudge vandaag'], ['2', 'Morgen'], ['3', 'Later'], ['4', 'Volg. week'], ['5', 'Parkeren']],
@@ -2228,7 +2289,7 @@ function renderSwipe() {
   if (it.type === 'commit' && it.aan) ctx.push(`${it.stroom === 'aan_mij' ? 'Van' : 'Met'} ${esc(it.aan)}`);
   const related = it.entities?.length ? openCommits().filter(c => c.id !== it.id && ['mijn', 'aan_mij', 'bespreken'].includes(c.stroom) && c.entities.some(e => it.entities.includes(e))).slice(0, 3) : [];
   const body = it.type === 'slack' ? it.title : it.type === 'mail' ? it.body : it.type === 'task' ? it.notes : it.type === 'rec' ? it.body : it.type === 'commit' ? (it.raw.citaat || '') : it.desc || '';
-  const checks = kind === 'goal' ? (it.raw.checks || []).slice(-6) : [];
+  const checks = kind === 'goal' || kind === 'review' ? (it.raw.checks || []).slice(-6) : [];
   ov.innerHTML = `<div class="scrim sw-scrim">${SW_DECO}<div class="swipe" role="dialog" aria-label="Plansessie">${prog}
     <div class="sw-top"><span>${sw.i + 1} / ${sw.q.length}</span><span>${dayDiff(pd(T1)) === 0 ? 'Vandaag' : cap(dayLabel(pd(T1)))} ${capBar(load)} ${load}/${DAY_CAP}</span><span><span class="kbd">s</span> overslaan · <span class="kbd">u</span> terug · <span class="kbd">esc</span> stoppen</span></div>
     <div class="sw-card ${sw.anim}" id="sw-card">
@@ -2253,6 +2314,16 @@ async function swipeKey(k) {
   if (k === 's' || k === 'ArrowRight') return next('left', false);
   if (k === 'u' || k === 'ArrowLeft') { if (sw.i > 0) { sw.i--; sw.anim = 'in-right'; renderSwipe(); } return; }
   if (k === 'o') { if (it.url) { let w = null; try { w = window.open(it.url, '_blank', 'noopener'); } catch {} if (!w) toast(`<a href="${esc(it.url)}" target="_blank" rel="noopener" style="color:inherit">Openen ${ic('out')}</a>`); } return; }
+  if (cur.kind === 'review') {
+    const T = today(), o = { x: 'gehaald', m: 'meegenomen', d: 'doorgeschoven', l: 'losgelaten' }[k];
+    if (!o) return;
+    if (o === 'gehaald') await commitSave(it.docId, { status: 'klaar', outcome: o, health: 'af', closedAt: T });
+    if (o === 'losgelaten') await commitSave(it.docId, { status: 'losgelaten', outcome: o, closedAt: T });
+    if (o === 'doorgeschoven') await commitSave(it.docId, { stroom: 'mijn', outcome: o, health: null });
+    if (o === 'meegenomen') { await commitAdd({ wat: it.raw.wat, stroom: 'weekdoel', week: thisWeek(), org: it.raw.org || '', health: it.raw.health || null, src: { from: it.docId } }); await commitSave(it.docId, { status: 'overgedragen', outcome: o, closedAt: T }); }
+    toast(`${esc(short(it.title, 50))}: ${OUTCOME[o].toLowerCase()}${o === 'doorgeschoven' ? ' · staat nu bij Ik beloofde' : o === 'meegenomen' ? ' · staat bij de weekdoelen van ' + thisWeek() : ''}`);
+    return next(o === 'gehaald' || o === 'losgelaten' ? 'left' : 'up');
+  }
   if (cur.kind === 'goal') {
     const note = document.getElementById('sw-note')?.value.trim() || '';
     if (k === 'n') { document.getElementById('sw-note')?.focus(); return; }
@@ -3302,6 +3373,7 @@ const COMMANDS = [
   { label: 'Meeting wegschrijven (concept)', hint: 'demo', icon: 'context', run: () => go({ view: 'wegschrijven' }) },
   { label: 'Inplannen met collega’s', hint: 'n', icon: 'users', run: () => openPlanner() },
   { label: 'Haal weekdoelen op uit #02-intern', hint: 'Slack', icon: 'commit', run: () => importWeekgoals() },
+  { label: 'Plan je week met Claude', hint: 'weekdoelen', icon: 'spark', run: () => openClaude(planWeekPrompt()) },
   { label: 'Inhalen: Slack en mail één voor één', hint: 'chat', icon: 'chat', run: () => startCatch() },
   { label: 'Vraag Claude…', hint: 'chat', icon: 'spark', run: q => q ? ask(q) : (S.chatChannel = 'ai', go({ view: 'chat' })) },
   { label: 'Nieuwe toezegging…', hint: 'tracker', icon: 'plus', run: q => q ? (commitAdd({ wat: q }), toast('Toezegging toegevoegd'), go({ view: 'toezeggingen' })) : go({ view: 'toezeggingen' }) },
@@ -3571,6 +3643,7 @@ document.addEventListener('click', ev => {
   const a = t.closest('[data-action]');
   if (a) {
     const act = a.dataset.action, id = a.dataset.id;
+    if (act === 'plan-claude') return openClaude(planWeekPrompt());
     if (act === 'ct-start') return startCatch();
     if (act === 'ct-stop') return stopCatch();
     if (act === 'ct-undo') return catchUndo();
