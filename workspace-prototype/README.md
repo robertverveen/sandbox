@@ -29,6 +29,9 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
   - `⇧E` read plus ✅ in Slack
   - `z` undo
   - `Esc` stop
+- **Reactions.** `↵` sends without closing the card: you see your reply in the conversation, then go on with `→`. Quick reactions (👍 ✅ 👀 🙏 🙌 ❤️) react and mark read in one go. Hovering a message in Gesprekken shows the same reaction bar.
+- **Tags and emoji.** In the reply box, `@` suggests people. Suggestions come from conversations, DMs and `slack_search_users`, and a pick becomes a real `<@U…>` tag when sent. `:` suggests emoji: all ~1,960 standard Slack shortcodes are built in, plus workspace emoji via `slack_search_emojis`. Custom emoji show as a label, because the connector gives no image.
+- **An emoji reaction counts as read.** Reacting from the app marks the item read. Every 3 minutes the app also checks open Slack items with `slack_get_reactions`, so a reaction you placed in Slack itself also marks the item read.
 - **Replying.** Slack replies go to the conversation, or to the thread when the unread message was in a thread (`slack_send_message`). Mail replies use Gmail `reply`, with your signature and optional reply-all.
 - **Read state.**
   - Mail is marked read in Gmail. Undo puts `UNREAD` back.
