@@ -11,7 +11,7 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
 | Screen | Keys | What it does |
 |---|---|---|
 | **Dagstart** (day start) | `g d` | A felt yellow header with the greeting and one line: how many items need a decision, today's load (x/10) and the next meeting, plus the **Start plansessie** button. Below it: the morning briefing as one collapsed line, **Vandaag** (today, max 10) next to **Agenda vandaag**, and "Om te beslissen" (to decide) folded away. Two chips at the bottom: the current sprint and the week goals. |
-| **Planning** | `g p`, `v` | Tab **Mijn planning**: late · today · tomorrow · later this week · next week · no date · backlog (Google Tasks and the tracker together). Tab **Sprint** (`v`): the current Jira sprint of project HOM, with a progress bar by status, "Voor jou om te testen" (where you are the Tester) at the top, then the stories by status. |
+| **Planning** | `g p`, `v`, `n`/`⇧N` | Tab **Mijn planning**: late · today · tomorrow · later this week · next week · no date · backlog (Google Tasks and the tracker together). Quick add on Vandaag and Morgen (`n` / `⇧N`): the task goes straight into Google Tasks with that date. Tab **Sprint** (`v`): the current Jira sprint of project HOM, with a progress bar by status, "Voor jou om te testen" (where you are the Tester) at the top, then the stories by status. |
 | **Plan session** | `s` | Card by card on a felt blue plane: week goals and roadmap first (`g` on track, `o` at risk, `r` blocked, `x` done, `n` note), then everything that needs a decision (`1`–`5` plan, `e`, `w`, `b`, `x`). `s` skip, `u` back. |
 | **Agenda** | `g a`, `[` `]`, `l`, `n` | All Google calendars in one week view, in Dutch time, with Google Tasks in the all-day row. `l` opens the layers (Werk, Privé, Lou, Collega's); `n` plans something with colleagues (free slots via `suggest_time`). |
 | **Tracker** | `g t`, `⇧1–7` | Ik beloofde (I promised) · Wachten op (waiting for) · Bespreken (raise at next contact) · Voornemens (intentions) · Weekdoelen (week goals) · Roadmap · Afgerond (done). Replaces the Slack canvas "⏳ Wachten op". |
@@ -33,6 +33,7 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
 - **Tags and emoji.** In the reply box, `@` suggests people. Suggestions come from conversations, DMs and `slack_search_users`, and a pick becomes a real `<@U…>` tag when sent. `:` suggests emoji: all ~1,960 standard Slack shortcodes are built in, plus workspace emoji via `slack_search_emojis`. Custom emoji show as a label, because the connector gives no image.
 - **An emoji reaction counts as read.** Reacting from the app marks the item read. Every 3 minutes the app also checks open Slack items with `slack_get_reactions`, so a reaction you placed in Slack itself also marks the item read.
 - **Replying.** Slack replies go to the conversation, or to the thread when the unread message was in a thread (`slack_send_message`). Mail replies use Gmail `reply`, with your signature and optional reply-all.
+- **Answered by a colleague.** If a message tags several people (or uses `@here`) and one of the other tagged people has already replied in the thread or channel, the item counts as handled (`handledBy`).
 - **Read state.**
   - Mail is marked read in Gmail. Undo puts `UNREAD` back.
   - The Slack connector can neither read nor set Slack's own read marker. A message therefore counts as handled when you mark it here, reply to it here or in Slack, or post later in the same conversation or thread.
@@ -50,6 +51,7 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
   - `timeline`
 - **Live search.** Gmail (by the organisation's domains, sender, recipient and cc, plus the name) and Slack (the organisation's `-hz` channel plus mentions elsewhere, with stem wildcards). It also covers local agenda, tasks, tracker and Wispr items. Every result opens with its full context in the inspector.
 - **Timeline.** For up to 15 matching mail threads, every message shows who → to whom (cc), when, the subject and a snippet. Slack messages and meetings are merged in, with a summary of volume, period and who was most involved.
+- **Gantt.** One row per conversation (mail thread, Slack channel or meeting), with a bar from its first to its last message. Dots mark each message: blue for HomeZero, yellow for external, grey for Slack, square for meetings. Hovering a dot shows who → to whom and when. The scale switches between days, weeks and months, and a yellow line marks today.
 - **Breder zoeken (search wider).** On request only, Claude suggests related terms (for example rekenmodel or calculatie) and the search reruns with them.
 - **Pinned views.** `Vastzetten` (or `⌘↵` in the palette) pins a search to the sidebar under the five main items. `g 1`–`g 9` opens a pin. Pins are stored in the workspace database.
 

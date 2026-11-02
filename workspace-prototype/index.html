@@ -972,6 +972,40 @@ body.kbd-mode .tab .tab-kbd { display: inline; }
 .pal-foot { padding: 12px 22px; }
 .pal-foot .save { color: var(--blue-500); font-weight: 600; }
 @media (max-width: 760px) { .hz-lead { padding-right: 0; } .hz-head { grid-template-columns: minmax(0, 1fr); padding: 22px 20px; } .hz-head h1 { font-size: 36px; } .addform { flex-wrap: wrap; border-radius: var(--corner-l); padding: 10px 12px; } .addform #ac-wat { flex-basis: 100%; } }
+
+/* v11: gantt en snel toevoegen */
+.gantt { --gt-label: 300px; position: relative; border: 1px solid var(--line); border-radius: var(--corner-l); background: var(--panel); overflow: hidden; }
+.gt-row { display: grid; grid-template-columns: var(--gt-label, 300px) minmax(0, 1fr); width: 100%; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 0; text-align: left; font: inherit; color: var(--fg); cursor: pointer; min-height: 52px; }
+.gt-row:last-of-type { border-bottom: 0; }
+.gt-row:not(.gt-axis):hover { background: var(--hover); }
+.gt-row.sel { background: var(--blue-100); }
+.gt-axis { min-height: 34px; cursor: default; background: var(--bg); }
+.gt-label { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 8px; align-content: center; padding: 8px 14px; border-right: 1px solid var(--line); min-width: 0; }
+.gt-ico { grid-row: span 2; color: var(--muted); display: grid; place-items: center; }
+.gt-name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-label small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-track { position: relative; margin: 0 14px; }
+.gt-tick { position: absolute; top: 9px; transform: translateX(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gt-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.gt-bar { position: absolute; top: 50%; height: 8px; transform: translateY(-50%); border-radius: 999px; background: var(--blue-100); }
+.gt-bar.slack { background: var(--grey-100); }
+.gt-bar.meeting { background: var(--yellow-100); }
+.gt-pt { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--blue-500); border: 2px solid var(--panel); box-sizing: border-box; }
+.gt-pt.ext { background: var(--yellow-500); }
+.gt-pt.sl { background: var(--grey-700); }
+.gt-pt.mt { background: var(--yellow-300); border-radius: 3px; }
+.gt-pt:hover { transform: translate(-50%, -50%) scale(1.4); z-index: 2; }
+.gt-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--yellow-500); opacity: .7; pointer-events: none; }
+.gt-legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12.5px; margin-bottom: 10px; }
+.gt-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.gt-legend .gt-pt { position: static; transform: none; display: inline-block; }
+.quick-add { display: flex; align-items: center; gap: 6px; margin: 2px 0 8px; border-radius: 999px; padding: 4px 4px 4px 14px; background: rgba(255,255,255,.6); border: 1px solid transparent; }
+.plan-col:not(.today) .quick-add { background: var(--panel); border-color: var(--grey-200); }
+.quick-add:focus-within { border-color: var(--blue-500); background: var(--panel); }
+.quick-add input { flex: 1; border: 0; outline: none; background: transparent; font: inherit; font-size: 13.5px; color: var(--fg); min-width: 0; padding: 5px 0; }
+.quick-add .send-btn { width: 30px; height: 30px; }
+.quick-add .send-btn .i { width: 15px; height: 15px; }
+@media (max-width: 760px) { .gantt { --gt-label: 140px; } .gt-label small { display: none; } }
 </style>
 
 <div class="app" id="app">
@@ -1404,7 +1438,7 @@ function parseSlack(payload) {
       ts, channelId: chan[2], channelName: isDm ? 'DM ' + (others.join(', ') || from[1] || '') : (chan[1] || ''), dm: isDm,
       fromName: (from[1] || '').trim() || 'Slack', fromId: from[3], bot: /\[BOT\]/.test(from[4] || ''),
       time: time ? time.toISOString() : null, url: g(/^Permalink: \[link\]\((.+?)\)/m), thread: /thread_ts=/.test(g(/^Permalink: \[link\]\((.+?)\)/m) || ''),
-      text: cleanSlack(raw),
+      text: cleanSlack(raw), mentions: [...raw.matchAll(/<@(\w+)/g)].map(m => m[1]), broadcast: /<!(here|channel|everyone)/.test(raw),
     };
   });
 }
@@ -1467,7 +1501,7 @@ function liveItems() {
     const later = m => m.me && +m.ts > +s.ts;
     const answered = !fromMe && (mine.some(x => x.channelId === s.channelId && x.time && s.time && x.time > s.time) || (CV.conv['sl:' + s.channelId]?.msgs || []).some(later) || (thr && (CV.thread[s.channelId + '|' + thr]?.msgs || []).some(later)));
     const hz = (s.channelName.match(/#([\w-]+?)-hz\b/) || [])[1];
-    items.push({ id: 'sl:' + s.ts, ts: s.ts, type: 'slack', live: true, title: s.text || '(bestand, huddle of bericht zonder tekst)', channel: s.channelName, channelId: s.channelId, fromName: s.fromName,
+    items.push({ id: 'sl:' + s.ts, ts: s.ts, type: 'slack', live: true, fromId: s.fromId, mentions: s.mentions || [], broadcast: !!s.broadcast, title: s.text || '(bestand, huddle of bericht zonder tekst)', channel: s.channelName, channelId: s.channelId, fromName: s.fromName,
       fromMe, bot: s.bot, dm: s.dm, mention: kind === 'mention', mega: kind === 'mega', time: s.time, url: s.url, answered, entities: hz ? [registerOrg(hz.replace(/-/g, ''))].filter(Boolean) : [] });
   };
   LV.slack.mega.forEach(s => addSlack(s, 'mega'));
@@ -1684,6 +1718,15 @@ async function respondInvite(id, status) {
   delete S.busy[id]; render();
 }
 /* Google Tasks */
+async function quickTask(title, n) {
+  const date = bucketDate(n);
+  if (n === 1 && loadOf(date) >= DAY_CAP) toast(`Vandaag zit al op ${loadOf(date)}/${DAY_CAP}. Morgen kan ook.`);
+  try {
+    const r = await gtaskAdd(title, date, '[workspace] Snel toegevoegd in Planning');
+    if (MODE.live && r?.id) LV.tasks.push({ id: r.id, title, due: date + 'T00:00:00.000Z', status: 'needsAction', tasklist_id: r.tasklist, tasklist_title: LV.tasklists.find(l => l.id === r.tasklist)?.title || '' });
+    toast(`${ic('check')} In Google Tasks gezet voor ${n === 1 ? 'vandaag' : 'morgen'} (${fmtDate(date)})`);
+  } catch (e) { toast(`Taak aanmaken in Google Tasks lukte niet (${esc(e?.code || 'fout')})`); }
+}
 async function gtaskAdd(title, due, notes) {
   if (!MODE.live) { const id = 't' + Date.now(); DEMO_ITEMS.push({ id: 'tk:' + id, rawId: id, type: 'task', tasklist: 'demo', title, due, notes, entities: [] }); return { id, tasklist: 'demo' }; }
   const tl = defaultList();
@@ -2257,6 +2300,7 @@ function viewPlanning() {
       if ((n === -1 || n === 0) && !items.length) return '';
       const cap = n === 1 || n === 2;
       return `<section class="plan-col${n === -1 ? ' late' : ''}${n === 1 ? ' today felt plane-yellow-light' : ''}"><div class="calm-title"><h2>${label}</h2>${cap ? capBar(items.length) : ''}<span class="count-badge">${items.length}${cap ? '/' + DAY_CAP : ''}</span></div>
+        ${cap ? `<form class="quick-add" id="qa-${n}" data-n="${n}"><input id="qa-in-${n}" placeholder="${n === 1 ? 'Taak voor vandaag' : 'Taak voor morgen'}  (${n === 1 ? 'n' : '⇧N'})" autocomplete="off" enterkeyhint="done"><button class="send-btn" type="submit" aria-label="Toevoegen aan Google Tasks">${ic('plus')}</button></form>` : ''}
         ${items.length ? `<div class="list">${items.sort((a, b) => String(a.due || a.plan || '').localeCompare(String(b.due || b.plan || ''))).map(it => rowHTML(it, { chip: false })).join('')}</div>` : `<div class="plan-empty">${n === 5 ? 'Leeg. Mooi.' : 'Nog niets'}</div>`}</section>`;
     }).join('')}</div>
     <p class="hint"><span class="kbd">1</span>–<span class="kbd">5</span> verplaatsen · <span class="kbd">x</span> klaar · <span class="kbd">s</span> plansessie · <span class="kbd">v</span> sprint</p></div>`;
@@ -3504,7 +3548,15 @@ async function checkReactions() {
         CV.reactChecked[it.ts] = Date.now();
         const txt = String(r?.result || r || '');
         const mine = [...txt.matchAll(/^:([\w+-]+): .*$/gm)].find(l => l[0].includes(`(${SLACK_ME})`));
-        if (mine) setState(stateKey(it), { read: true, reacted: mine[1] });
+        if (mine) return setState(stateKey(it), { read: true, reacted: mine[1] });
+        // Meerdere mensen getagd (of @here) en een van hen heeft al gereageerd? Dan is het afgehandeld.
+        const others = (it.mentions || []).filter(u => u !== SLACK_ME && u !== it.fromId);
+        if (it.dm || (!others.length && !it.broadcast)) return;
+        const counts = m => +m.ts > +it.ts && !m.bot && m.fromId && m.fromId !== it.fromId && m.fromId !== SLACK_ME && (it.broadcast || others.includes(m.fromId));
+        const root = (it.url || '').match(/thread_ts=([\d.]+)/)?.[1] || it.ts;
+        let hit = parseSlackThread(await call('Slack', 'slack_read_thread', { channel_id: it.channelId, message_ts: root, limit: 100 })).find(counts);
+        if (!hit && root === it.ts) hit = parseSlackHistory(await call('Slack', 'slack_read_channel', { channel_id: it.channelId, oldest: it.ts, limit: 15 })).msgs.find(counts);
+        if (hit) setState(stateKey(it), { read: true, handledBy: hit.fromName });
       } catch { CV.reactChecked[it.ts] = Date.now(); }
     }));
   }
@@ -3525,7 +3577,7 @@ function catchAnimate(dir, then) {
 //   · periode (vandaag, deze week, maand, 30d) · weergave (timeline/tijdlijn).
 const SR = {};                     // cache per zoekopdracht
 const ORG_DOM = {}, ORG_CH = {};   // organisatie → mail-domeinen / Slack-kanaal
-const SEARCH_MODES = { timeline: 'timeline', tijdlijn: 'timeline', lijst: 'list' };
+const SEARCH_MODES = { timeline: 'timeline', tijdlijn: 'timeline', gantt: 'gantt', lijst: 'list' };
 const SEARCH_TYPES = { mail: 'mail', mails: 'mail', email: 'mail', 'e-mail': 'mail', slack: 'slack', chat: 'slack', meeting: 'meeting', meetings: 'meeting', agenda: 'meeting', afspraken: 'meeting', taken: 'task', taak: 'task', tracker: 'commit', toezeggingen: 'commit', opnames: 'rec', wispr: 'rec' };
 const SEARCH_WHEN = { vandaag: 1, gisteren: 2, week: 7, 'deze week': 7, 'vorige week': 14, maand: 31, 'deze maand': 31, kwartaal: 92, jaar: 365 };
 const idTime = id => { try { return new Date(Number(BigInt('0x' + id) >> 20n)).toISOString(); } catch { return null; } };
@@ -3663,7 +3715,7 @@ async function runSearch(q, force) {
   [...R.mailItems, ...R.slackItems].forEach(it => { if (!allItems().some(i => i.id === it.id)) LV.searchItems[it.id] = it; });
   R.state = 'ok'; R.at = Date.now();
   scheduleRender();
-  if (P.mode === 'timeline') loadTimeline(q);
+  if (P.mode === 'timeline' || P.mode === 'gantt') loadTimeline(q);
   return R;
 }
 // Tijdlijn: per mailthread alle berichten (wie → aan wie, wanneer), plus Slack en meetings
@@ -3710,7 +3762,7 @@ function togglePin(q) {
   const k = searchKey(q), list = pins();
   if (list.some(p => searchKey(p.q) === k)) { setPins(list.filter(p => searchKey(p.q) !== k)); return toast('Losgemaakt uit de zijbalk'); }
   const P = parseSearch(q);
-  setPins([...list, { id: 'p' + Date.now().toString(36), q: q.trim(), name: searchTitle(P) + (P.mode === 'timeline' ? ' · tijdlijn' : '') }]);
+  setPins([...list, { id: 'p' + Date.now().toString(36), q: q.trim(), name: searchTitle(P) + (P.mode === 'timeline' ? ' · tijdlijn' : P.mode === 'gantt' ? ' · gantt' : '') }]);
   toast(`${ic('bookmark')} Vastgezet in de zijbalk`);
 }
 
@@ -3721,7 +3773,7 @@ function searchChips(P, R) {
   P.keywords.forEach(k => c.push(`<span class="sq-chip kw" title="Zoekt ook op: ${esc(variants(k).join(', '))}">${esc(k)}${R?.extra?.[k]?.length ? `<small>+ ${esc(R.extra[k].join(', '))}</small>` : ''}</span>`));
   P.types.forEach(t => c.push(`<span class="sq-chip">${esc(SRC[t]?.plural || t)}</span>`));
   if (P.days) c.push(`<span class="sq-chip">laatste ${P.days} dagen</span>`);
-  if (P.mode === 'timeline') c.push('<span class="sq-chip mode">tijdlijn</span>');
+  if (P.mode !== 'list') c.push(`<span class="sq-chip mode">${P.mode === 'gantt' ? 'gantt' : 'tijdlijn'}</span>`);
   return c.join('');
 }
 function hitRow(it) { return rowHTML(it, { chip: false }); }
@@ -3749,21 +3801,59 @@ function timelineHTML(R, P) {
   }
   return out + '</div>';
 }
+function ganttHTML(R, P) {
+  const T = R.tl;
+  if (!T || T.state === 'loading') return '<div class="empty">Gantt opbouwen: per gesprek van eerste tot laatste bericht…</div>';
+  const ev = T.events.filter(e => e.time);
+  if (!ev.length) return '<div class="empty">Niets gevonden om op een tijdas te zetten.</div>';
+  const rows = new Map();
+  for (const e of ev) {
+    const k = e.kind === 'slack' ? 'ch:' + (e.channel || 'Slack') : e.kind + ':' + e.id;
+    if (!rows.has(k)) rows.set(k, { kind: e.kind, id: e.id, label: e.kind === 'slack' ? (e.channel || 'Slack') : (e.subject || '(geen onderwerp)'), evs: [] });
+    rows.get(k).evs.push(e);
+  }
+  const ts = ev.map(e => +pd(e.time));
+  let t0 = Math.min(...ts), t1 = Math.max(...ts, +S.clock);
+  if (t1 - t0 < 7 * 864e5) t0 = t1 - 7 * 864e5;
+  const start = +startOfDay(new Date(t0)) - 864e5, end = +startOfDay(new Date(t1)) + 2 * 864e5, span = end - start;
+  const x = t => Math.max(0, Math.min(100, (t - start) / span * 100));
+  const days = span / 864e5, step = days <= 24 ? 'dag' : days <= 140 ? 'week' : 'maand';
+  const ticks = []; let d = startOfDay(new Date(start));
+  if (step === 'week') while (d.getDay() !== 1) d = addDays(d, 1);
+  if (step === 'maand') d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  while (+d < end) { ticks.push(new Date(d)); d = step === 'dag' ? addDays(d, 1) : step === 'week' ? addDays(d, 7) : new Date(d.getFullYear(), d.getMonth() + 1, 1); }
+  const lab = t => step === 'dag' ? `${DAYS[t.getDay()].slice(0, 2)} ${t.getDate()}` : step === 'week' ? `${t.getDate()} ${MONTHS[t.getMonth()].slice(0, 3)}` : MONTHS[t.getMonth()].slice(0, 3) + (t.getMonth() === 0 ? ' ' + t.getFullYear() : '');
+  const self = selfDomain();
+  const sorted = [...rows.values()].sort((a, b) => Math.min(...a.evs.map(e => +pd(e.time))) - Math.min(...b.evs.map(e => +pd(e.time))));
+  const nm = {}; ev.forEach(e => { if (e.from && e.fromName) nm[e.from] = e.fromName; });
+  const nameOf = e => e.kind === 'mail' ? (nm[e.from] || nameFromEmail(e.from)) : e.kind === 'slack' ? e.fromName : e.subject;
+  const tip = e => `${hm(pd(e.time))} ${fmtDate(ymd(pd(e.time)))} · ${nameOf(e)}${e.kind === 'mail' && e.to?.length ? ' → ' + e.to.map(t => nm[t] || nameFromEmail(t)).join(', ') : ''}${e.snippet ? ' · ' + short(String(e.snippet), 90) : ''}`;
+  const head = `<div class="gt-row gt-axis"><div class="gt-label"></div><div class="gt-track">${ticks.map(t => `<span class="gt-tick" style="left:${x(+t)}%">${lab(t)}</span>`).join('')}</div></div>`;
+  const body = sorted.map(r => {
+    const tt = r.evs.map(e => +pd(e.time)), a = x(Math.min(...tt)), b = x(Math.max(...tt));
+    const ppl = [...new Set(r.evs.map(nameOf).filter(Boolean))];
+    return `<button class="gt-row" data-open="${esc(r.id)}"><div class="gt-label"><span class="gt-ico">${ic(r.kind === 'mail' ? 'mail' : r.kind === 'slack' ? 'slack' : 'meeting')}</span><span class="gt-name">${esc(short(r.label, 60))}</span><small>${r.evs.length} ${r.evs.length === 1 ? 'bericht' : 'berichten'} · ${esc(short(ppl.slice(0, 3).join(', '), 48))}</small></div>
+      <div class="gt-track">${ticks.map(t => `<span class="gt-grid" style="left:${x(+t)}%"></span>`).join('')}<span class="gt-bar ${r.kind}" style="left:${a}%;width:${Math.max(0.6, b - a)}%"></span>${r.evs.map(e => `<span class="gt-pt ${e.kind === 'meeting' ? 'mt' : e.kind === 'slack' ? 'sl' : domainOf(e.from) === self ? 'hz' : 'ext'}" style="left:${x(+pd(e.time))}%" title="${esc(tip(e))}"></span>`).join('')}</div></button>`;
+  }).join('');
+  return `<div class="gt-legend"><span><i class="gt-pt hz"></i>HomeZero</span><span><i class="gt-pt ext"></i>Extern</span><span><i class="gt-pt sl"></i>Slack</span><span><i class="gt-pt mt"></i>Meeting</span><span class="sub">${sorted.length} gesprekken · per ${step}</span></div>
+    <div class="gantt">${head}${body}<span class="gt-now" style="left:calc(var(--gt-label) + 14px + (100% - var(--gt-label) - 28px) * ${(x(+S.clock) / 100).toFixed(4)})"></span></div>`;
+}
 function viewSearch(r) {
   const q = r.q || '', P = parseSearch(q);
   runSearch(q);
   const R = SR[searchKey(q)] || {};
-  if (P.mode === 'timeline' && R.state === 'ok') loadTimeline(q);
+  if ((P.mode === 'timeline' || P.mode === 'gantt') && R.state === 'ok') loadTimeline(q);
   const pinned = pins().some(p => searchKey(p.q) === searchKey(q));
   const local = localSearch(P, R.extra).filter(i => !['mail', 'slack'].includes(i.type) || !(R.mailItems || []).concat(R.slackItems || []).some(x => x.id === i.id));
   const mails = R.mailItems || [], slack = R.slackItems || [];
   const loading = R.state === 'loading';
   const nAll = mails.length + slack.length + local.length;
-  const toggleMode = P.mode === 'timeline' ? q.split(',').filter(s => !SEARCH_MODES[s.trim().toLowerCase()]).join(',').trim() : (q.trim() ? q.trim() + ', timeline' : 'timeline');
+  const baseQ = q.split(',').filter(s => !SEARCH_MODES[s.trim().toLowerCase()]).join(',').trim();
+  const modeQ = m => m === 'list' ? baseQ : (baseQ ? baseQ + ', ' + m : m);
   const sect = (label, icon, items, more) => items.length ? `<section class="sr-sect"><div class="group-label">${srcLabel(icon)}<span>${items.length}${more ? '+' : ''}</span></div><div class="list">${items.map(hitRow).join('')}</div></section>` : '';
   return `<div class="page search-page">${modeBanner()}
     <div class="page-head"><div><div class="eyebrow">${r.pin ? 'Vastgezette view' : 'Zoeken in Slack, mail en je workspace'}</div><h1>${esc(searchTitle(P))}</h1></div>
-      <div class="sr-acts"><div class="seg"><button class="${P.mode !== 'timeline' ? 'on' : ''}" data-search="${esc(P.mode === 'timeline' ? toggleMode : q)}">Lijst</button><button class="${P.mode === 'timeline' ? 'on' : ''}" data-search="${esc(P.mode === 'timeline' ? q : toggleMode)}">Tijdlijn</button></div>
+      <div class="sr-acts"><div class="seg">${[['list', 'Lijst'], ['timeline', 'Tijdlijn'], ['gantt', 'Gantt']].map(([m, l]) => `<button class="${P.mode === m ? 'on' : ''}" data-search="${esc(modeQ(m))}">${l}</button>`).join('')}</div>
         ${P.keywords.length ? `<button class="btn" data-action="sr-widen" ${R.widening ? 'disabled' : ''}>${ic('spark')}${R.widening ? 'Claude denkt mee…' : 'Breder zoeken'}</button>` : ''}
         <button class="btn${pinned ? '' : ' primary'}" data-action="sr-pin">${ic('bookmark')}${pinned ? 'Vastgezet' : 'Vastzetten'}</button></div></div>
     <form class="qbar sq" id="sq-form"><span class="sq-ico">${ic('search')}</span><input id="sq" value="${esc(q)}" spellcheck="false" autocomplete="off" placeholder="Organisatie, onderwerp, timeline  · bijv. Solarwatt, berekening, timeline"><button class="send-btn" type="submit" aria-label="Zoeken">${ic('arrow')}</button></form>
@@ -3771,6 +3861,7 @@ function viewSearch(r) {
     ${(R.err || []).map(e => `<div class="note err">${esc(e)}</div>`).join('')}
     ${!P.entities.length && !P.keywords.length ? `<div class="empty">Typ een organisatie of onderwerp. Verfijn met komma's: <b>Solarwatt, berekening, timeline</b>.</div>`
       : P.mode === 'timeline' ? timelineHTML(R, P)
+      : P.mode === 'gantt' ? ganttHTML(R, P)
       : `${loading && !nAll ? '<div class="empty">Zoeken in Slack en Gmail…</div>' : ''}${sect('Mail', 'mail', mails, mails.length >= 25)}${sect('Slack', 'slack', slack)}${grouped(local).map(([t, its]) => sect(SRC[t].plural, t, its)).join('')}${R.state === 'ok' && !nAll ? '<div class="empty">Niets gevonden. Probeer een ander woord of “Breder zoeken”.</div>' : ''}`}
   </div>`;
 }
@@ -4178,6 +4269,7 @@ document.addEventListener('keydown', async ev => {
   if (S.route.view === 'agenda' && (k === '[' || k === ']')) { S.weekOffset += k === ']' ? 1 : -1; S.planner && (S.planner.sel = null); if (S.planner?.people.length) plannerSuggest(); else render(); return; }
   if (S.route.view === 'agenda' && k === 'l') { S.calPanel = !S.calPanel; render(); return; }
   if (S.route.view === 'agenda' && k === 'n') { ev.preventDefault(); openPlanner(); return; }
+  if (S.route.view === 'planning' && (k === 'n' || k === 'N') && (S.planTab || 'mijn') === 'mijn' && !typing(document.activeElement)) { ev.preventDefault(); document.getElementById(k === 'N' ? 'qa-in-2' : 'qa-in-1')?.focus(); return; }
   if (S.planner && /^[1-6]$/.test(k)) { const sl = S.planner.slots[+k - 1]; if (sl) plannerPick(sl.start); return; }
   if (S.route.view === 'toezeggingen') {
     if (k === 'n') { ev.preventDefault(); document.getElementById('ac-wat')?.focus(); return; }
@@ -4320,6 +4412,13 @@ document.addEventListener('submit', async ev => {
     document.getElementById('ac-wat').value = ''; document.getElementById('ac-org').value = ''; document.activeElement?.blur?.();
     toast(`${ic('commit')} Toegevoegd${['mijn', 'voornemen'].includes(stroom) ? ': plan hem met 1–5' : ''}`);
     mainDirty = false; render();
+  }
+  if (ev.target.id && ev.target.id.startsWith('qa-')) {
+    const n = +ev.target.dataset.n, inp = document.getElementById('qa-in-' + n), title = inp.value.trim(); if (!title) return;
+    inp.value = ''; inp.disabled = true;
+    await quickTask(title, n);
+    inp.disabled = false; render(); document.getElementById('qa-in-' + n)?.focus();
+    return;
   }
   if (ev.target.id === 'sq-form') { const v = document.getElementById('sq').value.trim(); document.activeElement?.blur?.(); return go({ view: 'search', q: v }); }
   if (ev.target.id === 'ct-compose') return catchSend();
