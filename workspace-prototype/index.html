@@ -1006,6 +1006,19 @@ body.kbd-mode .tab .tab-kbd { display: inline; }
 .quick-add .send-btn { width: 30px; height: 30px; }
 .quick-add .send-btn .i { width: 15px; height: 15px; }
 @media (max-width: 760px) { .gantt { --gt-label: 140px; } .gt-label small { display: none; } }
+
+.sw-key.primary { background: var(--blue-500); color: #fff; border-color: var(--blue-500); }
+.sw-key.primary .kbd { color: #fff; border-color: rgba(255,255,255,.5); background: transparent; }
+.sw-post { font-family: var(--font-ui); font-size: 13.5px; line-height: 1.5; }
+
+.sw-arrows { margin-top: 12px; }
+.swipe .sw-keys .sw-key.primary { display: none; }
+
+.card .commit-row.kf, .card .row.kf { outline: none !important; box-shadow: inset 0 0 0 2px var(--blue-500); border-radius: 0; }
+.card > .commit-row.kf:first-child { border-radius: var(--corner-l) var(--corner-l) 0 0; }
+.card > .commit-row.kf:last-child { border-radius: 0 0 var(--corner-l) var(--corner-l); }
+.card > .commit-row.kf:only-child { border-radius: var(--corner-l); }
+.dot-unread { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--yellow-500); vertical-align: 1px; margin-left: 4px; }
 </style>
 
 <div class="app" id="app">
@@ -1450,14 +1463,15 @@ function cleanSlack(t) {
 function liveItems() {
   const items = [];
   // Agenda
-  const seen = new Map();
+  const seen = new Map(), seenTitle = new Set();
   const selfCal = (LV.selfEmail || 'robert@homezero.nl');
   // eigen agenda eerst, zodat jouw reactie (accepted/needsAction) leidend is
   const ranges = Object.values(LV.ranges).filter(r => r && r.events && calOn(r.calId)).sort((a, b) => (b.calId === selfCal || b.calId === 'primary') - (a.calId === selfCal || a.calId === 'primary'));
   for (const r of ranges) for (const ev of r.events) {
     if (!ev || !ev.id) continue;
     const k = ev.iCalUID ? ev.iCalUID + '|' + (ev.originalStartTime?.dateTime || ev.start?.dateTime || ev.start?.date) : ev.id;
-    if (!seen.has(k)) seen.set(k, { ...ev, _cal: r.calId });
+    const k2 = (ev.summary || '').trim().toLowerCase() + '|' + (ev.start?.dateTime ? +new Date(ev.start.dateTime) : ev.start?.date);
+    if (!seen.has(k) && !(ev.summary && seenTitle.has(k2))) { seen.set(k, { ...ev, _cal: r.calId }); if (ev.summary) seenTitle.add(k2); }
   }
   for (const ev of seen.values()) {
     if (ev.status === 'cancelled' || ev.eventType === 'WORKING_LOCATION') continue;
@@ -1677,7 +1691,7 @@ function inbox() {
       if (it.needsAction) add('invite', it, 74 - Math.min(7, Math.max(0, dayDiff(pd(it.start)))) * 3, `Uitnodiging van ${it.organizerName || 'onbekend'} · ${dayLabel(pd(it.start))}${it.allDay ? '' : ' ' + hm(pd(it.start))}`);
       else if (it.external && !it.prepTask && !it.skipPrep && ymd(pd(it.start)) <= horizon) add('prep', it, 68 - Math.max(0, dayDiff(pd(it.start))) * 4, `Extern · ${dayLabel(pd(it.start))} ${hm(pd(it.start))} · nog geen prep gepland`);
     }
-    if (it.type === 'rec' && !it.processed && !it.recapSession && pd(it.end) < S.clock && dayDiff(pd(it.start)) >= -7) add('process', it, (it.entities.length ? 60 : 44) - Math.min(10, -dayDiff(pd(it.start))), `Opname ${dayLabel(pd(it.start)).toLowerCase()}${it.recapDone ? ' · recap staat in #klanten' : it.entities.length ? ' · nog geen recap' : ''}`);
+    if (it.type === 'rec' && it.entities.length && !it.processed && !it.recapSession && pd(it.end) < S.clock && dayDiff(pd(it.start)) >= -7) add('process', it, (it.entities.length ? 60 : 44) - Math.min(10, -dayDiff(pd(it.start))), `Opname ${dayLabel(pd(it.start)).toLowerCase()}${it.recapDone ? ' · recap staat in #klanten' : it.entities.length ? ' · nog geen recap' : ''}`);
   }
   return out.sort((a, b) => b.score - a.score);
 }
@@ -2435,13 +2449,23 @@ function goalDue(c) {
   return !last || dayDiff(pd(last)) <= -7 || (['oranje', 'rood'].includes(c.raw.health) && last !== T);
 }
 const thisWeek = () => isoWeek(baseDay());
+const nextWeekOf = w => isoWeek(addDays(weekStart(0, baseDay()), w === thisWeek() || S.clock.getDay() === 5 ? 7 : 0));
 const isOldGoal = c => c.stroom === 'weekdoel' && c.raw.week && c.raw.week < thisWeek();
+// Weekritme: maandag (of al in het weekend) doelen vastleggen, vrijdag één check-in per doel. Geen dagelijkse check.
+const isCheckinDay = () => S.clock.getDay() === 5;
+const isEndCheckin = c => c.stroom === 'weekdoel' && c.raw.week === thisWeek() && isCheckinDay();
+const weekGoals = w => commitItems().filter(c => c.stroom === 'weekdoel' && c.raw.week === w || (c.raw.outcome && c.raw.week === w));
+const needGoals = () => { const d = S.clock.getDay(); return (d === 0 || d === 6 || d === 1 || d === 2) && openCommits().filter(c => c.stroom === 'weekdoel' && c.raw.week === thisWeek()).length < 2 && !LV.state['_goals-' + thisWeek()]?.skip; };
 function swipeQueue() {
-  const reviews = openCommits().filter(isOldGoal).map(c => ({ id: c.id, kind: 'review', why: `Weekdoel ${c.raw.week} · hoe is het afgelopen?` }));
-  const goals = openCommits().filter(c => ['weekdoel', 'roadmap'].includes(c.stroom) && !isOldGoal(c) && goalDue(c))
+  const revs = openCommits().filter(c => isOldGoal(c) || isEndCheckin(c));
+  const reviews = revs.map(c => ({ id: c.id, kind: 'review', why: isEndCheckin(c) ? `Weekafsluiting ${c.raw.week} · hoe is het gegaan?` : `Weekdoel ${c.raw.week} · hoe is het afgelopen?` }));
+  const endWeek = revs.length ? (revs.some(isEndCheckin) ? thisWeek() : revs[0].raw.week) : null;
+  const rhythm = [...(endWeek ? [{ id: '__post-end', kind: 'post', mode: 'end', week: endWeek }] : []), ...(needGoals() ? [{ id: '__setgoals', kind: 'setgoals' }, { id: '__post-start', kind: 'post', mode: 'start' }] : [])];
+  const goals = openCommits().filter(c => c.stroom === 'roadmap' && goalDue(c))
     .sort((a, b) => (a.stroom === 'weekdoel' ? 0 : 1) - (b.stroom === 'weekdoel' ? 0 : 1))
     .map(c => ({ id: c.id, kind: 'goal', why: c.stroom === 'weekdoel' ? `Weekdoel${c.raw.week ? ' ' + c.raw.week : ''} · hoe staat het ervoor?` : 'Roadmap · wekelijkse check' }));
-  return [...reviews, ...goals, ...inbox().map(b => ({ id: b.it.id, kind: b.kind, why: b.why }))];
+  const ids = new Set();
+  return [...reviews, ...rhythm, ...goals, ...inbox().map(b => ({ id: b.it.id, kind: b.kind, why: b.why }))].filter(x => !ids.has(x.id) && ids.add(x.id));
 }
 function startSwipe() {
   const q = swipeQueue();
@@ -2453,15 +2477,22 @@ function startSwipe() {
 function stopSwipe() { S.swipe = null; document.getElementById('overlay').innerHTML = ''; render(); }
 function swipeCurrent() {
   const sw = S.swipe; if (!sw) return null;
-  while (sw.i < sw.q.length) { const c = sw.q[sw.i]; const it = byId(c.id); if (it && !isDone(it)) return { ...c, it }; sw.i++; }
+  while (sw.i < sw.q.length) {
+    const c = sw.q[sw.i];
+    if (c.id.startsWith('__')) { const wk = c.week || thisWeek(); const ok = c.kind === 'setgoals' ? needGoals() : !LV.state['_post-' + wk + '-' + c.mode]?.done && weekGoals(wk).length; if (ok) return { ...c, week: wk, it: { id: c.id, type: 'commit', title: '', raw: {}, entities: [] } }; sw.i++; continue; }
+    const it = byId(c.id); if (it && !isDone(it)) return { ...c, it }; sw.i++;
+  }
   return null;
 }
+const SWIPE_PRIMARY = { reply: ['e', 'Gelezen'], mega: ['e', 'Afgehandeld'], process: ['e', 'Geen recap nodig'], invite: ['y', 'Ja'], waiting: ['x', 'Binnen'], review: ['x', 'Gehaald'], goal: ['g', 'Op koers'], prep: ['1', 'Prep vandaag'], setgoals: ['Enter', 'Vastleggen'], post: ['Enter', 'Plaatsen'], default: ['1', 'Vandaag'] };
+const SWIPE_SKIP = { setgoals: 'Later', post: 'Niet delen', process: 'Overslaan', default: 'Overslaan' };
+const arrowsHTML = kind => `<div class="ct-actions sw-arrows"><button class="ct-btn" data-action="swipe-key" data-key="ArrowLeft">${SWIPE_SKIP[kind] || SWIPE_SKIP.default} <span class="kbd">←</span></button><button class="ct-btn primary" data-action="swipe-key" data-key="ArrowRight">${(SWIPE_PRIMARY[kind] || SWIPE_PRIMARY.default)[1]} <span class="kbd inv">→</span></button></div>`;
 const SWIPE_KEYS = {
   review: [['x', '✅ Gehaald'], ['m', 'Meenemen naar deze week'], ['d', 'Doorgeschoven: blijft staan als toezegging'], ['l', 'Losgelaten']],
   goal: [['g', '🟢 Op koers'], ['o', '🟠 Risico'], ['r', '🔴 Blokkade'], ['x', '✅ Af'], ['n', 'Notitie']],
   invite: [['y', 'Ja'], ['m', 'Misschien'], ['n', 'Nee']],
   waiting: [['x', 'Binnen'], ['1', 'Nudge vandaag'], ['2', 'Morgen'], ['3', 'Later'], ['4', 'Volg. week'], ['5', 'Parkeren']],
-  process: [['r', 'Recap met Claude'], ['t', 'Toezeggingen eruit'], ['1', 'Recap vandaag'], ['2', 'Morgen'], ['e', 'Verwerkt']],
+  process: [['e', 'Geen recap nodig'], ['r', 'Recap met Claude'], ['t', 'Afspraken naar tracker'], ['1', 'Recap vandaag'], ['2', 'Recap morgen']],
   prep: [['1', 'Prep vandaag'], ['2', 'Morgen'], ['3', 'Later'], ['5', 'Geen prep']],
   default: [['1', 'Vandaag'], ['2', 'Morgen'], ['3', 'Later deze week'], ['4', 'Volgende week'], ['5', 'Backlog']],
 };
@@ -2480,7 +2511,8 @@ function renderSwipe() {
     return;
   }
   const it = cur.it, kind = cur.kind;
-  const keys = SWIPE_KEYS[kind] || [...SWIPE_KEYS.default, ...(SWIPE_EXTRA[kind] || [])];
+  if (kind === 'setgoals' || kind === 'post') return renderRhythmCard(cur, prog, T1, load);
+  const keys = (kind === 'review' && isEndCheckin(it) ? SWIPE_KEYS.review.map(x => x[0] === 'm' ? ['m', 'Meenemen naar volgende week'] : x) : SWIPE_KEYS[kind]) || [...SWIPE_KEYS.default, ...(SWIPE_EXTRA[kind] || [])];
   const ctx = [];
   if (it.entities?.length) ctx.push(it.entities.map(entityChip).join(' '));
   if (it.type === 'meeting') ctx.push(`${cap(longDay(pd(it.start)))} ${hm(pd(it.start))}–${hm(pd(it.end))}${it.calName ? ' · ' + esc(it.calName) : ''}`);
@@ -2489,7 +2521,7 @@ function renderSwipe() {
   const body = it.type === 'slack' ? it.title : it.type === 'mail' ? it.body : it.type === 'task' ? it.notes : it.type === 'rec' ? it.body : it.type === 'commit' ? (it.raw.citaat || '') : it.desc || '';
   const checks = kind === 'goal' || kind === 'review' ? (it.raw.checks || []).slice(-6) : [];
   ov.innerHTML = `<div class="scrim sw-scrim">${SW_DECO}<div class="swipe" role="dialog" aria-label="Plansessie">${prog}
-    <div class="sw-top"><span>${sw.i + 1} / ${sw.q.length}</span><span>${dayDiff(pd(T1)) === 0 ? 'Vandaag' : cap(dayLabel(pd(T1)))} ${capBar(load)} ${load}/${DAY_CAP}</span><span><span class="kbd">s</span> overslaan · <span class="kbd">u</span> terug · <span class="kbd">esc</span> stoppen</span></div>
+    <div class="sw-top"><span>${sw.i + 1} / ${sw.q.length}</span><span>${dayDiff(pd(T1)) === 0 ? 'Vandaag' : cap(dayLabel(pd(T1)))} ${capBar(load)} ${load}/${DAY_CAP}</span><span><span class="kbd">←</span> overslaan · <span class="kbd">→</span> door · <span class="kbd">z</span> terug · <span class="kbd">esc</span> stoppen</span></div>
     <div class="sw-card ${sw.anim}" id="sw-card">
       <div class="sw-kind">${kind === 'goal' ? `<span class="kind k-prep">${it.stroom === 'weekdoel' ? '🎯 Weekdoel' : '🗺 Roadmap'}</span>${it.raw.health ? `<span class="chip">${HEALTH[it.raw.health][0]} ${HEALTH[it.raw.health][1]}</span>` : ''}` : `<span class="kind ${KIND[kind]?.[0] || ''}">${KIND[kind]?.[1] || ''}</span>`}<span class="src src-${it.type}">${ic(SRC[it.type].icon)}${SRC[it.type].label}</span></div>
       <h2 class="sw-title">${esc(short(it.title, 220))}</h2>
@@ -2498,28 +2530,52 @@ function renderSwipe() {
       ${body && body !== it.title ? `<div class="sw-body">${esc(short(body, 600))}</div>` : ''}
       ${checks.length ? `<div class="sw-checks">${checks.map(c => `<span title="${esc(c.note || '')}">${fmtDate(c.d)} ${HEALTH[c.h]?.[0] || ''}</span>`).join('')}</div>` : ''}
       ${related.length ? `<div class="sw-rel"><div class="eyebrow">Ook open bij ${esc(it.entities.map(entityName).join(', '))}</div>${related.map(c => `<div>· ${esc(short(c.title, 90))} <span class="sub">(${STROOM[c.stroom]})</span></div>`).join('')}</div>` : ''}
-      ${kind === 'goal' ? `<textarea id="sw-note" class="sw-note" rows="2" placeholder="Notitie of volgende stap (n om te typen, ↵ om op te slaan met de status)"></textarea>` : ''}
+      ${kind === 'goal' || kind === 'review' ? `<textarea id="sw-note" class="sw-note" rows="2" placeholder="Notitie of volgende stap (n om te typen, ↵ om op te slaan met de status)"></textarea>` : ''}
       <div class="sw-keys">${keys.map(([k, l]) => `<button class="sw-key" data-action="swipe-key" data-key="${k}"><span class="kbd">${k}</span>${l}</button>`).join('')}${it.url ? `<a class="sw-key" href="${esc(it.url)}" target="_blank" rel="noopener"><span class="kbd">o</span>Openen</a>` : ''}</div>
-    </div></div></div>`;
+    </div>${arrowsHTML(kind)}</div></div>`;
   sw.anim = '';
 }
 async function swipeKey(k) {
   const sw = S.swipe; const cur = swipeCurrent();
+  if (sw) sw.forceDir = null;
   if (k === 'Escape') return stopSwipe();
   if (!cur) { if (k === 'p') { stopSwipe(); go({ view: 'planning' }); } return; }
   const it = cur.it;
-  const next = (dir = 'left', counted = true) => { if (counted) sw.done++; sw.i++; sw.anim = 'in-' + dir; const el = document.getElementById('sw-card'); if (el && !matchMedia('(prefers-reduced-motion: reduce)').matches) { el.classList.add('out-' + dir); setTimeout(renderSwipe, 160); } else renderSwipe(); };
-  if (k === 's' || k === 'ArrowRight') return next('left', false);
-  if (k === 'u' || k === 'ArrowLeft') { if (sw.i > 0) { sw.i--; sw.anim = 'in-right'; renderSwipe(); } return; }
+  if ((cur.kind === 'setgoals' || cur.kind === 'post') && !['Enter', 'c', 'ArrowLeft', 'ArrowRight', 's', 'u', 'z', 'Backspace'].includes(k)) return;
+  const next = (dir = 'left', counted = true) => { if (sw.forceDir) { dir = sw.forceDir; sw.forceDir = null; } if (counted) sw.done++; sw.i++; sw.anim = 'in-' + dir; const el = document.getElementById('sw-card'); if (el && !matchMedia('(prefers-reduced-motion: reduce)').matches) { el.classList.add('out-' + dir); setTimeout(renderSwipe, 160); } else renderSwipe(); };
+  if (k === 's' || k === 'ArrowLeft') { if (cur.kind === 'post') setState('_post-' + cur.week + '-' + cur.mode, { done: true, skipped: true }); if (cur.kind === 'setgoals') setState('_goals-' + thisWeek(), { skip: true }); return next('left', false); }
+  if (k === 'u' || k === 'z' || k === 'Backspace') { if (sw.i > 0) { sw.i--; const pc = sw.q[sw.i]; if (pc.kind === 'post') setState('_post-' + (pc.week || thisWeek()) + '-' + pc.mode, { done: false, skipped: false }); if (pc.kind === 'setgoals') setState('_goals-' + thisWeek(), { skip: false }); sw.anim = 'in-left'; renderSwipe(); } return; }
+  if (k === 'ArrowRight') { k = (SWIPE_PRIMARY[cur.kind] || SWIPE_PRIMARY.default)[0]; sw.forceDir = 'right'; }
   if (k === 'o') { if (it.url) { let w = null; try { w = window.open(it.url, '_blank', 'noopener'); } catch {} if (!w) toast(`<a href="${esc(it.url)}" target="_blank" rel="noopener" style="color:inherit">Openen ${ic('out')}</a>`); } return; }
+  if (cur.kind === 'setgoals') {
+    if (k === 'c') return openClaude(planWeekPrompt());
+    if (k !== 'Enter') return;
+    const lines = (document.getElementById('sw-goals')?.value || '').split('\n').map(l => l.replace(/^\s*(\d+[.)]|[-*•])\s*/, '').trim()).filter(Boolean).slice(0, 5);
+    if (!lines.length) { setState('_goals-' + thisWeek(), { skip: true }); return next('left', false); }
+    const wk = thisWeek(), fri = ymd(addDays(weekStart(0, baseDay()), 4));
+    for (const g of lines) await commitAdd({ wat: g, stroom: 'weekdoel', week: wk, deadline: fri, bron: { label: 'Plansessie' } });
+    toast(`🎯 ${lines.length} weekdoelen vastgelegd voor ${wk}`);
+    return next('up');
+  }
+  if (cur.kind === 'post') {
+    if (k !== 'Enter') return;
+    const text = document.getElementById('sw-post')?.value.trim(); if (!text) return next('left', false);
+    const ok = await postWeekgoals(cur.mode, cur.week, text);
+    if (ok) { setState('_post-' + cur.week + '-' + cur.mode, { done: true }); return next('up'); }
+    return;
+  }
   if (cur.kind === 'review') {
+    if (k === 'n') { document.getElementById('sw-note')?.focus(); return; }
     const T = today(), o = { x: 'gehaald', m: 'meegenomen', d: 'doorgeschoven', l: 'losgelaten' }[k];
     if (!o) return;
+    const note = document.getElementById('sw-note')?.value.trim() || '';
+    if (note) await commitSave(it.docId, { outcomeNote: note, checks: [...(it.raw.checks || []).slice(-19), { d: T, h: o === 'gehaald' ? 'af' : it.raw.health || 'oranje', note }] });
+    const target = nextWeekOf(it.raw.week);
     if (o === 'gehaald') await commitSave(it.docId, { status: 'klaar', outcome: o, health: 'af', closedAt: T });
     if (o === 'losgelaten') await commitSave(it.docId, { status: 'losgelaten', outcome: o, closedAt: T });
     if (o === 'doorgeschoven') await commitSave(it.docId, { stroom: 'mijn', outcome: o, health: null });
-    if (o === 'meegenomen') { await commitAdd({ wat: it.raw.wat, stroom: 'weekdoel', week: thisWeek(), org: it.raw.org || '', health: it.raw.health || null, src: { from: it.docId } }); await commitSave(it.docId, { status: 'overgedragen', outcome: o, closedAt: T }); }
-    toast(`${esc(short(it.title, 50))}: ${OUTCOME[o].toLowerCase()}${o === 'doorgeschoven' ? ' · staat nu bij Ik beloofde' : o === 'meegenomen' ? ' · staat bij de weekdoelen van ' + thisWeek() : ''}`);
+    if (o === 'meegenomen') { await commitAdd({ wat: it.raw.wat, stroom: 'weekdoel', week: target, org: it.raw.org || '', health: it.raw.health || null, src: { from: it.docId } }); await commitSave(it.docId, { status: 'overgedragen', outcome: o, closedAt: T }); }
+    toast(`${esc(short(it.title, 50))}: ${OUTCOME[o].toLowerCase()}${o === 'doorgeschoven' ? ' · staat nu bij Ik beloofde' : o === 'meegenomen' ? ' · staat bij de weekdoelen van ' + target : ''}`);
     return next(o === 'gehaald' || o === 'losgelaten' ? 'left' : 'up');
   }
   if (cur.kind === 'goal') {
@@ -2540,6 +2596,52 @@ async function swipeKey(k) {
     const ok = await keyAction(k, null, it);
     if (ok !== false) next(/^[1-2]$/.test(k) ? 'up' : /^[3-5]$/.test(k) ? 'right' : 'left');
   }
+}
+
+/* ---------- Weekritme: doelen vastleggen (maandag) en afsluiten (vrijdag) ---------- */
+const OUT_EMO = { gehaald: '✅', doorgeschoven: '🔄', meegenomen: '➡️', losgelaten: '🚫' };
+function weekPostText(mode, week) {
+  const gs = weekGoals(week);
+  if (mode === 'start') return `Weekdoelen ${week.replace(/^\d{4}-/, '')}:\n` + gs.filter(g => !isDone(g)).map((g, i) => `${i + 1}. ${g.title}`).join('\n');
+  const line = g => { const o = g.raw.outcome; const n = g.raw.outcomeNote || (g.raw.checks || []).slice(-1)[0]?.note || ''; return `${OUT_EMO[o] || '⏳'} ${g.title}${o === 'meegenomen' ? ' (mee naar volgende week)' : o === 'doorgeschoven' ? ' (schuift door)' : o === 'losgelaten' ? ' (losgelaten)' : ''}${n ? ' — ' + n : ''}`; };
+  const hit = gs.filter(g => g.raw.outcome === 'gehaald').length;
+  return `Weekdoelen ${week.replace(/^\d{4}-/, '')}: ${hit}/${gs.length} gehaald\n` + gs.map(line).join('\n') + '\n\nHulpvraag: ';
+}
+function renderRhythmCard(cur, prog, T1, load) {
+  const ov = document.getElementById('overlay'), sw = S.swipe;
+  const top = `<div class="sw-top"><span>${sw.i + 1} / ${sw.q.length}</span><span>Weekritme</span><span><span class="kbd">←</span> overslaan · <span class="kbd">→</span> door · <span class="kbd">z</span> terug · <span class="kbd">esc</span> stoppen</span></div>`;
+  let body;
+  if (cur.kind === 'setgoals') {
+    const have = openCommits().filter(c => c.stroom === 'weekdoel' && c.raw.week === thisWeek());
+    body = `<div class="sw-kind"><span class="kind k-prep">🎯 Weekdoelen</span><span class="sub">${thisWeek()}</span></div>
+      <h2 class="sw-title">Wat moet er deze week staan?</h2><div class="sub">2 à 3 uitkomsten, geen activiteiten. Eén per regel. Vrijdag check je ze één keer af.</div>
+      ${have.length ? `<div class="sw-rel"><div class="eyebrow">Al meegenomen</div>${have.map(c => `<div>· ${esc(c.title)}</div>`).join('')}</div>` : ''}
+      <textarea id="sw-goals" class="sw-note" rows="4" placeholder="1. Isolatieflow TonZon live op acceptatie\n2. …"></textarea>
+      <div class="sw-keys"><button class="sw-key primary" data-action="swipe-key" data-key="Enter"><span class="kbd">⌘↵</span>Vastleggen</button><button class="sw-key" data-action="swipe-key" data-key="c"><span class="kbd">c</span>Plan met Claude</button></div>`;
+  } else {
+    const txt = weekPostText(cur.mode, cur.week);
+    body = `<div class="sw-kind"><span class="kind k-prep">${cur.mode === 'start' ? 'Weekdoelen delen' : 'Weekafsluiting delen'}</span><span class="src src-slack">${ic('slack')}#02-intern</span></div>
+      <h2 class="sw-title">${cur.mode === 'start' ? 'Delen in de weekdoelen-thread?' : 'Check-in delen in de vrijdag-thread?'}</h2>
+      <div class="sub">Optioneel: de workspace is de bron. Klik in de tekst om aan te passen; plaatsen gaat als reactie op het bericht van Weekly updates.</div>
+      <textarea id="sw-post" class="sw-note sw-post" rows="${Math.min(10, txt.split('\n').length + 1)}">${esc(txt)}</textarea>
+      <div class="sw-keys"><button class="sw-key primary" data-action="swipe-key" data-key="Enter"><span class="kbd">⌘↵</span>Plaatsen in #02-intern</button></div>`;
+  }
+  ov.innerHTML = `<div class="scrim sw-scrim">${SW_DECO}<div class="swipe" role="dialog" aria-label="Weekritme">${prog}${top}<div class="sw-card ${sw.anim}" id="sw-card">${body}</div>${arrowsHTML(cur.kind)}</div></div>`;
+  sw.anim = '';
+  if (cur.kind === 'setgoals') setTimeout(() => document.getElementById('sw-goals')?.focus(), 30);
+}
+async function postWeekgoals(mode, week, text) {
+  if (!MODE.live) { toast('Voorbeeld: niet echt geplaatst in #02-intern'); return true; }
+  try {
+    const ws = weekStart(0, baseDay()), from = mode === 'start' ? addDays(ws, -1) : addDays(ws, 4);
+    const h = parseSlackHistory(await call('Slack', 'slack_read_channel', { channel_id: CH_INTERN, oldest: String(Math.floor(+from / 1000)), limit: 60 }));
+    const re = mode === 'start' ? /nieuwe week|weekdoelen voor deze week/i : /vrijdag|weekdoelen/i;
+    const parent = h.msgs.filter(m => m.bot && re.test(m.text)).pop();
+    if (!parent) { copyText(text); toast('De thread van Weekly updates staat er nog niet (komt meestal om 10:00). De tekst staat op je klembord.'); return false; }
+    await call('Slack', 'slack_send_message', { channel_id: CH_INTERN, thread_ts: parent.ts, message: text });
+    toast(`${ic('arrow')} Geplaatst in de thread in #02-intern`);
+    return true;
+  } catch (e) { copyText(text); toast(`Plaatsen lukte niet (${esc(e?.code || 'fout')}). De tekst staat op je klembord.`); return false; }
 }
 
 /* ---------- Weekdoelen ophalen uit #02-intern ---------- */
@@ -2579,7 +2681,7 @@ const HINTS = {
   invite: [['y', 'ja'], ['m', 'misschien'], ['n', 'nee'], ['o', 'Google Agenda']],
   prep: [['1–4', 'prep plannen'], ['5', 'geen prep'], ['r', 'recap met Claude'], ['o', 'Google Agenda']],
   meeting: [['1–4', 'prep plannen'], ['r', 'recap met Claude'], ['o', 'Google Agenda']],
-  process: [['r', 'recap met Claude'], ['t', 'toezeggingen eruit'], ['1–4', 'recap plannen'], ['e', 'verwerkt'], ['o', 'Wispr']],
+  process: [['e', 'geen recap nodig'], ['r', 'recap met Claude'], ['t', 'afspraken naar tracker'], ['1–4', 'recap plannen'], ['o', 'Wispr']],
   other: [['↵', 'openen']],
 };
 function hintBar() {
@@ -4045,7 +4147,19 @@ function palEntries() {
   }
   const legacy = /\b(is|from|in|when|wanneer|van):/.test(q);
   const P = parseSearch(q);
+  // Slack-kanalen, DM's en mailthreads direct openen
+  const cq = q.split(',')[0].trim().replace(/^[@#]/, '').toLowerCase();
+  let convHits = [];
+  if (!legacy && cq.length >= 2 && !q.includes(',')) {
+    const L = convLists(), norm = x => x.toLowerCase().replace(/^#/, '');
+    const bare = x => norm(x).replace(/^[\d-]+/, '');
+    convHits = [...L.ch, ...L.dm, ...L.mail].map(r => { const n = norm(r.name), b = bare(r.name); const sc = b.startsWith(cq) || n.startsWith(cq) ? 0 : n.split(/[\s,-]+/).some(w => w.startsWith(cq)) ? 1 : (n + ' ' + (r.kind === 'mail' ? r.sub.toLowerCase() : '')).includes(cq) ? 2 : 9; return [sc, r]; })
+      .filter(x => x[0] < 9).sort((a, b) => a[0] - b[0] || (b[1].time || '').localeCompare(a[1].time || '')).slice(0, 4);
+  }
+  const strong = convHits.length && convHits[0][0] === 0;
+  if (strong) convHits.forEach(([, r]) => out.push({ kind: 'conv', r }));
   if (!legacy && (P.entities.length || P.keywords.length)) out.push({ kind: 'live', q });
+  if (!strong) convHits.forEach(([, r]) => out.push({ kind: 'conv', r }));
   const last = q.split(',').pop().trim().replace(/^@/, '');
   const sugg = last.length >= 2 ? matchEntityToken(last.split(/\s+/)[0]).filter(id => !P.entities.includes(id) || entityExact(last) === id) : [];
   const { items, entityHits } = legacy ? runQuery(q) : { items: localSearch(P), entityHits: [...new Set([...sugg, ...P.entities])] };
@@ -4064,7 +4178,7 @@ function renderPalette() {
   document.getElementById('pal-chips').innerHTML = q && !q.startsWith('>') ? (legacyQ ? queryChips(q) : searchChips(PQ) + (PQ.entities.length && !q.includes(',') ? '<span class="pal-tip">Typ een komma om te verfijnen, bijv. <b>' + esc(ENT()[PQ.entities[0]]?.short || '') + ', berekening, timeline</b></span>' : '')) : '';
   const counts = q && !q.startsWith('>') ? (legacyQ ? runQuery(q).items : localSearch(PQ)).reduce((m, x) => (m[x.type] = (m[x.type] || 0) + 1, m), {}) : {};
   let html = '', last = null;
-  const titles = { live: 'Zoeken', pin: 'Vastgezet', query: 'Views opbouwen met keywords', recent: 'Recent gezocht', cmd: 'Commando’s', entity: 'Organisatie', ask: 'Vraag', all: '' };
+  const titles = { conv: 'Gesprekken', live: 'Zoeken', pin: 'Vastgezet', query: 'Views opbouwen met keywords', recent: 'Recent gezocht', cmd: 'Commando’s', entity: 'Organisatie', ask: 'Vraag', all: '' };
   entries.forEach((en, i) => {
     const g = en.kind === 'item' ? en.it.type : en.kind;
     if (g !== last) {
@@ -4086,6 +4200,9 @@ function renderPalette() {
       html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic">${ic(en.c.icon)}</span><div class="row-main"><div class="row-title">${esc(en.c.label.replace('…', ''))}${en.arg ? `: <span class="sub">${esc(en.arg)}</span>` : en.c.label.endsWith('…') ? '…' : ''}</div></div><span class="row-meta">${esc(en.c.hint)}</span></div>`;
     } else if (en.kind === 'ask') {
       html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic context">${ic('spark')}</span><div class="row-main"><div class="row-title">Vraag Claude: “${esc(en.q)}”</div><div class="row-sub">Antwoord op basis van al je bronnen</div></div><span class="enter kbd">↵</span></div>`;
+    } else if (en.kind === 'conv') {
+      const r = en.r;
+      html += `<div class="pal-item${a}" data-pi="${i}"><span class="ic">${r.kind === 'mail' ? ic('mail') : r.kind === 'ch' ? ic('slack') : avatar(r.name, 22)}</span><div class="row-main"><div class="row-title">${esc(r.name)}${r.unread ? ' <span class="dot-unread"></span>' : ''}</div><div class="row-sub">${esc(short(r.sub || (r.kind === 'ch' ? 'Slack-kanaal' : r.kind === 'mail' ? 'Mail' : 'Direct bericht'), 90))}</div></div><span class="sub" style="font-size:12px;white-space:nowrap">${r.time ? esc(relShort(r.time)) : 'Open gesprek'}</span></div>`;
     } else if (en.kind === 'live') {
       const LP = parseSearch(en.q);
       html += `<div class="pal-item pal-live${a}" data-pi="${i}"><span class="ic">${ic(LP.mode === 'timeline' ? 'meeting' : 'search')}</span><div class="row-main"><div class="row-title">${LP.mode === 'timeline' ? 'Tijdlijn' : 'Zoek overal'}: <b>${esc(searchTitle(LP))}</b></div><div class="row-sub">Live in Slack en Gmail, plus agenda, taken en tracker</div></div><span class="enter kbd">↵</span></div>`;
@@ -4102,6 +4219,7 @@ function renderPalette() {
 }
 function palKeys(ev) {
   const p = S.palette;
+  if (['Enter', 'Escape', 'ArrowUp', 'ArrowDown', 'Tab'].includes(ev.key)) ev.stopPropagation();
   if (ev.key === 'ArrowDown') { ev.preventDefault(); p.active = Math.min(p.active + 1, p.entries.length - 1); renderPalette(); }
   else if (ev.key === 'ArrowUp') { ev.preventDefault(); p.active = Math.max(p.active - 1, 0); renderPalette(); }
   else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); const qq = p.q.trim(); if (qq) { closePalette(); if (!pins().some(x => searchKey(x.q) === searchKey(qq))) togglePin(qq); go({ view: 'search', q: qq }); } }
@@ -4119,6 +4237,7 @@ function palPick(i) {
   remember(q);
   if (en.kind === 'entity') return go({ view: 'entity', id: en.id });
   if (en.kind === 'live') return go({ view: 'search', q });
+  if (en.kind === 'conv') return openConv(en.r.key);
   if (en.kind === 'pin') return go({ view: 'search', q: en.p.q, pin: en.p.id });
   if (en.kind === 'ask') return ask(q);
   if (en.kind === 'all') return go({ view: 'list', q, title: 'Zoeken' });
@@ -4238,6 +4357,7 @@ document.addEventListener('keydown', async ev => {
   if (k === 's' && S.route.view === 'chat' && !typing(document.activeElement) && !ev.metaKey && !ev.ctrlKey) { ev.preventDefault(); startCatch(); return; }
   if (S.swipe) {
     if (ev.target.id === 'sw-note') { if (k === 'Enter' || k === 'Escape') { ev.preventDefault(); ev.target.blur(); } return; }
+    if (ev.target.id === 'sw-goals' || ev.target.id === 'sw-post') { if (k === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); swipeKey('Enter'); } else if (k === 'Escape') { ev.preventDefault(); if (!ev.target.value.trim()) stopSwipe(); else ev.target.blur(); } else if ((k === 'ArrowLeft' || k === 'ArrowRight') && !ev.target.value.trim()) { ev.preventDefault(); ev.target.blur(); swipeKey(k); } return; }
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     ev.preventDefault(); swipeKey(k); return;
   }

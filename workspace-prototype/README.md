@@ -53,21 +53,33 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
 - **Timeline.** For up to 15 matching mail threads, every message shows who → to whom (cc), when, the subject and a snippet. Slack messages and meetings are merged in, with a summary of volume, period and who was most involved.
 - **Gantt.** One row per conversation (mail thread, Slack channel or meeting), with a bar from its first to its last message. Dots mark each message: blue for HomeZero, yellow for external, grey for Slack, square for meetings. Hovering a dot shows who → to whom and when. The scale switches between days, weeks and months, and a yellow line marks today.
 - **Breder zoeken (search wider).** On request only, Claude suggests related terms (for example rekenmodel or calculatie) and the search reruns with them.
+- **Conversations in the palette.** Typing "intern" or "mike" lists matching Slack channels, DMs and mail threads; `↵` opens the conversation in Gesprekken.
 - **Pinned views.** `Vastzetten` (or `⌘↵` in the palette) pins a search to the sidebar under the five main items. `g 1`–`g 9` opens a pin. Pins are stored in the workspace database.
 
 ## Week rhythm
 
-Borrowed from Standupy, a friend's standup app:
+There are no daily check-ins on week goals. The rhythm is weekly:
 
-- **Week review.** At the start of a new week, last week's open goals come first in the plan session. Each gets one of four outcomes:
-  - `x` gehaald (achieved)
-  - `m` meenemen (carry over): a copy becomes this week's goal
-  - `d` doorgeschoven (slipped): it stays open as a commitment, so it is still owed
-  - `l` losgelaten (dropped): consciously let go
+- **Monday (or already on the weekend): set the goals.** If there are fewer than two goals for the week, the plan session asks for 2–3 outcomes, one per line (`⌘↵` saves; `c` opens "Plan met Claude"). A second card offers to share them as a reply in the Monday "Nieuwe week" thread of Weekly updates in #02-intern.
+- **Friday: one check-in per goal.** The outcomes are:
+  - `→`/`x` gehaald (achieved)
+  - `m` meenemen naar volgende week (carry over)
+  - `d` doorgeschoven (slipped): stays open as a commitment
+  - `l` losgelaten (dropped)
 
-  The difference between slipped and dropped is the point: slipped work is debt, dropped work is not.
-- **Week score.** The Weekdoelen tab shows, for the last four weeks, how many goals were achieved, dropped or still open.
-- **Plan je week met Claude.** This opens claude.ai with a prefilled prompt. The prompt holds last week's outcomes, this week's goals, open commitments, waiting-for items and meetings per day. It coaches you through review → 2–3 outcomes → timebox → record, using `zondag-weekprep` when available. The recap flow uses the same link when starting a Claude session fails.
+  Each goal can take a short note on why. A final card builds the check-in message (score, one line per goal with its note, and a "Hulpvraag:" line) and offers to post it in the Friday thread.
+- **Sharing is optional.** The workspace is the source; the #02-intern message may disappear later. If the Weekly updates thread is not there yet, the text goes to the clipboard.
+- **Missed Friday?** Last week's open goals come first on Monday.
+- **Week score** (Weekdoelen tab) and **Plan je week met Claude** stay as they were. Roadmap items keep a weekly health check.
+
+**Plan session keys** match Inhalen:
+
+- `←` skips the card
+- `→` does the card's main action: gelezen (read) for messages, Vandaag (today) for tasks, Ja (yes) for invites, Binnen (in) for waiting-for items, Gehaald (achieved) for goals, Geen recap nodig (no recap needed) for Wispr recordings
+- `z` goes back
+- `esc` stops
+
+The cards slide in the same direction. Wispr recordings only ask for a recap when external people were involved.
 
 ## Team web app: one-time login instead of MCP
 
