@@ -58,19 +58,26 @@ The main navigation has five items only: **Dagstart, Planning, Agenda, Tracker a
 
 ## Week rhythm
 
-There are no daily check-ins on week goals. The rhythm is weekly:
+There are no daily check-ins on week goals. The week runs as follows:
 
-- **Monday (or already on the weekend): set the goals.** If there are fewer than two goals for the week, the plan session asks for 2–3 outcomes, one per line (`⌘↵` saves; `c` opens "Plan met Claude"). A second card offers to share them as a reply in the Monday "Nieuwe week" thread of Weekly updates in #02-intern.
+- **Sunday: Zondag weekprep sets the goals.** The routine writes them to the workspace (`commitments/weekdoel-<week>-<n>`) and prepares the Slack draft for the "Nieuwe week" thread of Weekly updates in #02-intern. Weekly updates posts that thread on Sunday at 10:00. You post the draft yourself, as a plain numbered list.
+- **Monday or Tuesday: a fallback only.** If the Sunday prep set no goals, the plan session shows one card. `i` fetches your list from the #02-intern thread, or you type them one per line (`⌘↵`), or `c` opens "Plan met Claude".
 - **Friday: one check-in per goal.** The outcomes are:
   - `→`/`x` gehaald (achieved)
   - `m` meenemen naar volgende week (carry over)
   - `d` doorgeschoven (slipped): stays open as a commitment
   - `l` losgelaten (dropped)
 
-  Each goal can take a short note on why. A final card builds the check-in message (score, one line per goal with its note, and a "Hulpvraag:" line) and offers to post it in the Friday thread.
-- **Sharing is optional.** The workspace is the source; the #02-intern message may disappear later. If the Weekly updates thread is not there yet, the text goes to the clipboard.
+  Each goal can take a short note.
+- **Friday post, in your own format.** A last card prepares the end-of-week post the way you write it: the same numbered list as Monday, `:white_check_mark:` after what was achieved, and an indented `a.` line with the explanation for the rest. For example:
+
+  ```
+  4. Proactieve security monitoring draait (nachtelijke patch-check)
+      a. Gedelegeerd aan Hunter
+  ```
+
+  It is posted as a reply in the same "Nieuwe week" thread, not in the Friday thread. Posting is optional: the workspace stays the source.
 - **Missed Friday?** Last week's open goals come first on Monday.
-- **Week score** (Weekdoelen tab) and **Plan je week met Claude** stay as they were. Roadmap items keep a weekly health check.
 
 **Plan session keys** match Inhalen:
 
@@ -79,7 +86,7 @@ There are no daily check-ins on week goals. The rhythm is weekly:
 - `z` goes back
 - `esc` stops
 
-The cards slide in the same direction. Wispr recordings only ask for a recap when external people were involved.
+The cards slide in the same direction. Slack and mail cards show the whole conversation, like Inhalen: the messages around it, with the thread to fold open, or the full mail thread. Wispr recordings only ask for a recap when external people were involved.
 
 ## Team web app: one-time login instead of MCP
 

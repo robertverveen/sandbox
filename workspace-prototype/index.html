@@ -1019,6 +1019,13 @@ body.kbd-mode .tab .tab-kbd { display: inline; }
 .card > .commit-row.kf:last-child { border-radius: 0 0 var(--corner-l) var(--corner-l); }
 .card > .commit-row.kf:only-child { border-radius: var(--corner-l); }
 .dot-unread { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--yellow-500); vertical-align: 1px; margin-left: 4px; }
+
+.sw-ctx-box { background: var(--bg); border-radius: var(--corner-m); padding: 12px 14px; max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.sw-ctx-box .msg { gap: 8px; }
+.sw-ctx-box .msg-text { font-size: 13.5px; }
+.sw-ctx-box .mail-msg { padding: 10px 12px; }
+.sw-ctx-box .react-bar { top: -10px; }
+.sw-title { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 </style>
 
 <div class="app" id="app">
@@ -2454,13 +2461,15 @@ const isOldGoal = c => c.stroom === 'weekdoel' && c.raw.week && c.raw.week < thi
 // Weekritme: maandag (of al in het weekend) doelen vastleggen, vrijdag één check-in per doel. Geen dagelijkse check.
 const isCheckinDay = () => S.clock.getDay() === 5;
 const isEndCheckin = c => c.stroom === 'weekdoel' && c.raw.week === thisWeek() && isCheckinDay();
-const weekGoals = w => commitItems().filter(c => c.stroom === 'weekdoel' && c.raw.week === w || (c.raw.outcome && c.raw.week === w));
-const needGoals = () => { const d = S.clock.getDay(); return (d === 0 || d === 6 || d === 1 || d === 2) && openCommits().filter(c => c.stroom === 'weekdoel' && c.raw.week === thisWeek()).length < 2 && !LV.state['_goals-' + thisWeek()]?.skip; };
+const goalOrder = c => { const m = String(c.docId || '').match(/-(\d+)$/); return m ? +m[1] : 100 + (c.raw.createdAt || 0) / 1e13; };
+const weekGoals = w => commitItems().filter(c => c.raw.week === w && (c.stroom === 'weekdoel' || c.raw.outcome)).sort((a, b) => goalOrder(a) - goalOrder(b));
+const weekMonday = w => { const [y, n] = w.split('-W').map(Number); const j4 = new Date(y, 0, 4); return addDays(startOfDay(j4), -((j4.getDay() + 6) % 7) + (n - 1) * 7); };
+const needGoals = () => { const d = S.clock.getDay(); return (d === 1 || d === 2) && !commitItems().some(c => c.raw.week === thisWeek() && (c.stroom === 'weekdoel' || c.raw.outcome)) && !LV.state['_goals-' + thisWeek()]?.skip; };
 function swipeQueue() {
   const revs = openCommits().filter(c => isOldGoal(c) || isEndCheckin(c));
   const reviews = revs.map(c => ({ id: c.id, kind: 'review', why: isEndCheckin(c) ? `Weekafsluiting ${c.raw.week} · hoe is het gegaan?` : `Weekdoel ${c.raw.week} · hoe is het afgelopen?` }));
   const endWeek = revs.length ? (revs.some(isEndCheckin) ? thisWeek() : revs[0].raw.week) : null;
-  const rhythm = [...(endWeek ? [{ id: '__post-end', kind: 'post', mode: 'end', week: endWeek }] : []), ...(needGoals() ? [{ id: '__setgoals', kind: 'setgoals' }, { id: '__post-start', kind: 'post', mode: 'start' }] : [])];
+  const rhythm = [...(endWeek ? [{ id: '__post-end', kind: 'post', mode: 'end', week: endWeek }] : []), ...(needGoals() ? [{ id: '__setgoals', kind: 'setgoals' }] : [])];
   const goals = openCommits().filter(c => c.stroom === 'roadmap' && goalDue(c))
     .sort((a, b) => (a.stroom === 'weekdoel' ? 0 : 1) - (b.stroom === 'weekdoel' ? 0 : 1))
     .map(c => ({ id: c.id, kind: 'goal', why: c.stroom === 'weekdoel' ? `Weekdoel${c.raw.week ? ' ' + c.raw.week : ''} · hoe staat het ervoor?` : 'Roadmap · wekelijkse check' }));
@@ -2527,13 +2536,14 @@ function renderSwipe() {
       <h2 class="sw-title">${esc(short(it.title, 220))}</h2>
       <div class="sub">${esc(cur.why || itemSub(it))}</div>
       ${ctx.length ? `<div class="sw-ctx">${ctx.join(' · ')}</div>` : ''}
-      ${body && body !== it.title ? `<div class="sw-body">${esc(short(body, 600))}</div>` : ''}
+      ${(it.type === 'slack' && it.channelId && it.ts) || (it.type === 'mail' && it.threadId) ? `<div class="sw-ctx-box" id="sw-ctx">${swipeCtx(it)}</div>` : body && body !== it.title ? `<div class="sw-body">${esc(short(body, 600))}</div>` : ''}
       ${checks.length ? `<div class="sw-checks">${checks.map(c => `<span title="${esc(c.note || '')}">${fmtDate(c.d)} ${HEALTH[c.h]?.[0] || ''}</span>`).join('')}</div>` : ''}
       ${related.length ? `<div class="sw-rel"><div class="eyebrow">Ook open bij ${esc(it.entities.map(entityName).join(', '))}</div>${related.map(c => `<div>· ${esc(short(c.title, 90))} <span class="sub">(${STROOM[c.stroom]})</span></div>`).join('')}</div>` : ''}
       ${kind === 'goal' || kind === 'review' ? `<textarea id="sw-note" class="sw-note" rows="2" placeholder="Notitie of volgende stap (n om te typen, ↵ om op te slaan met de status)"></textarea>` : ''}
       <div class="sw-keys">${keys.map(([k, l]) => `<button class="sw-key" data-action="swipe-key" data-key="${k}"><span class="kbd">${k}</span>${l}</button>`).join('')}${it.url ? `<a class="sw-key" href="${esc(it.url)}" target="_blank" rel="noopener"><span class="kbd">o</span>Openen</a>` : ''}</div>
     </div>${arrowsHTML(kind)}</div></div>`;
   sw.anim = '';
+  const cx = document.getElementById('sw-ctx'); if (cx) catchScroll(cx);
 }
 async function swipeKey(k) {
   const sw = S.swipe; const cur = swipeCurrent();
@@ -2541,7 +2551,7 @@ async function swipeKey(k) {
   if (k === 'Escape') return stopSwipe();
   if (!cur) { if (k === 'p') { stopSwipe(); go({ view: 'planning' }); } return; }
   const it = cur.it;
-  if ((cur.kind === 'setgoals' || cur.kind === 'post') && !['Enter', 'c', 'ArrowLeft', 'ArrowRight', 's', 'u', 'z', 'Backspace'].includes(k)) return;
+  if ((cur.kind === 'setgoals' || cur.kind === 'post') && !['Enter', 'c', 'i', 'ArrowLeft', 'ArrowRight', 's', 'u', 'z', 'Backspace'].includes(k)) return;
   const next = (dir = 'left', counted = true) => { if (sw.forceDir) { dir = sw.forceDir; sw.forceDir = null; } if (counted) sw.done++; sw.i++; sw.anim = 'in-' + dir; const el = document.getElementById('sw-card'); if (el && !matchMedia('(prefers-reduced-motion: reduce)').matches) { el.classList.add('out-' + dir); setTimeout(renderSwipe, 160); } else renderSwipe(); };
   if (k === 's' || k === 'ArrowLeft') { if (cur.kind === 'post') setState('_post-' + cur.week + '-' + cur.mode, { done: true, skipped: true }); if (cur.kind === 'setgoals') setState('_goals-' + thisWeek(), { skip: true }); return next('left', false); }
   if (k === 'u' || k === 'z' || k === 'Backspace') { if (sw.i > 0) { sw.i--; const pc = sw.q[sw.i]; if (pc.kind === 'post') setState('_post-' + (pc.week || thisWeek()) + '-' + pc.mode, { done: false, skipped: false }); if (pc.kind === 'setgoals') setState('_goals-' + thisWeek(), { skip: false }); sw.anim = 'in-left'; renderSwipe(); } return; }
@@ -2549,6 +2559,7 @@ async function swipeKey(k) {
   if (k === 'o') { if (it.url) { let w = null; try { w = window.open(it.url, '_blank', 'noopener'); } catch {} if (!w) toast(`<a href="${esc(it.url)}" target="_blank" rel="noopener" style="color:inherit">Openen ${ic('out')}</a>`); } return; }
   if (cur.kind === 'setgoals') {
     if (k === 'c') return openClaude(planWeekPrompt());
+    if (k === 'i') { await importWeekgoals(); if (!needGoals()) return next('up'); return; }
     if (k !== 'Enter') return;
     const lines = (document.getElementById('sw-goals')?.value || '').split('\n').map(l => l.replace(/^\s*(\d+[.)]|[-*•])\s*/, '').trim()).filter(Boolean).slice(0, 5);
     if (!lines.length) { setState('_goals-' + thisWeek(), { skip: true }); return next('left', false); }
@@ -2598,14 +2609,31 @@ async function swipeKey(k) {
   }
 }
 
+// Volledig gesprek of thread in de plansessie, net als bij Inhalen
+function swipeCtx(it) {
+  const key = it.type === 'mail' ? 'ml:' + it.threadId : 'sl:' + it.channelId;
+  return catchBodyHTML({ key, items: [it], last: it });
+}
+function refreshSwipeCtx() {
+  const el = document.getElementById('sw-ctx'), cur = swipeCurrent(); if (!el || !cur) return;
+  const st = el.scrollTop, fresh = !el.dataset.scrolled;
+  el.innerHTML = swipeCtx(cur.it);
+  if (fresh) catchScroll(el); else el.scrollTop = st;
+}
+
 /* ---------- Weekritme: doelen vastleggen (maandag) en afsluiten (vrijdag) ---------- */
 const OUT_EMO = { gehaald: '✅', doorgeschoven: '🔄', meegenomen: '➡️', losgelaten: '🚫' };
 function weekPostText(mode, week) {
+  // Zoals Robert het deelt: maandag een genummerde lijst, aan het eind van de week dezelfde lijst met ✅ achter wat gehaald is
+  // en een ingesprongen "a." met toelichting bij de rest. Beide als reactie in de "Nieuwe week"-thread.
   const gs = weekGoals(week);
-  if (mode === 'start') return `Weekdoelen ${week.replace(/^\d{4}-/, '')}:\n` + gs.filter(g => !isDone(g)).map((g, i) => `${i + 1}. ${g.title}`).join('\n');
-  const line = g => { const o = g.raw.outcome; const n = g.raw.outcomeNote || (g.raw.checks || []).slice(-1)[0]?.note || ''; return `${OUT_EMO[o] || '⏳'} ${g.title}${o === 'meegenomen' ? ' (mee naar volgende week)' : o === 'doorgeschoven' ? ' (schuift door)' : o === 'losgelaten' ? ' (losgelaten)' : ''}${n ? ' — ' + n : ''}`; };
-  const hit = gs.filter(g => g.raw.outcome === 'gehaald').length;
-  return `Weekdoelen ${week.replace(/^\d{4}-/, '')}: ${hit}/${gs.length} gehaald\n` + gs.map(line).join('\n') + '\n\nHulpvraag: ';
+  if (mode === 'start') return gs.map((g, i) => `${i + 1}. ${g.title}`).join('\n');
+  const DEF = { meegenomen: 'Gaat mee naar volgende week', doorgeschoven: 'Loopt door', losgelaten: 'Losgelaten' };
+  return gs.map((g, i) => {
+    const o = g.raw.outcome, note = g.raw.outcomeNote || '';
+    const sub = note || DEF[o] || '';
+    return `${i + 1}. ${g.title}${o === 'gehaald' ? ' :white_check_mark:' : ''}${sub && !(o === 'gehaald' && !note) ? `\n    a. ${sub}` : ''}`;
+  }).join('\n');
 }
 function renderRhythmCard(cur, prog, T1, load) {
   const ov = document.getElementById('overlay'), sw = S.swipe;
@@ -2614,15 +2642,15 @@ function renderRhythmCard(cur, prog, T1, load) {
   if (cur.kind === 'setgoals') {
     const have = openCommits().filter(c => c.stroom === 'weekdoel' && c.raw.week === thisWeek());
     body = `<div class="sw-kind"><span class="kind k-prep">🎯 Weekdoelen</span><span class="sub">${thisWeek()}</span></div>
-      <h2 class="sw-title">Wat moet er deze week staan?</h2><div class="sub">2 à 3 uitkomsten, geen activiteiten. Eén per regel. Vrijdag check je ze één keer af.</div>
+      <h2 class="sw-title">Nog geen weekdoelen voor deze week</h2><div class="sub">Normaal zet de zondag-prep ze hier neer. Staan ze al in #02-intern, haal ze dan op met <span class="kbd">i</span>. Of typ ze hier, één per regel.</div>
       ${have.length ? `<div class="sw-rel"><div class="eyebrow">Al meegenomen</div>${have.map(c => `<div>· ${esc(c.title)}</div>`).join('')}</div>` : ''}
       <textarea id="sw-goals" class="sw-note" rows="4" placeholder="1. Isolatieflow TonZon live op acceptatie\n2. …"></textarea>
-      <div class="sw-keys"><button class="sw-key primary" data-action="swipe-key" data-key="Enter"><span class="kbd">⌘↵</span>Vastleggen</button><button class="sw-key" data-action="swipe-key" data-key="c"><span class="kbd">c</span>Plan met Claude</button></div>`;
+      <div class="sw-keys"><button class="sw-key primary" data-action="swipe-key" data-key="Enter"><span class="kbd">⌘↵</span>Vastleggen</button><button class="sw-key" data-action="swipe-key" data-key="i"><span class="kbd">i</span>Ophalen uit #02-intern</button><button class="sw-key" data-action="swipe-key" data-key="c"><span class="kbd">c</span>Plan met Claude</button></div>`;
   } else {
     const txt = weekPostText(cur.mode, cur.week);
-    body = `<div class="sw-kind"><span class="kind k-prep">${cur.mode === 'start' ? 'Weekdoelen delen' : 'Weekafsluiting delen'}</span><span class="src src-slack">${ic('slack')}#02-intern</span></div>
-      <h2 class="sw-title">${cur.mode === 'start' ? 'Delen in de weekdoelen-thread?' : 'Check-in delen in de vrijdag-thread?'}</h2>
-      <div class="sub">Optioneel: de workspace is de bron. Klik in de tekst om aan te passen; plaatsen gaat als reactie op het bericht van Weekly updates.</div>
+    body = `<div class="sw-kind"><span class="kind k-prep">Weekafsluiting ${esc(String(cur.week).replace(/^\d{4}-/, ''))}</span><span class="src src-slack">${ic('slack')}#02-intern</span></div>
+      <h2 class="sw-title">Check-in delen bij je weekdoelen?</h2>
+      <div class="sub">Zelfde lijst als maandag, met ✅ wat gehaald is. Komt als reactie in de “Nieuwe week”-thread, net als je doelen. Optioneel: de workspace blijft de bron.</div>
       <textarea id="sw-post" class="sw-note sw-post" rows="${Math.min(10, txt.split('\n').length + 1)}">${esc(txt)}</textarea>
       <div class="sw-keys"><button class="sw-key primary" data-action="swipe-key" data-key="Enter"><span class="kbd">⌘↵</span>Plaatsen in #02-intern</button></div>`;
   }
@@ -2633,13 +2661,17 @@ function renderRhythmCard(cur, prog, T1, load) {
 async function postWeekgoals(mode, week, text) {
   if (!MODE.live) { toast('Voorbeeld: niet echt geplaatst in #02-intern'); return true; }
   try {
-    const ws = weekStart(0, baseDay()), from = mode === 'start' ? addDays(ws, -1) : addDays(ws, 4);
-    const h = parseSlackHistory(await call('Slack', 'slack_read_channel', { channel_id: CH_INTERN, oldest: String(Math.floor(+from / 1000)), limit: 60 }));
-    const re = mode === 'start' ? /nieuwe week|weekdoelen voor deze week/i : /vrijdag|weekdoelen/i;
-    const parent = h.msgs.filter(m => m.bot && re.test(m.text)).pop();
-    if (!parent) { copyText(text); toast('De thread van Weekly updates staat er nog niet (komt meestal om 10:00). De tekst staat op je klembord.'); return false; }
-    await call('Slack', 'slack_send_message', { channel_id: CH_INTERN, thread_ts: parent.ts, message: text });
-    toast(`${ic('arrow')} Geplaatst in de thread in #02-intern`);
+    // De thread waar je doelen staan: bron van een opgehaald doel, anders het "Nieuwe week"-bericht van de zondag ervoor
+    const fromSrc = weekGoals(week).map(g => (g.raw.bron?.url || '').match(/thread_ts=([\d.]+)/)?.[1] || (g.raw.bron?.url || '').match(/\/p(\d{10})(\d{6})/)?.slice(1).join('.')).find(Boolean);
+    let ts = fromSrc;
+    if (!ts) {
+      const sun = addDays(weekMonday(week), -2);
+      const h = parseSlackHistory(await call('Slack', 'slack_read_channel', { channel_id: CH_INTERN, oldest: String(Math.floor(+sun / 1000)), latest: String(Math.floor(+addDays(sun, 3) / 1000)), limit: 60 }));
+      ts = h.msgs.filter(m => /nieuwe week/i.test(m.text)).pop()?.ts;
+    }
+    if (!ts) { copyText(text); toast('De “Nieuwe week”-thread van deze week vond ik niet. De tekst staat op je klembord.'); return false; }
+    await call('Slack', 'slack_send_message', { channel_id: CH_INTERN, thread_ts: ts, message: text });
+    toast(`${ic('arrow')} Geplaatst bij je weekdoelen in #02-intern`);
     return true;
   } catch (e) { copyText(text); toast(`Plaatsen lukte niet (${esc(e?.code || 'fout')}). De tekst staat op je klembord.`); return false; }
 }
@@ -4307,6 +4339,7 @@ function render() {
   }
   renderInspector(); renderMainHighlights(); applyFocus(false);
   if (S.catch) renderCatch(false);
+  if (S.swipe) refreshSwipeCtx();
   if (S.help) renderHelp();
   mainDirty = false;
 }
