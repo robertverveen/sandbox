@@ -1030,6 +1030,14 @@ body.kbd-mode .tab .tab-kbd { display: inline; }
 /* v14: contextlaag */
 .ctx-note { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
 .ctx-note.warn { background: var(--yellow-100); color: #5c3d00; border-color: transparent; }
+.nudge-repo { border: 1px solid color-mix(in srgb, var(--accent, #0022c4) 30%, var(--line)); background: color-mix(in srgb, #f9b20b 10%, var(--panel, var(--bg))); border-radius: 14px; padding: 16px 18px; margin: 14px 0; display: flex; flex-direction: column; gap: 8px; }
+.nudge-repo h2 { margin: 0; font-size: 17px; }
+.nudge-repo p, .nudge-repo ol { margin: 0; font-size: 13.5px; }
+.nudge-repo ol { padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.nudge-repo.compact { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 14px; }
+.nudge-repo code { font-size: 12px; }
+.trk-block { margin-bottom: 12px; }
+.trk-block > .ctx-h { display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px; }
 .ctx-day { margin-top: 26px; }
 .ctx-day .calm-title { align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .ctx-block { background: var(--panel); border: 1px solid var(--line); border-radius: var(--corner-l); padding: 12px 16px; margin-bottom: 10px; }
@@ -1213,7 +1221,7 @@ const S = {
   recent: store.get('recent2', ['feenstra', 'type:mail is:direct', 'type:commit is:open', 'when:week type:meeting']),
   weekOffset: 0,
   palette: null,
-  commitTab: 'mijn',
+  commitTab: 'taken',
   chatChannel: 'all',
   aiThread: [],
   aiBrief: null,
@@ -1653,8 +1661,10 @@ function commitOrgId(c) {
   const E = ENT();
   return Object.keys(E).find(k => k === n || normOrg(E[k].name) === n || n.includes(k) || k.includes(n)) || (MODE.live ? registerOrg(n, c.org) : null);
 }
+// Verborgen: canvas-items (sinds 5 nov in wachten-op.md), items die al in de repo staan, en taken die al in Google Taken staan.
+const commitVisible = c => !(c.bron?.label === 'Canvas Wachten op' && ['aan_mij', 'bespreken'].includes(c.stroom)) && !c.overgezet && !(['mijn', 'voornemen'].includes(c.stroom || 'mijn') && c.gtask);
 function commitItems() {
-  return LV.commits.map(c => {
+  return LV.commits.filter(commitVisible).map(c => {
     const org = commitOrgId(c);
     return { id: 'cm:' + c.id, docId: c.id, type: 'commit', title: c.wat, stroom: c.stroom || 'mijn', aan: c.aan, status: commitStatus(c), deadline: c.deadline, plan: c.plan || null, backlog: !!c.backlog,
       reminder: c.reminder || null, due: c.plan || c.deadline || null, moved: c.moved || 0, url: c.bron?.url || null,
@@ -1784,13 +1794,17 @@ async function quickTask(title, n) {
   if (n === 1 && loadOf(date) >= DAY_CAP) toast(`Vandaag zit al op ${loadOf(date)}/${DAY_CAP}. Morgen kan ook.`);
   try {
     const r = await gtaskAdd(title, date, '[workspace] Snel toegevoegd in Planning');
-    if (MODE.live && r?.id) LV.tasks.push({ id: r.id, title, due: date + 'T00:00:00.000Z', status: 'needsAction', tasklist_id: r.tasklist, tasklist_title: LV.tasklists.find(l => l.id === r.tasklist)?.title || '' });
+    pushLocalTask(r, title, date);
     toast(`${ic('check')} In Google Tasks gezet voor ${n === 1 ? 'vandaag' : 'morgen'} (${fmtDate(date)})`);
   } catch (e) { toast(`Taak aanmaken in Google Tasks lukte niet (${esc(e?.code || 'fout')})`); }
 }
-async function gtaskAdd(title, due, notes) {
+function pushLocalTask(r, title, date) {
+  if (MODE.live && r?.id) LV.tasks.push({ id: r.id, title, due: date ? date + 'T00:00:00.000Z' : null, status: 'needsAction', tasklist_id: r.tasklist, tasklist_title: LV.tasklists.find(l => l.id === r.tasklist)?.title || '' });
+}
+const hasGTasks = () => !MODE.live || (LV.tasklists || []).length > 0;
+async function gtaskAdd(title, due, notes, list) {
   if (!MODE.live) { const id = 't' + Date.now(); DEMO_ITEMS.push({ id: 'tk:' + id, rawId: id, type: 'task', tasklist: 'demo', title, due, notes, entities: [] }); return { id, tasklist: 'demo' }; }
-  const tl = defaultList();
+  const tl = list || defaultList();
   const p = await call('Google Tasks', 'add', { title, due, notes, ...(tl ? { tasklist: tl } : {}) });
   await CAP.mcp.invalidate('Google Tasks').catch(() => {});
   return { id: findId(p), tasklist: tl };
@@ -1845,10 +1859,25 @@ async function commitSave(docId, patch) {
   scheduleRender();
   if (MODE.live && CAP.db) { try { await CAP.db.doc('commitments/' + docId).update(patch); } catch (e) { toast(`Opslaan lukte niet: ${esc(e?.code || e?.message || 'fout')}`); } }
 }
+/* Tracker-bronnen: taken -> Google Taken (of taken.md zonder Google Taken); wachten op en bespreken -> wachten-op.md.
+   De workspace bewaart zelf alleen weekdoelen en een wachtrij voor wat de ochtendroutine nog naar de Persoonlijk-repo zet. */
+async function taskFromCommit(d) {
+  const notes = ['[workspace]', d.aan ? 'Met ' + d.aan : '', d.org ? 'Partner ' + d.org : '', d.bron?.label || '', d.bron?.url || '', d.citaat ? '“' + d.citaat + '”' : ''].filter(Boolean).join('\n');
+  const due = d.plan || d.deadline || null;
+  try {
+    const list = d.backlog && MODE.live ? await ensureBacklogList() : undefined;
+    const r = await gtaskAdd(d.wat, due, notes, list);
+    pushLocalTask(r, d.wat, due);
+    return r?.id ? 'gtask:' + r.id : null;
+  } catch (e) { toast(`Google Taak aanmaken lukte niet (${esc(e?.code || 'fout')})`); return null; }
+}
 async function commitAdd(data) {
+  const st = data.stroom || 'mijn';
+  if (['mijn', 'voornemen'].includes(st)) { if (hasGTasks()) return taskFromCommit(data); data = { ...data, naar: 'taken.md' }; }
+  if (['aan_mij', 'bespreken'].includes(st)) data = { ...data, naar: 'wachten-op.md' };
   const doc = { wat: data.wat, stroom: data.stroom || 'mijn', aan: data.aan || '', org: data.org || '', deadline: data.deadline || null, status: data.status || 'open',
     plan: data.plan || null, backlog: !!data.backlog, week: data.week || null, health: data.health || null, reminder: data.reminder || null, gtask: data.gtask || null, src: data.src || null,
-    closedAt: data.closedAt || null, bron: data.bron || { label: 'Eigen invoer' }, bewijsregel: data.bewijsregel || { type: 'geen' }, citaat: data.citaat || '', created: data.created || today(), createdAt: Date.now() };
+    closedAt: data.closedAt || null, naar: data.naar || null, overgezet: false, bron: data.bron || { label: 'Eigen invoer' }, bewijsregel: data.bewijsregel || { type: 'geen' }, citaat: data.citaat || '', created: data.created || today(), createdAt: Date.now() };
   if (!MODE.live || !CAP.db) { const id = 'dc' + Date.now() + Math.random().toString(36).slice(2, 5); LV.commits.push({ id, ...doc }); scheduleRender(); return id; }
   try { const ref = await CAP.db.collection('commitments').add(doc); return ref.id; } catch (e) { toast(`Opslaan lukte niet: ${esc(e?.code || e?.message || 'fout')}`); return null; }
 }
@@ -1905,9 +1934,7 @@ async function planItem(it, n) {
   else if (it.type === 'commit') date = await planCommit(it, n);
   else if (it.type === 'slack' || it.type === 'mail') {
     date = n === 5 ? null : bucketDate(n);
-    const extra = { stroom: 'mijn', plan: date, backlog: n === 5 };
-    if (date) { try { extra.gtask = await gtaskAdd(it.type === 'mail' ? `Mail ${it.fromName}: ${short(it.title, 60)}` : `Slack ${it.fromName}: ${short(it.title, 60)}`, date, `[workspace] ${it.url || ''}`); } catch { toast('Google Task aanmaken lukte niet; staat wel in de tracker.'); } }
-    await itemToCommit(it, extra);
+    await itemToCommit(it, { stroom: 'mijn', wat: it.type === 'mail' ? `Mail ${it.fromName}: ${short(it.title, 60)}` : `Slack ${it.fromName}: ${short(it.title, 60)}`, plan: date, backlog: n === 5 });
     if (it.type === 'mail') await markRead(it); else setState(stateKey(it), { read: true });
   } else if (it.type === 'meeting') {
     if (n === 5) { setState(stateKey(it), { skipPrep: true }); return toast('Geen prep voor deze meeting'); }
@@ -1925,7 +1952,7 @@ async function makeWaiting(it) {
   if (!['slack', 'mail', 'rec'].includes(it.type)) return toast('Wachten op maak je van een bericht of mail');
   await itemToCommit(it, { stroom: 'aan_mij', wat: `${it.fromName || 'Iemand'}: ${short(it.title, 100)}`, reminder: ymd(addWorkdays(S.clock, 3)) });
   if (it.type === 'mail') await markRead(it); else setState(stateKey(it), { read: true });
-  toast(`${ic('commit')} In Wachten op · reminder ${fmtDate(ymd(addWorkdays(S.clock, 3)))}`);
+  toast(`${ic('commit')} In Wachten op · reminder ${fmtDate(ymd(addWorkdays(S.clock, 3)))}${hasPersRepo() ? ' · gaat naar wachten-op.md' : ''}`);
 }
 async function makeBespreken(it) {
   if (!['slack', 'mail', 'rec', 'commit'].includes(it.type)) return toast('Bespreken maak je van een bericht, mail of toezegging');
@@ -1938,7 +1965,7 @@ async function makeCommit(it) {
   if (!['slack', 'mail', 'rec'].includes(it.type)) return toast('Een toezegging maak je van een bericht, mail of opname');
   await itemToCommit(it, { stroom: 'mijn' });
   setState(stateKey(it), { read: true });
-  toast(`${ic('commit')} Toegevoegd aan de tracker, nog te plannen`);
+  toast(`${ic('commit')} ${hasGTasks() ? 'In Google Taken gezet, nog te plannen' : 'Klaar voor taken.md, nog te plannen'}`);
 }
 async function doneItem(it) {
   if (it.type === 'task') return completeTask(it);
@@ -2331,7 +2358,7 @@ function viewDagstart() {
         }).join('') || (MODE.checked ? '<div class="empty">Geen afspraken.</div>' : '')}</div>
       </section>
     </div>
-    ${ctxDagstartHTML()}
+    ${persNudgeHTML(true)}${ctxDagstartHTML()}
     <div class="calm-foot">
       ${catchCount() ? `<button class="calm-chip" data-action="ct-start">${ic('chat')}${catchCount()} gesprekken om in te halen</button>` : ''}
       ${sp ? `<button class="calm-chip" data-action="go-sprint">${ic('git')}${esc(sp.name)} · nog ${sp.daysLeft} ${sp.daysLeft === 1 ? 'dag' : 'dagen'} · ${sp.donePts}/${sp.totalPts} pt${sp.mine ? ` · <b>${sp.mine} voor jou om te testen</b>` : ''}</button>` : ''}
@@ -2404,44 +2431,83 @@ function viewSprint(tabs) {
 }
 
 /* ---------- Tracker ---------- */
+const TRACKER_TABS = [['taken', 'Taken'], ['aan_mij', 'Wachten op'], ['bespreken', 'Bespreken'], ['partneracties', 'Partneracties'], ['weekdoel', 'Weekdoelen'], ['afgerond', 'Afgerond']];
+const normTask = t => String(t || '').toLowerCase().replace(/[^a-z0-9à-ÿ]+/g, ' ').trim().slice(0, 48);
+// Regels uit taken.md die nog niet in Google Taken staan (zelfde tekst) en niet al omgezet of genegeerd zijn.
+function takenMdOpen() {
+  const gt = new Set(allItems().filter(i => i.type === 'task').map(i => normTask(i.title)));
+  return (ctxData().pers?.taken?.open || []).filter(t => !LV.state['_taak-' + hashStr(t.tekst)] && !gt.has(normTask(t.tekst)));
+}
+const hasPersRepo = () => Object.keys(ctxData().pers || {}).length > 0;
+const ctxLoaded = () => Object.keys(ctxData().partners || {}).length > 0;
+// Aansporing: zonder Persoonlijk-repo heeft de tracker geen taken.md en wachten-op.md.
+function persNudgeHTML(compact) {
+  if (!ctxLoaded() || hasPersRepo()) return '';
+  if (compact && (LV.state['_nudge-repo']?.until || '') > today()) return '';
+  const why = 'Je tracker leest je taken uit Google Taken en <code>taken.md</code>, en wachten op en bespreken uit <code>wachten-op.md</code>. Die twee bestanden staan in je eigen Persoonlijk-repo op GitHub, en die heb je nog niet.';
+  if (compact) return `<div class="nudge-repo compact"><div><b>Zet je Persoonlijk-repo op</b><div class="sub">Zonder repo blijven Wachten op en Bespreken leeg en blijft wat je aanmaakt in de wachtrij hangen. Kost een kwartier.</div></div><span class="ctx-btns"><button class="btn sm primary" data-action="ctab" data-tab="aan_mij">Hoe?</button><button class="btn sm" data-action="repo-later">Over 3 dagen</button></span></div>`;
+  return `<div class="nudge-repo"><div class="eyebrow">Nog te doen</div><h2>Zet je Persoonlijk-repo op</h2><p>${why}</p>
+    <ol><li>Vraag Claude om <b>nachtdienst opzetten</b>. De skill <i>persoonlijke-nachtdienst</i> maakt een privé-repo op je eigen GitHub (bijv. <code>jouwnaam/context-prive</code>) met <code>ik.md</code>, <code>taken.md</code>, <code>wachten-op.md</code> en <code>aangehouden.md</code>, en zet de nachtrun klaar.</li>
+      <li>De nachtdienst vult hem elke nacht met je eigen taken uit meetings; twijfel komt in <code>aangehouden.md</code>.</li>
+      <li>De volgende ochtendrun laat hem hier zien. Wat je intussen als Wachten op of Bespreken aanmaakt, blijft in de wachtrij en gaat daarna mee.</li></ol>
+    <span class="ctx-btns"><button class="btn sm primary" data-action="repo-copy">Kopieer opdracht voor Claude</button><button class="btn sm" data-action="repo-later">Herinner me over 3 dagen</button></span></div>`;
+}
 function viewToezeggingen() {
   const cs = commitItems().map(c => allItems().find(i => i.id === c.id) || c);
-  const tasksFree = allItems().filter(i => i.type === 'task' && !i.commitId);
-  const tabs = [['alles', 'Alles'], ['mijn', 'Ik beloofde'], ['partneracties', 'Partneracties'], ['aan_mij', 'Wachten op'], ['bespreken', 'Bespreken'], ['weekdoel', 'Weekdoelen'], ['roadmap', 'Roadmap'], ['voornemen', 'Voornemens'], ['taken', 'Google Tasks'], ['afgerond', 'Afgerond']];
-  const sel = S.commitTab;
-  const list = sel === 'taken' ? tasksFree : sel === 'afgerond' ? cs.filter(isDone) : sel === 'alles' ? [...cs.filter(c => !isDone(c)), ...tasksFree] : cs.filter(c => c.stroom === sel && !isDone(c));
+  const tasks = allItems().filter(i => i.type === 'task');
+  const tmd = takenMdOpen();
+  const sel = TRACKER_TABS.some(([k]) => k === S.commitTab) ? S.commitTab : 'taken';
+  const open = c => !isDone(c);
+  const queued = k => cs.filter(c => open(c) && c.stroom === k);
+  const legacy = cs.filter(c => open(c) && ['mijn', 'voornemen'].includes(c.stroom));
+  const goals = cs.filter(c => open(c) && ['weekdoel', 'roadmap'].includes(c.stroom));
+  const W = ctxData().pers?.['wachten-op'] || {};
   const order = { te_laat: 0, waarschijnlijk_klaar: 1, open: 2, klaar: 3, overgedragen: 4 };
-  list.sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2) || String(a.plan || a.due || a.reminder || '9999').localeCompare(String(b.plan || b.due || b.reminder || '9999')));
-  const count = k => k === 'partneracties' ? ctxAll().filter(a => a.state === 'open' && isMine(a)).length : k === 'taken' ? tasksFree.length : k === 'afgerond' ? cs.filter(isDone).length : k === 'alles' ? cs.filter(c => !isDone(c)).length + tasksFree.length : cs.filter(c => c.stroom === k && !isDone(c)).length;
-  const ruleText = r => !r || r.type === 'geen' ? '<span class="rule none">geen bewijsregel · dit vink je zelf af</span>' : `<span class="rule">bewijs: ${esc(r.type)}${r.to ? ' → ' + esc(r.to) : ''}${r.keywords?.length ? ' · ' + esc(r.keywords.join(', ')) : ''}</span>`;
-  const row = it => it.type === 'task' ? `<div class="commit-row" data-k="${esc(it.id)}" data-kind="task" data-open="${esc(it.id)}"><div style="min-width:0"><div class="wat">${esc(it.title)}</div><div class="meta"><span class="st st-open">Google Tasks</span><span>${esc(itemSub(it))}</span></div></div><div class="commit-acts"><span class="sub" style="font-size:12px">${esc(relTime(it))}</span></div></div>` : `<div class="commit-row" data-k="${esc(it.id)}" data-kind="${kindOf(it)}" data-open="${esc(it.id)}">
+  const sortC = l => l.sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2) || String(a.plan || a.due || a.reminder || '9999').localeCompare(String(b.plan || b.due || b.reminder || '9999')));
+  const count = k => k === 'taken' ? tasks.length + tmd.length + legacy.length : k === 'aan_mij' ? (W.open || []).length + queued('aan_mij').length : k === 'bespreken' ? (W.bespreken || []).length + queued('bespreken').length
+    : k === 'partneracties' ? ctxAll().filter(a => a.state === 'open' && isMine(a)).length : k === 'weekdoel' ? goals.length : cs.filter(isDone).length;
+  const taskRow = it => `<div class="commit-row" data-k="${esc(it.id)}" data-kind="task" data-open="${esc(it.id)}"><div style="min-width:0"><div class="wat">${esc(it.title)}</div><div class="meta"><span class="st st-open">Google Taken</span><span>${esc(itemSub(it))}</span></div></div><div class="commit-acts"><span class="sub" style="font-size:12px">${esc(relTime(it))}</span></div></div>`;
+  const mdRow = t => { const h = hashStr(t.tekst); return `<div class="commit-row"><div style="min-width:0"><div class="wat">${esc(t.tekst)}</div><div class="meta"><span class="st st-open">taken.md</span>${t.klant ? `<button class="linklike" data-go="o-${esc(t.klant)}">${esc(CTX.bySlug[t.klant]?.naam || t.klant)}</button>` : ''}<span>${t.due ? 'due ' + esc(fmtDate(t.due)) : 'geen datum'}</span>${t.sinds ? `<span>sinds ${esc(fmtDate(t.sinds))}</span>` : ''}</div></div><div class="commit-acts">${hasGTasks() ? `<button class="btn sm" data-action="ctx-taak" data-h="${esc(h)}">Naar Google Taken</button>` : ''}<button class="btn sm" data-action="ctx-taak-skip" data-h="${esc(h)}">Negeer</button></div></div>`; };
+  const row = it => `<div class="commit-row" data-k="${esc(it.id)}" data-kind="${kindOf(it)}" data-open="${esc(it.id)}">
       <div style="min-width:0"><div class="wat">${esc(it.title)} ${ctxDupChip(it)}</div>
-        <div class="meta">${['weekdoel', 'roadmap'].includes(it.stroom) ? `<span class="st st-open">${it.raw.health ? HEALTH[it.raw.health][0] + ' ' + HEALTH[it.raw.health][1] : 'Nog geen status'}</span>${it.raw.week ? `<span>${esc(it.raw.week)}</span>` : ''}${(it.raw.checks || []).length ? `<span class="checks-mini">${it.raw.checks.slice(-7).map(c => `<i title="${fmtDate(c.d)}${c.note ? ': ' + esc(c.note) : ''}">${HEALTH[c.h]?.[0] || ''}</i>`).join('')}</span>` : ''}${it.raw.checks?.slice(-1)[0]?.note ? `<span>“${esc(short(it.raw.checks.slice(-1)[0].note, 80))}”</span>` : ''}` : ''}<span class="st st-${it.status}">${STATUS[it.status]}</span>${sel === 'alles' ? `<span>${STROOM[it.stroom]}</span>` : ''}${it.aan ? `<span>${it.stroom === 'aan_mij' ? 'van' : it.stroom === 'bespreken' ? 'met' : 'aan'} ${esc(it.aan)}</span>` : ''}${it.entities.map(entityChip).join('') || (it.raw.org ? `<span>${esc(it.raw.org)}</span>` : '')}
-          ${it.stroom === 'aan_mij' ? `<span>sinds ${it.raw.created ? fmtDate(it.raw.created) : '–'}${it.reminder ? ` · reminder <b style="${it.reminder <= today() ? 'color:var(--danger)' : ''}">${fmtDate(it.reminder)}</b>` : ''}</span>` : it.stroom === 'bespreken' ? '' : `<span>${it.backlog ? 'backlog' : it.plan ? 'gepland ' + fmtDate(it.plan) : 'nog niet gepland'}${it.deadline ? ` · deadline <b style="${it.status === 'te_laat' ? 'color:var(--danger)' : ''}">${fmtDate(it.deadline)}</b>` : ''}${it.linkedTask ? ' · in Google Tasks' : ''}</span>`}
+        <div class="meta">${['weekdoel', 'roadmap'].includes(it.stroom) ? `<span class="st st-open">${it.raw.health ? HEALTH[it.raw.health][0] + ' ' + HEALTH[it.raw.health][1] : 'Nog geen status'}</span>${it.raw.week ? `<span>${esc(it.raw.week)}</span>` : ''}${(it.raw.checks || []).length ? `<span class="checks-mini">${it.raw.checks.slice(-7).map(c => `<i title="${fmtDate(c.d)}${c.note ? ': ' + esc(c.note) : ''}">${HEALTH[c.h]?.[0] || ''}</i>`).join('')}</span>` : ''}${it.raw.checks?.slice(-1)[0]?.note ? `<span>“${esc(short(it.raw.checks.slice(-1)[0].note, 80))}”</span>` : ''}` : ''}<span class="st st-${it.status}">${STATUS[it.status]}</span>${it.raw.naar && !isDone(it) ? `<span class="chip" title="De ochtendroutine zet dit in je Persoonlijk-repo">${hasPersRepo() ? 'naar ' + esc(it.raw.naar) : 'wacht op je Persoonlijk-repo'}</span>` : ''}${sel === 'afgerond' ? `<span>${STROOM[it.stroom]}</span>` : ''}${it.aan ? `<span>${it.stroom === 'aan_mij' ? 'van' : it.stroom === 'bespreken' ? 'met' : 'aan'} ${esc(it.aan)}</span>` : ''}${it.entities.map(entityChip).join('') || (it.raw.org ? `<span>${esc(it.raw.org)}</span>` : '')}
+          ${it.stroom === 'aan_mij' ? `<span>sinds ${it.raw.created ? fmtDate(it.raw.created) : '–'}${it.reminder ? ` · reminder <b style="${it.reminder <= today() ? 'color:var(--danger)' : ''}">${fmtDate(it.reminder)}</b>` : ''}</span>` : ['mijn', 'voornemen'].includes(it.stroom) ? `<span>${it.plan ? 'gepland ' + fmtDate(it.plan) : 'nog niet gepland'}${it.deadline ? ` · deadline ${fmtDate(it.deadline)}` : ''}</span>` : ''}
           ${it.raw.bron?.url ? extLink(it.raw.bron.url, esc(it.raw.bron.label || 'bron'), 'ext-link') : `<span>${esc(it.raw.bron?.label || '')}</span>`}</div>
-        ${['mijn', 'voornemen'].includes(it.stroom) ? `<div class="meta">${it.raw.bewijs ? `<span class="rule" style="color:var(--c-commit)">✓ ${esc(it.raw.bewijs)}</span>` : ruleText(it.raw.bewijsregel)}</div>` : ''}
         ${it.raw.citaat ? `<div class="meta"><i>“${esc(short(it.raw.citaat, 160))}”</i></div>` : ''}</div>
       <div class="commit-acts">${isDone(it) ? `<button class="btn sm" data-action="c-reopen" data-id="${esc(it.docId)}">${ic('undo')}Heropen</button>` : `
-        <button class="btn sm${it.status === 'waarschijnlijk_klaar' ? ' primary' : ''}" data-action="c-done" data-id="${esc(it.docId)}">${ic('check')}${it.stroom === 'aan_mij' ? 'Binnen' : 'Klaar'} <span class="kbd">x</span></button>
-        ${it.status === 'waarschijnlijk_klaar' ? `<button class="btn sm" data-action="c-reopen" data-id="${esc(it.docId)}">Bezwaar</button>` : ''}
-        ${['mijn', 'voornemen'].includes(it.stroom) ? `<button class="btn sm" data-action="c-hand" data-id="${esc(it.docId)}" title="Wordt een Jira-story: de tracker laat hem los">Naar Jira</button>` : ''}`}
+        <button class="btn sm" data-action="c-done" data-id="${esc(it.docId)}">${ic('check')}${it.stroom === 'aan_mij' ? 'Binnen' : 'Klaar'} <span class="kbd">x</span></button>
+        ${['mijn', 'voornemen'].includes(it.stroom) && hasGTasks() ? `<button class="btn sm primary" data-action="c-gtask" data-id="${esc(it.docId)}">Naar Google Taken</button>` : ''}`}
         <button class="iconbtn" data-action="c-del" data-id="${esc(it.docId)}" aria-label="Verwijder">${ic('trash')}</button></div></div>`;
+  const block = (title, items, render, note) => items.length ? `<div class="card trk-block"><div class="ctx-h">${title} <span class="count-badge">${items.length}</span>${note ? `<span class="sub" style="margin-left:auto;font-size:12px;font-weight:400">${note}</span>` : ''}</div>${items.map(render).join('')}</div>` : '';
+  let body = '';
+  if (sel === 'taken') {
+    const gt = tasks.slice().sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')));
+    body = (hasGTasks() ? block('Google Taken', gt, taskRow, 'leidend · plannen met 1–5 in Planning') : `<div class="card"><div class="empty">Google Taken is niet gekoppeld. Je takenlijst is dan <code>taken.md</code>.</div></div>`)
+      + block(hasGTasks() ? 'Alleen in taken.md' : 'taken.md', tmd, mdRow, hasPersRepo() ? ctxSourceLine() : '')
+      + block('Nog niet in Google Taken', sortC(legacy), row, 'van vóór deze werkwijze')
+      + (!gt.length && !tmd.length && !legacy.length ? '<div class="card"><div class="empty">Geen open taken.</div></div>' : '');
+  } else if (sel === 'aan_mij' || sel === 'bespreken') {
+    body = (hasPersRepo() ? ctxTrackerHTML(sel) : persNudgeHTML(false))
+      + block(hasPersRepo() ? 'Nog niet in wachten-op.md' : 'In de wachtrij', sortC(queued(sel)), row, hasPersRepo() ? 'de ochtendroutine zet ze erin' : 'gaan mee zodra je repo er is')
+      + (hasPersRepo() && sel === 'bespreken' && !(W.bespreken || []).length && !queued(sel).length ? '<div class="card"><div class="empty">Niets te bespreken.</div></div>' : '');
+  } else if (sel === 'partneracties') body = ctxTrackerHTML(sel);
+  else if (sel === 'weekdoel') body = weekdoelStrip() + `<div class="card">${goals.length ? sortC(goals).map(row).join('') : '<div class="empty">Nog geen weekdoelen. Die zet je in de zondag-prep.</div>'}</div>`;
+  else { const done = cs.filter(isDone); body = `<div class="card">${done.length ? done.map(row).join('') : '<div class="empty">Nog niets afgerond.</div>'}</div><p class="hint">Afgevinkte Google Taken staan in Google Taken; afgeronde regels uit wachten-op.md in de sectie Afgerond van dat bestand.</p>`; }
   return `<div class="page">${modeBanner()}
     <header class="hz-head felt plane-blue-light"><div class="shapes" aria-hidden="true"><svg viewBox="0 0 300 300" style="right:0;bottom:0;width:230px;height:230px"><path d="M258 128 334 196V336H182V196Z" stroke-width="16" stroke-linejoin="round" fill="#b8c6ff" stroke="#b8c6ff"/></svg></div>
-      <div><div class="eyebrow">Commitment tracker</div><h1>Tracker</h1></div>
-      <div class="hz-lead"><p>Wat jij belooft, waar je op wacht en wat je bij het volgende contact bespreekt. Wat je plant, staat ook in Google Tasks.</p>
-        <div class="tlinks"><button class="tlink" data-action="extract-scan">Haal op uit Slack en mail${ic('arrow')}</button><button class="tlink" data-action="sweep" ${S.busy.sweep ? 'disabled' : ''}>${S.busy.sweep ? 'Bewijs zoeken…' : 'Zoek bewijs'}${ic('arrow')}</button><button class="tlink" data-action="import-goals" ${S.busy.goals ? 'disabled' : ''}>${S.busy.goals ? 'Ophalen…' : 'Weekdoelen uit #02-intern'}${ic('arrow')}</button></div></div></header>
+      <div><div class="eyebrow">Tracker</div><h1>Tracker</h1></div>
+      <div class="hz-lead"><p>Eén plek voor wat je moet doen en waar je op wacht. Taken komen uit Google Taken en <code>taken.md</code>, wachten op en bespreken uit <code>wachten-op.md</code>, partneracties uit <code>acties.md</code>. De workspace bewaart zelf alleen je weekdoelen.</p>
+        <div class="tlinks"><button class="tlink" data-action="extract-scan">Haal op uit Slack en mail${ic('arrow')}</button><button class="tlink" data-action="import-goals" ${S.busy.goals ? 'disabled' : ''}>${S.busy.goals ? 'Ophalen…' : 'Weekdoelen uit #02-intern'}${ic('arrow')}</button></div></div></header>
     ${statusRow()}${sectionNote(['commits'])}
+    ${sel === 'aan_mij' || sel === 'bespreken' ? '' : persNudgeHTML(true)}
     <form class="addform" id="addcommit"><input id="ac-wat" placeholder="Nieuw, bijv. ‘DNS-instructies naar Liselot sturen’   (n om hier te typen)" autocomplete="off" required>
-      <select id="ac-stroom" aria-label="Stroom"><option value="mijn">Ik beloofde</option><option value="aan_mij">Wachten op</option><option value="bespreken">Bespreken</option><option value="weekdoel">Weekdoel</option><option value="roadmap">Roadmap</option><option value="voornemen">Voornemen</option></select>
-      <input id="ac-date" type="date" aria-label="Deadline of doeldatum">
+      <select id="ac-stroom" aria-label="Soort"><option value="mijn"${sel === 'taken' ? ' selected' : ''}>Taak → ${hasGTasks() ? 'Google Taken' : 'taken.md'}</option><option value="aan_mij"${sel === 'aan_mij' ? ' selected' : ''}>Wachten op → wachten-op.md</option><option value="bespreken"${sel === 'bespreken' ? ' selected' : ''}>Bespreken → wachten-op.md</option><option value="weekdoel"${sel === 'weekdoel' ? ' selected' : ''}>Weekdoel</option></select>
+      <input id="ac-date" type="date" aria-label="Datum">
       <input id="ac-org" placeholder="Partner" aria-label="Partner" style="max-width:120px;border:1px solid var(--line);border-radius:7px;padding:4px 6px;background:var(--bg);font-size:12.5px">
       <button class="send-btn" type="submit" aria-label="Toevoegen" title="Toevoegen">${ic('plus')}</button></form>
-    <div class="tabs" role="tablist">${tabs.map(([k, l], i) => `<button class="tab${sel === k ? ' on' : ''}" role="tab" data-ctab="${k}">${l}<span class="count-badge">${count(k)}</span><span class="kbd tab-kbd">${i + 1}</span></button>`).join('')}</div>
-    ${sel === 'weekdoel' ? weekdoelStrip() : ''}
-    ${ctxTrackerHTML(sel)}
-    ${sel === 'partneracties' ? '' : `<div class="card">${list.length ? list.map(row).join('') : `<div class="empty">${sel === 'afgerond' ? 'Nog niets afgerond.' : 'Niets in deze lijst.'}</div>`}</div>`}
-    <p class="hint" style="margin-top:12px">Tabs wisselen met <span class="kbd">⇧</span>+<span class="kbd">1</span>–<span class="kbd">7</span>. Een toezegging telt als er een eigenaar is, iets controleerbaars te leveren, en iemand het merkt als het niet gebeurt. Wordt het een Jira-story, dan laat de tracker hem los.</p></div>`;
+    <div class="tabs" role="tablist">${TRACKER_TABS.map(([k, l], i) => `<button class="tab${sel === k ? ' on' : ''}" role="tab" data-ctab="${k}">${l}<span class="count-badge">${count(k)}</span><span class="kbd tab-kbd">${i + 1}</span></button>`).join('')}</div>
+    ${body}
+    <p class="hint" style="margin-top:12px">Tabs wisselen met <span class="kbd">⇧</span>+<span class="kbd">1</span>–<span class="kbd">${TRACKER_TABS.length}</span>. Wachten op en bespreken maak je ook vanuit Inhalen met <span class="kbd">w</span> en <span class="kbd">b</span>; een taak met <span class="kbd">c</span> of plannen met <span class="kbd">1</span>–<span class="kbd">5</span>.</p></div>`;
 }
 
 /* ---------- Weekritme: score per week en plannen met Claude ---------- */
@@ -4359,9 +4425,8 @@ const COMMANDS = [
   { label: 'Plan je week met Claude', hint: 'weekdoelen', icon: 'spark', run: () => openClaude(planWeekPrompt()) },
   { label: 'Inhalen: Slack en mail één voor één', hint: 'chat', icon: 'chat', run: () => startCatch() },
   { label: 'Vraag Claude…', hint: 'chat', icon: 'spark', run: q => q ? ask(q) : (S.chatChannel = 'ai', go({ view: 'chat' })) },
-  { label: 'Nieuwe toezegging…', hint: 'tracker', icon: 'plus', run: q => q ? (commitAdd({ wat: q }), toast('Toezegging toegevoegd'), go({ view: 'toezeggingen' })) : go({ view: 'toezeggingen' }) },
+  { label: 'Nieuwe taak…', hint: 'Google Taken', icon: 'plus', run: q => q ? (commitAdd({ wat: q }), toast(hasGTasks() ? 'In Google Taken gezet' : 'Klaar voor taken.md'), go({ view: 'toezeggingen' })) : go({ view: 'toezeggingen' }) },
   { label: 'Haal toezeggingen op uit Slack en mail', hint: 'Claude', icon: 'spark', run: () => runExtraction('scan') },
-  { label: 'Zoek bewijs voor open toezeggingen', hint: 'sweep', icon: 'check', run: () => sweep() },
   { label: 'Vat mijn dag samen', hint: 'Claude', icon: 'spark', run: () => { go({ view: 'dagstart' }); briefMe(); } },
   { label: 'Wissel licht/donker', hint: 'thema', icon: 'sun', run: () => { const r = document.documentElement; const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; r.dataset.theme = dark ? 'light' : 'dark'; } },
 ];
@@ -4648,7 +4713,7 @@ document.addEventListener('keydown', async ev => {
   if (S.route.view === 'toezeggingen') {
     if (k === 'n') { ev.preventDefault(); document.getElementById('ac-wat')?.focus(); return; }
     const sh = { '!': 0, '@': 1, '#': 2, '$': 3, '%': 4, '^': 5, '&': 6, '*': 7, '(': 8 }[k];
-    if (ev.shiftKey && (sh !== undefined || /^Digit[1-9]$/.test(ev.code))) { ev.preventDefault(); const i = sh ?? (+ev.code.slice(5) - 1); S.commitTab = ['alles', 'mijn', 'aan_mij', 'bespreken', 'weekdoel', 'roadmap', 'voornemen', 'taken', 'afgerond'][i]; S.fIdx = 0; S.fId = null; render(); return; }
+    if (ev.shiftKey && (sh !== undefined || /^Digit[1-9]$/.test(ev.code))) { ev.preventDefault(); const i = sh ?? (+ev.code.slice(5) - 1); S.commitTab = TRACKER_TABS[i]?.[0] || S.commitTab; S.fIdx = 0; S.fId = null; render(); return; }
   }
   if (S.route.view === 'chat' && k === 'i') { ev.preventDefault(); S.chatChannel = 'ai'; CV.mobileList = false; render(); document.getElementById('composer-input')?.focus(); return; }
   const handled = await keyAction(k === 'Enter' ? 'Enter' : k, ev);
@@ -4672,6 +4737,9 @@ document.addEventListener('click', ev => {
     const act = a.dataset.action, id = a.dataset.id;
     if (act === 'plan-claude') return openClaude(planWeekPrompt());
     if (act === 'ctx-taak') return ctxMakeTask(a.dataset.h);
+    if (act === 'c-gtask') { const c = LV.commits.find(x => x.id === id); if (!c) return; taskFromCommit(c).then(g => { if (g) { commitSave(id, { gtask: g }); toast(`${ic('check')} In Google Taken gezet`); } }); return; }
+    if (act === 'repo-later') { setState('_nudge-repo', { until: ymd(addWorkdays(S.clock, 3)) }); return toast('Ik herinner je er over 3 werkdagen weer aan'); }
+    if (act === 'repo-copy') { const t = 'Nachtdienst opzetten: maak mijn Persoonlijk-repo (privé, op mijn eigen GitHub) met ik.md, taken.md, wachten-op.md en aangehouden.md volgens HomeZero-context, en zet de nachtrun klaar.'; Promise.resolve().then(() => navigator.clipboard.writeText(t)).then(() => toast('Gekopieerd. Plak het in Claude.'), () => toast(esc(t))); return; }
     if (act === 'ctx-taak-skip') { setState('_taak-' + a.dataset.h, { done: 'genegeerd' }); return toast('Genegeerd'); }
     if (act === 'ctx-aang') { const r = (ctxData().pers?.aangehouden?.open || []).find(x => aangKey(x) === a.dataset.k) || {}; setState('_aang-' + a.dataset.k, { keuze: a.dataset.v, datum: r.datum || '', bron: r.bron || '', tekst: r.tekst || '', overgezet: false }); return toast(`Bewaard als ${esc(a.dataset.v)}; de ochtendroutine zet het in aangehouden.md`); }
     if (act === 'meetingprep') { const it = byId(a.dataset.id); if (it) openClaude(meetingPrepPrompt(it)); return; }
@@ -4787,9 +4855,9 @@ document.addEventListener('submit', async ev => {
     const wat = document.getElementById('ac-wat').value.trim(); if (!wat) return;
     const stroom = document.getElementById('ac-stroom').value;
     await commitAdd({ wat, stroom, org: document.getElementById('ac-org').value.trim(), deadline: document.getElementById('ac-date').value || null, week: stroom === 'weekdoel' ? isoWeek(baseDay()) : null, reminder: stroom === 'aan_mij' ? ymd(addWorkdays(S.clock, 3)) : null });
-    S.commitTab = stroom;
+    S.commitTab = stroom === 'mijn' ? 'taken' : stroom;
     document.getElementById('ac-wat').value = ''; document.getElementById('ac-org').value = ''; document.activeElement?.blur?.();
-    toast(`${ic('commit')} Toegevoegd${['mijn', 'voornemen'].includes(stroom) ? ': plan hem met 1–5' : ''}`);
+    toast(`${ic('commit')} ${stroom === 'mijn' ? (hasGTasks() ? 'In Google Taken gezet' : 'Klaar voor taken.md') : stroom === 'weekdoel' ? 'Weekdoel toegevoegd' : hasPersRepo() ? 'Toegevoegd, gaat naar wachten-op.md' : 'In de wachtrij tot je Persoonlijk-repo er is'}`);
     mainDirty = false; render();
   }
   if (ev.target.id && ev.target.id.startsWith('qa-')) {
