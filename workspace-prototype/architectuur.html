@@ -1,0 +1,317 @@
+<title>HomeZero Workspace architectuur</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: één kolom van 980px, bovenaan de plaat; daaronder stromen, keuzes en kanttekeningen als uitklapbare kaarten. HomeZero-huisstijl. */
+:root {
+  --bg: #fbfbf8; --panel: #ffffff; --ink: #292f38; --muted: #5d6573; --line: #e6e6e1; --soft: #f2f2ee;
+  --blue: #0022c4; --blue-soft: #e7ebff; --yellow: #f9b20b; --yellow-soft: #fff4d6; --green: #1f7a4d; --green-soft: #e3f3ea; --red: #b42318; --red-soft: #fbe9e7;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1430; --panel: #161c3d; --ink: #f2f3f7; --muted: #aab0c2; --line: #2a3157; --soft: #1c2349;
+  --blue: #8ea2ff; --blue-soft: #1d2a6b; --yellow: #f9b20b; --yellow-soft: #3a3214; --green: #6fd19d; --green-soft: #133525; --red: #ff9a8f; --red-soft: #3b1d1a; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f1430; --panel: #161c3d; --ink: #f2f3f7; --muted: #aab0c2; --line: #2a3157; --soft: #1c2349;
+  --blue: #8ea2ff; --blue-soft: #1d2a6b; --yellow: #f9b20b; --yellow-soft: #3a3214; --green: #6fd19d; --green-soft: #133525; --red: #ff9a8f; --red-soft: #3b1d1a; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1020px; margin: 0 auto; padding-block: 40px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 44px; }
+header { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: end; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.02; letter-spacing: -0.045em; font-weight: 600; margin: 6px 0 0; text-wrap: balance; }
+h1 em { font-style: normal; color: var(--blue); }
+h2 { font-size: 24px; letter-spacing: -0.03em; font-weight: 600; margin: 0; text-wrap: balance; }
+h3 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+p { margin: 0; max-width: 68ch; }
+.lead { color: var(--muted); }
+.lead a, a { color: var(--blue); }
+.meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; background: var(--soft); color: var(--ink); white-space: nowrap; }
+.pill.voorstel { background: var(--blue-soft); color: var(--blue); }
+.pill.besloten { background: var(--green-soft); color: var(--green); }
+.pill.open { background: var(--yellow-soft); color: #8a5a00; }
+:root[data-theme="dark"] .pill.open { color: var(--yellow); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.open { color: var(--yellow); } }
+.pill.risk { background: var(--red-soft); color: var(--red); }
+section { display: flex; flex-direction: column; gap: 16px; }
+.sec-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; flex-wrap: wrap; }
+.plate { background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 18px; overflow-x: auto; }
+.plate svg { width: 100%; min-width: 760px; height: auto; display: block; }
+.plate .hit { cursor: pointer; }
+.plate .hit:hover rect, .plate .hit:focus rect { stroke: var(--blue); stroke-width: 2; }
+.plate .hit:focus { outline: none; }
+.swipe-hint { display: none; font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 10px; border-radius: 3px; display: inline-block; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font: inherit; font-size: 13px; font-weight: 600; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 12px; cursor: pointer; }
+button:hover { border-color: var(--blue); }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.cards { display: flex; flex-direction: column; gap: 10px; }
+details.card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }
+details.card[open] { border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); }
+details.card > summary { list-style: none; cursor: pointer; padding: 14px 18px; display: grid; grid-template-columns: 54px minmax(0, 1fr) auto 18px; gap: 4px 14px; align-items: center; }
+details.card > summary::-webkit-details-marker { display: none; }
+summary .id { grid-column: 1; grid-row: 1; }
+summary h3 { grid-column: 2; grid-row: 1; }
+.choice { grid-column: 2; grid-row: 2; color: var(--muted); font-size: 14px; }
+.summary-pills { grid-column: 3; grid-row: 1; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chev { grid-column: 4; grid-row: 1 / span 2; width: 18px; height: 18px; transition: transform .2s; color: var(--muted); }
+details[open] > summary .chev { transform: rotate(180deg); }
+.id { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.body { padding: 0 18px 18px 86px; display: flex; flex-direction: column; gap: 14px; }
+.body h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.body ul { margin: 0; padding-left: 18px; }
+.body li + li { margin-top: 3px; }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; border-top: 0; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+tr.chosen td { background: var(--blue-soft); }
+.doubt { background: var(--yellow-soft); border-radius: 12px; padding: 12px 14px; }
+.doubt h4 { color: #8a5a00; }
+:root[data-theme="dark"] .doubt h4 { color: var(--yellow); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .doubt h4 { color: var(--yellow); } }
+.refs { font-size: 13px; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 12.5px; background: var(--soft); padding: 1px 5px; border-radius: 5px; }
+.flows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.flows details.card > summary { grid-template-columns: 30px minmax(0, 1fr) auto 18px; }
+.flows .body { padding-left: 62px; }
+.steps { margin: 0; padding-left: 18px; }
+.crit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.crit article { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.crit article p { font-size: 14px; color: var(--muted); }
+.crit article .advies { color: var(--ink); }
+.qs { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 6px 18px; }
+.qs label { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.qs label:first-child { border-top: 0; }
+.qs input { margin-top: 4px; accent-color: var(--blue); }
+footer { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  header { grid-template-columns: minmax(0, 1fr); }
+  .flows, .crit { grid-template-columns: minmax(0, 1fr); }
+  details.card > summary, .flows details.card > summary { grid-template-columns: minmax(0, 1fr) 18px; }
+  summary .id { grid-column: 1; grid-row: 1; }
+  summary h3 { grid-column: 1; grid-row: 2; }
+  .choice { grid-column: 1; grid-row: 3; }
+  .summary-pills { grid-column: 1; grid-row: 4; justify-content: flex-start; margin-top: 4px; }
+  .chev { grid-column: 2; grid-row: 1 / span 2; }
+  .swipe-hint { display: block; }
+  .body, .flows .body { padding-left: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">HomeZero Workspace · voor het gesprek met de developer · 5 nov 2026</div>
+      <h1>Eén server, <em>eigen koppelingen</em>, Git als bron.</h1>
+    </div>
+    <div>
+      <p class="lead">De webapp vervangt het artifact-prototype. Elke collega logt in met Google en koppelt eenmalig Slack. De contextlaag blijft de GitHub-repo HomeZero-context. Klik op een onderdeel van de plaat of open een keuze voor het waarom, de alternatieven en waar ik twijfel. Achtergrond: het <a href="https://claude.ai/artifact/RbPjkSAM6w2vLNVkvhB37p">bouwplan in stories</a> en het <a href="https://claude.ai/artifact/4CzejHBSKjJNrvBNESpYw4">prototype</a>.</p>
+      <div class="meta"><span class="pill voorstel">Voorstel</span><span class="pill besloten">Besloten</span><span class="pill open">Open vraag</span><span class="pill risk">Risico</span></div>
+    </div>
+  </header>
+
+  <section aria-labelledby="plaat">
+    <div class="sec-head"><h2 id="plaat">De plaat</h2><div class="legend"><span><i class="sw" style="background:var(--blue-soft);border:1px solid var(--blue)"></i>Op de Hetzner-server</span><span><i class="sw" style="background:var(--soft);border:1px solid var(--line)"></i>Extern, per collega gekoppeld</span><span><i class="sw" style="background:var(--yellow-soft);border:1px solid var(--yellow)"></i>Bron van waarheid</span></div></div>
+    <div class="plate">
+      <p class="swipe-hint">Veeg opzij om de hele plaat te zien. Tik op een blok voor de keuze erachter.</p>
+      <svg viewBox="0 0 1000 560" role="img" aria-labelledby="plaat-t" font-family="Inter, system-ui, sans-serif">
+        <title id="plaat-t">Architectuur: collega's en Claude via de proxy naar web-app, API en worker op één Hetzner-server; Postgres met back-up; externe bronnen Google, Slack, Jira, Wispr, GitHub en Anthropic</title>
+        <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--muted)"/></marker></defs>
+        <!-- server -->
+        <rect x="200" y="30" width="440" height="510" rx="18" fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="1.5"/>
+        <text x="220" y="56" font-size="14" font-weight="600" fill="var(--ink)">Hetzner Cloud CX32 · homezero.verveen.me</text>
+        <text x="220" y="74" font-size="12" fill="var(--muted)">Docker via Coolify, alles in containers, verhuisbaar</text>
+        <!-- verbindingen -->
+        <g fill="none" stroke="var(--muted)" stroke-width="1.3">
+          <path d="M170 120 H190 V112 H222" marker-end="url(#ar)"/>
+          <path d="M170 450 H196 V126 H222" marker-end="url(#ar)"/>
+          <path d="M320 132 V158" marker-end="url(#ar)"/>
+          <path d="M520 132 V158" marker-end="url(#ar)"/>
+          <path d="M412 190 H428" marker-end="url(#ar)"/>
+          <path d="M520 222 V250" marker-end="url(#ar)"/>
+          <path d="M470 222 V340" marker-end="url(#ar)"/>
+          <path d="M560 312 V340" marker-end="url(#ar)"/>
+          <path d="M420 412 V448" marker-end="url(#ar)"/>
+          <path d="M612 190 H664"/><path d="M612 282 H664"/>
+          <path d="M664 66 V496"/>
+          <path d="M664 70 H690" marker-end="url(#ar)"/><path d="M664 150 H690" marker-end="url(#ar)"/><path d="M664 226 H690" marker-end="url(#ar)"/><path d="M664 300 H690" marker-end="url(#ar)"/><path d="M664 386 H690" marker-end="url(#ar)"/><path d="M664 476 H690" marker-end="url(#ar)"/>
+        </g>
+        <text x="672" y="526" font-size="11" fill="var(--muted)">OAuth per collega · push waar het kan</text>
+        <!-- clients -->
+        <g class="hit" tabindex="0" data-d="d-auth" role="button" aria-label="Collega's: inloggen"><rect x="20" y="80" width="150" height="84" rx="12" fill="var(--panel)" stroke="var(--line)"/><text x="34" y="106" font-size="14" font-weight="600" fill="var(--ink)">Collega's</text><text x="34" y="126" font-size="12" fill="var(--muted)">browser of PWA</text><text x="34" y="144" font-size="12" fill="var(--muted)">alleen @homezero.nl</text></g>
+        <g class="hit" tabindex="0" data-d="d-mcp" role="button" aria-label="Claude: MCP-server"><rect x="20" y="404" width="150" height="92" rx="12" fill="var(--panel)" stroke="var(--line)"/><text x="34" y="430" font-size="14" font-weight="600" fill="var(--ink)">Claude</text><text x="34" y="450" font-size="12" fill="var(--muted)">routines, Desktop,</text><text x="34" y="468" font-size="12" fill="var(--muted)">Claude Code via MCP</text></g>
+        <!-- inside server -->
+        <g class="hit" tabindex="0" data-d="d-host" role="button" aria-label="Proxy en hosting"><rect x="222" y="92" width="396" height="40" rx="10" fill="var(--panel)" stroke="var(--line)"/><text x="420" y="117" font-size="13" text-anchor="middle" fill="var(--ink)">Proxy met TLS, preview per pull request</text></g>
+        <g class="hit" tabindex="0" data-d="d-stack" role="button" aria-label="Web-app"><rect x="222" y="158" width="190" height="64" rx="10" fill="var(--panel)" stroke="var(--line)"/><text x="317" y="185" font-size="14" font-weight="600" text-anchor="middle" fill="var(--ink)">Web-app</text><text x="317" y="204" font-size="12" text-anchor="middle" fill="var(--muted)">React, toetsenbord, huisstijl</text></g>
+        <g class="hit" tabindex="0" data-d="d-stack" role="button" aria-label="API"><rect x="428" y="158" width="184" height="64" rx="10" fill="var(--panel)" stroke="var(--line)"/><text x="520" y="185" font-size="14" font-weight="600" text-anchor="middle" fill="var(--ink)">API + MCP</text><text x="520" y="204" font-size="12" text-anchor="middle" fill="var(--muted)">Hono, sessies, OAuth 2.1</text></g>
+        <g class="hit" tabindex="0" data-d="d-jobs" role="button" aria-label="Worker"><rect x="472" y="250" width="140" height="62" rx="10" fill="var(--panel)" stroke="var(--line)"/><text x="542" y="276" font-size="14" font-weight="600" text-anchor="middle" fill="var(--ink)">Worker</text><text x="542" y="295" font-size="12" text-anchor="middle" fill="var(--muted)">sync, index, jobs</text></g>
+        <g class="hit" tabindex="0" data-d="d-db" role="button" aria-label="Postgres"><rect x="222" y="340" width="390" height="72" rx="10" fill="var(--panel)" stroke="var(--line)"/><text x="417" y="366" font-size="14" font-weight="600" text-anchor="middle" fill="var(--ink)">Postgres 16</text><text x="417" y="386" font-size="12" text-anchor="middle" fill="var(--muted)">eigen rijen per collega (RLS) · tokens versleuteld</text><text x="417" y="402" font-size="12" text-anchor="middle" fill="var(--muted)">zoekindex van de contextlaag (tekst + pgvector)</text></g>
+        <g class="hit" tabindex="0" data-d="d-ops" role="button" aria-label="Back-up"><rect x="222" y="448" width="390" height="48" rx="10" fill="var(--panel)" stroke="var(--line)" stroke-dasharray="5 4"/><text x="417" y="477" font-size="13" text-anchor="middle" fill="var(--ink)">Nachtelijke back-up naar Hetzner Storage Box</text></g>
+        <!-- extern -->
+        <g class="hit" tabindex="0" data-d="d-google" role="button" aria-label="Google"><rect x="690" y="42" width="290" height="58" rx="12" fill="var(--soft)" stroke="var(--line)"/><text x="706" y="66" font-size="14" font-weight="600" fill="var(--ink)">Google</text><text x="706" y="86" font-size="12" fill="var(--muted)">Gmail, Agenda, Taken · OAuth Intern</text></g>
+        <g class="hit" tabindex="0" data-d="d-slack" role="button" aria-label="Slack"><rect x="690" y="122" width="290" height="58" rx="12" fill="var(--soft)" stroke="var(--line)"/><text x="706" y="146" font-size="14" font-weight="600" fill="var(--ink)">Slack</text><text x="706" y="166" font-size="12" fill="var(--muted)">interne app, user token, Events API</text></g>
+        <g class="hit" tabindex="0" data-d="d-jira" role="button" aria-label="Jira en Wispr"><rect x="690" y="198" width="290" height="58" rx="12" fill="var(--soft)" stroke="var(--line)"/><text x="706" y="222" font-size="14" font-weight="600" fill="var(--ink)">Jira</text><text x="706" y="242" font-size="12" fill="var(--muted)">sprint HOM, alleen lezen</text></g>
+        <g class="hit" tabindex="0" data-d="d-jira" role="button" aria-label="Wispr"><rect x="690" y="272" width="290" height="58" rx="12" fill="var(--soft)" stroke="var(--line)"/><text x="706" y="296" font-size="14" font-weight="600" fill="var(--ink)">Wispr Flow</text><text x="706" y="316" font-size="12" fill="var(--muted)">alleen meetings na de laatste nachtrun</text></g>
+        <g class="hit" tabindex="0" data-d="d-ctx" role="button" aria-label="GitHub contextlaag"><rect x="690" y="348" width="290" height="76" rx="12" fill="var(--yellow-soft)" stroke="var(--yellow)" stroke-width="1.5"/><text x="706" y="372" font-size="14" font-weight="600" fill="var(--ink)">GitHub · bron van waarheid</text><text x="706" y="392" font-size="12" fill="var(--muted)">HomeZero-context (lezen, webhooks)</text><text x="706" y="410" font-size="12" fill="var(--muted)">Persoonlijk-repo per collega</text></g>
+        <g class="hit" tabindex="0" data-d="d-claude" role="button" aria-label="Anthropic API"><rect x="690" y="448" width="290" height="58" rx="12" fill="var(--soft)" stroke="var(--line)"/><text x="706" y="472" font-size="14" font-weight="600" fill="var(--ink)">Anthropic API</text><text x="706" y="492" font-size="12" fill="var(--muted)">Claude op de server, budget per collega</text></g>
+      </svg>
+    </div>
+  </section>
+
+  <section aria-labelledby="stromen">
+    <div class="sec-head"><h2 id="stromen">Hoe data door de plaat loopt</h2></div>
+    <div class="flows">
+      <details class="card"><summary><span class="id">1</span><h3>Inloggen en koppelen</h3><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Google voor iedereen, daarna één klik voor Slack</span></summary><div class="body"><ol class="steps"><li>Google OIDC met <code>hd=homezero.nl</code>; de server checkt <code>email_verified</code>, het domein en de allowlist.</li><li>Wizard vraagt Gmail-, Agenda- en Taken-rechten (incrementeel, offline) en daarna Slack via de interne app.</li><li>Refresh tokens gaan versleuteld in Postgres; de browser ziet nooit een token.</li><li>GitHub: de org-installatie leest HomeZero-context; de collega koppelt zijn Persoonlijk-repo.</li></ol></div></details>
+      <details class="card"><summary><span class="id">2</span><h3>Synchroniseren</h3><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Push waar het kan, anders pollen</span></summary><div class="body"><ol class="steps"><li>Gmail <code>users.watch</code> naar Pub/Sub, dan <code>history.list</code> per collega.</li><li>Agenda <code>events.watch</code> (kanalen elke week vernieuwen), Slack Events API, Jira en Taken pollen.</li><li>De worker zet alleen metadata en status in Postgres; mailtekst wordt live opgehaald en kort gecachet.</li><li>De browser krijgt wijzigingen via server-sent events.</li></ol></div></details>
+      <details class="card"><summary><span class="id">3</span><h3>Contextlaag lezen en schrijven</h3><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Webhook, index, en schrijven alleen volgens het schema</span></summary><div class="body"><ol class="steps"><li>Push op HomeZero-context: webhook, de worker haalt gewijzigde bestanden op en werkt de index bij (register, brief, acties als rijen, meetings).</li><li>Lezen gaat uit de index; een bestand openen haalt de volledige tekst live op.</li><li>Schrijven (afvinken, datum bevestigen, meeting wegschrijven): pull --rebase, regel toevoegen, <code>contextcheck.py --push</code>, commit of PR volgens B1.</li><li>Nooit <code>admin.md</code> richting partner; <code>geheim_voor</code> als harde filter.</li></ol></div></details>
+      <details class="card"><summary><span class="id">4</span><h3>Een vraag aan Claude</h3><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Kleine context, bron bij elk antwoord</span></summary><div class="body"><ol class="steps"><li>De API stelt de context samen: register-regel, brief, open acties, laatste meeting, plus wat de vraag nodig heeft uit mail of Slack.</li><li>Prompt caching op het vaste deel; model per functie; budget per collega.</li><li>Antwoorden noemen bron en datum. Alles uit bronnen is data, nooit een instructie.</li><li>Teksten naar buiten zijn altijd een concept; een mens drukt op Versturen.</li></ol></div></details>
+      <details class="card"><summary><span class="id">5</span><h3>Routines via MCP</h3><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Claude schrijft namens de collega, met OAuth</span></summary><div class="body"><ol class="steps"><li>Ochtendbriefing en weekprep blijven het brein; ze lezen de laag en schrijven hun uitkomst via de MCP-server van de app.</li><li>Elke collega autoriseert Claude één keer (OAuth 2.1); een token van A kan niet bij B.</li><li>Weinig tools, met leesrecepten in de serverinstructies en bevestigen vóór schrijven.</li><li>Dit vervangt de huidige tussenoplossing: de routine schrijft nu naar de artifact-opslag.</li></ol></div></details>
+      <details class="card"><summary><span class="id">↺</span><h3>Wat de app zelf bewaart</h3><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Alleen wat nergens anders staat</span></summary><div class="body"><ul><li>Leesstatus, planning (1–5), weekscore, vastgezette zoekopdrachten, voorkeuren, auditlog.</li><li>Niet: mailtekst, Slack-geschiedenis, acties (die staan in <code>acties.md</code>), taken (Google Taken of <code>taken.md</code>).</li><li>Gevolg: back-up en AVG blijven klein, en de repo blijft de enige bron voor afspraken.</li></ul></div></details>
+    </div>
+  </section>
+
+  <section aria-labelledby="keuzes">
+    <div class="sec-head"><h2 id="keuzes">Keuzes, met het waarom</h2><div class="btns"><button type="button" id="open-all">Alles uitklappen</button><button type="button" id="close-all">Alles inklappen</button></div></div>
+    <div class="cards" id="decisions">
+
+      <details class="card" id="d-host"><summary><span class="id">01</span><h3>Hosting: Hetzner Cloud met Coolify</h3><span class="summary-pills"><span class="pill voorstel">Voorstel</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">CX32 in Neurenberg of Falkenstein, containers, preview per PR</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>Eén goedkope EU-server is genoeg voor een intern team van rond de 15 mensen. Coolify geeft automatische TLS, deploy vanuit GitHub en een preview per pull request, en dat is precies wat de story-werkwijze (zelftest plus menselijke review op een preview) nodig heeft.</p></div>
+          <div class="tbl"><table><thead><tr><th>Optie</th><th>Voor</th><th>Tegen</th></tr></thead><tbody>
+            <tr class="chosen"><td>Hetzner + Coolify</td><td>Previews per PR, UI voor secrets en logs, makkelijk verhuizen</td><td>Extra laag om bij te houden; Coolify zelf moet ook updates krijgen</td></tr>
+            <tr><td>Hetzner + Compose + Caddy</td><td>Minimaal, alles in de repo</td><td>Previews zelf bouwen; meer handwerk per deploy</td></tr>
+            <tr><td>Vercel + Supabase (Standupy-stijl)</td><td>Snel starten, beheerd</td><td>Geen echte worker, niet op eigen server, lastiger verhuizen, kosten per gebruik</td></tr>
+          </tbody></table></div>
+          <div class="doubt"><h4>Waar ik twijfel</h4><p>Als je developer Coolify niet kent, kost het leren meer dan het oplevert. Compose + Caddy met een simpele preview-job in GitHub Actions is dan prima. Leg de server vast als script (cloud-init) in de repo; dat maakt verhuizen echt eenvoudig.</p></div>
+          <p class="refs">Raakt HZW-002 t/m 005, 082 · open vragen H1, H2, H3, H4</p></div></details>
+
+      <details class="card" id="d-stack"><summary><span class="id">02</span><h3>Stack: TypeScript, React + Vite, Hono</h3><span class="summary-pills"><span class="pill open">Open vraag S1</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Eén taal van browser tot worker, monorepo met web, api, worker en gedeelde types</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>De app is een toetsenbord-zware single-page app met veel live updates; server-rendering voegt daar weinig toe. Een losse API (Hono) houdt de MCP-server, webhooks en de worker in dezelfde codebase, met gedeelde types tussen frontend en backend.</p></div>
+          <div class="tbl"><table><thead><tr><th>Optie</th><th>Voor</th><th>Tegen</th></tr></thead><tbody>
+            <tr class="chosen"><td>React + Vite + Hono</td><td>Simpel, snel, dicht bij het prototype</td><td>Routing en data-fetching zelf kiezen (bijv. TanStack Router en Query)</td></tr>
+            <tr><td>Next.js (Notebase-stijl)</td><td>Eén framework, bekend, veel voorbeelden</td><td>Serverless-denken past slecht bij een vaste worker; meer magie dan nodig</td></tr>
+            <tr><td>Mendix (HomeZero-standaard)</td><td>Het team kent het</td><td>Niet gemaakt voor deze soort app (toetsenbord, realtime, eigen OAuth); zie S4</td></tr>
+          </tbody></table></div>
+          <div class="doubt"><h4>Waar ik twijfel</h4><p>De voorkeur en ervaring van je developer wegen zwaarder dan mijn voorkeur. Next.js is ook verdedigbaar zolang de worker een los proces blijft. Kies vóór HZW-001; wisselen daarna is duur.</p></div>
+          <p class="refs">Raakt HZW-001, 040 · open vragen S1, S4</p></div></details>
+
+      <details class="card" id="d-db"><summary><span class="id">03</span><h3>Data: Postgres met rij-beveiliging per collega</h3><span class="summary-pills"><span class="pill voorstel">Voorstel</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Postgres 16, Drizzle, RLS met <code>SET LOCAL app.user_id</code> per request, pgvector voor de contextindex</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>Iedere collega mag alleen zijn eigen mail-, Slack- en planningsdata zien. Rij-beveiliging in de database maakt dat een harde grens in plaats van een afspraak in de code. De API zet per request de gebruiker in de transactie; de applicatie draait als een rol zonder BYPASSRLS.</p></div>
+          <div class="tbl"><table><thead><tr><th>Optie</th><th>Voor</th><th>Tegen</th></tr></thead><tbody>
+            <tr class="chosen"><td>Eigen Postgres + RLS</td><td>Harde scheiding, alles in één database, pgvector erbij</td><td>Beheer zelf: updates, back-ups, monitoring</td></tr>
+            <tr><td>Supabase (zelf gehost)</td><td>Auth en RLS-tooling meegeleverd</td><td>Zwaar om zelf te hosten; Notebase laat zien hoe RLS dan alsnog omzeild wordt met de service-rol</td></tr>
+            <tr><td>Alleen checks in de code</td><td>Simpel</td><td>Eén vergeten filter lekt data van een collega</td></tr>
+          </tbody></table></div>
+          <div class="doubt"><h4>Waar ik twijfel</h4><p>RLS vraagt discipline bij migraties en tests. Neem een test op die met gebruiker A probeert rijen van B te lezen (HZW-020); die test is belangrijker dan de RLS-regels zelf.</p></div>
+          <p class="refs">Raakt HZW-020, 021, 080 · open vragen S2, P2</p></div></details>
+
+      <details class="card" id="d-jobs"><summary><span class="id">04</span><h3>Achtergrondwerk: worker met pg-boss</h3><span class="summary-pills"><span class="pill voorstel">Voorstel</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Jobs in Postgres; geen Redis nodig</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>Sync per collega, webhooks verwerken, de contextindex bijwerken en kanalen vernieuwen zijn allemaal jobs met herhaalpogingen. pg-boss gebruikt de bestaande database, dus geen extra dienst en jobs zitten in dezelfde back-up.</p></div>
+          <div class="tbl"><table><thead><tr><th>Optie</th><th>Voor</th><th>Tegen</th></tr></thead><tbody>
+            <tr class="chosen"><td>pg-boss</td><td>Eén database, transacties met je data</td><td>Minder geschikt voor duizenden jobs per seconde (niet nodig)</td></tr>
+            <tr><td>BullMQ + Redis</td><td>Volwassen, dashboard</td><td>Extra dienst om te beheren</td></tr>
+            <tr><td>Cron-routes (Notebase)</td><td>Simpel</td><td>Geen herhaalpogingen, tijdslimieten, slecht zichtbaar</td></tr>
+          </tbody></table></div>
+          <p class="refs">Raakt HZW-036, 060</p></div></details>
+
+      <details class="card" id="d-auth"><summary><span class="id">05</span><h3>Inloggen: Google OIDC, alleen @homezero.nl</h3><span class="summary-pills"><span class="pill voorstel">Voorstel</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Better Auth (of Auth.js), sessies in Postgres, allowlist-tabel met teamleden</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>Iedereen heeft al een Google-account van HomeZero; geen wachtwoorden. Een bibliotheek in plaats van zelfbouw voorkomt de klassieke fouten met sessies en CSRF. Better Auth heeft ook een OAuth-providerplugin die we kunnen hergebruiken voor de MCP-server (K10).</p></div>
+          <ul><li>Server-side checks: <code>email_verified</code>, domein en <code>hd</code>, plus de allowlist (zoals in Standupy en Notebase).</li><li>Cookie HttpOnly, Secure, SameSite=Lax; 30 dagen met verlenging.</li></ul>
+          <p class="refs">Raakt HZW-010 t/m 014 · open vragen S3, K1</p></div></details>
+
+      <details class="card" id="d-google"><summary><span class="id">06</span><h3>Google: één OAuth-client op Intern</h3><span class="summary-pills"><span class="pill open">Open vraag K1</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">gmail.modify, calendar.events, calendar.readonly, tasks; push voor Gmail en Agenda</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>Op Intern mogen alleen homezero.nl-accounts inloggen en vraagt Google geen verificatie of jaarlijkse audit, ook niet voor Gmail. Dat scheelt maanden en duizenden euro's.</p></div>
+          <ul><li>Tokens versleuteld met envelope-encryptie (een datasleutel per collega, hoofdsleutel in de omgeving).</li><li>Gmail-push via Pub/Sub (topic in hetzelfde project), Agenda-webhooks die we wekelijks vernieuwen, Taken pollen.</li></ul>
+          <div class="doubt"><h4>Waar ik twijfel</h4><p>Privé-accounts (robertverveen@gmail.com) kunnen niet mee. Dat is voor een werkapp juist goed, maar Lou en vakanties moeten dan via gedeelde agenda's binnenkomen. Check dat vóór HZW-030.</p></div>
+          <p class="refs">Raakt HZW-030 t/m 032, 036 · open vragen K1, K2, K5, P2</p></div></details>
+
+      <details class="card" id="d-slack"><summary><span class="id">07</span><h3>Slack: interne app met user token</h3><span class="summary-pills"><span class="pill open">Open vraag K3</span><span class="pill risk">Risico</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Echt gelezen zetten, eigen emoji, live via de Events API</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>Alleen een user token kan doen wat het prototype niet kan: <code>conversations.mark</code> (gelezen in Slack), unread-tellers en workspace-emoji als plaatje. Als interne app gelden de strengere limieten voor gedistribueerde apps niet.</p></div>
+          <div class="tbl"><table><thead><tr><th>Optie</th><th>Voor</th><th>Tegen</th></tr></thead><tbody>
+            <tr class="chosen"><td>Events API (webhook)</td><td>Live, geen polling</td><td>Publiek endpoint nodig (hebben we)</td></tr>
+            <tr><td>Socket Mode</td><td>Geen publiek endpoint</td><td>Eén lange verbinding om te bewaken; niet bedoeld voor productie op schaal</td></tr>
+          </tbody></table></div>
+          <div class="doubt"><h4>Waar ik twijfel</h4><p>Een user token kan alles wat de collega kan, ook DM's lezen. Vraag alleen de scopes die een story echt nodig heeft, log welke route welke scope gebruikt, en laat de tweede reviewer (HZW-080) dit expliciet aftekenen.</p></div>
+          <p class="refs">Raakt HZW-033, 045, 046, 080 · open vraag K3</p></div></details>
+
+      <details class="card" id="d-jira"><summary><span class="id">08</span><h3>Jira en Wispr: lezen, zo weinig mogelijk</h3><span class="summary-pills"><span class="pill besloten">W1 besloten</span><span class="pill open">K4 open</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Jira via Atlassian OAuth 3LO; meetings komen uit de contextlaag</span></summary>
+        <div class="body"><ul><li>Jira: alleen de lopende sprint van HOM en het Tester-veld; nooit schrijven (AGENTS.md).</li><li>Wispr: de persoonlijke nachtdienst zet meetings al in <code>meetings/</code> en <code>acties.md</code>. Live Wispr alleen voor meetings van na de laatste nachtrun.</li></ul><p class="refs">Raakt HZW-034, 035 · open vragen K4, W1</p></div></details>
+
+      <details class="card" id="d-ctx"><summary><span class="id">09</span><h3>Contextlaag: Git blijft de bron</h3><span class="summary-pills"><span class="pill besloten">Structuur besloten</span><span class="pill open">B1 open</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">GitHub App op de org om te lezen, koppeling per collega voor de Persoonlijk-repo; index in Postgres</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>De structuur ligt vast in <code>kaart.md</code> en <code>_systeem/schema.md</code>. De app definieert geen eigen paden en kopieert de waarheid niet: Postgres heeft alleen een index (register, briefs, acties als rijen, meetings) om snel te zoeken en te tonen.</p></div>
+          <div class="tbl"><table><thead><tr><th>Optie</th><th>Voor</th><th>Tegen</th></tr></thead><tbody>
+            <tr class="chosen"><td>GitHub App + user-to-server tokens</td><td>Webhooks, korte tokens, schrijven namens de collega zichtbaar in Git</td><td>Iets meer opzetwerk</td></tr>
+            <tr><td>Fine-grained token per collega</td><td>Simpel</td><td>Verlopen, rouleren, handmatig</td></tr>
+            <tr><td>Kennis in de database (Notebase)</td><td>Snel bewerken in de app</td><td>Dubbele waarheid naast Git; botst met de nachtdiensten</td></tr>
+          </tbody></table></div>
+          <div class="doubt"><h4>Waar ik twijfel</h4><p>Schrijven vanuit de app in een repo waar ook routines schrijven geeft conflicten. Mijn advies: fase 1 en 2 alleen lezen; schrijven pas in fase 3, met <code>pull --rebase</code>, de contextcheck en nooit regels van anderen herschrijven. Neem B1 (direct of via PR) vóór HZW-062.</p></div>
+          <p class="refs">Raakt HZW-060 t/m 069 · open vragen B1, C3, C6, C7</p></div></details>
+
+      <details class="card" id="d-search"><summary><span class="id">10</span><h3>Zoeken: hybride, maar alleen over de contextlaag</h3><span class="summary-pills"><span class="pill open">Nieuw: embeddings</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Full-text + trigram + pgvector, samengevoegd met Reciprocal Rank Fusion; mail en Slack via hun eigen zoek-API</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>Het prototype bewijst dat live zoeken in Gmail en Slack goed werkt (organisatie, onderwerp, tijdlijn, Gantt). Die inhoud indexeren we niet zelf: dat botst met P2 (geen mailtekst bewaren). De contextlaag indexeren we wel, met het patroon uit Notebase.</p></div>
+          <div class="doubt"><h4>Open punt</h4><p>Anthropic heeft geen embeddings-API. Kies tussen een externe dienst (bijv. Voyage, extra verwerker voor de AVG) en een klein meertalig model dat op de server zelf draait (geen extra verwerker, CPU is genoeg voor ongeveer 400 bestanden). Mijn voorkeur: lokaal model, en semantisch zoeken pas na de pilot als full-text tekortschiet.</p></div>
+          <p class="refs">Raakt HZW-048, 060, 063 · open vragen P1, P2 · de embeddings-keuze staat nog niet in de lijst</p></div></details>
+
+      <details class="card" id="d-claude"><summary><span class="id">11</span><h3>Claude in de app: op de server, concepten naar buiten</h3><span class="summary-pills"><span class="pill open">Open vraag A1</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Anthropic API met prompt caching, model per functie, budget per collega</span></summary>
+        <div class="body"><ul><li>Nooit een sleutel in de browser; de API is de enige die Claude aanroept.</li><li>Snel model voor zoeken, extractie en samenvatten; het zwaarste model alleen voor recaps en meetingprep.</li><li>Elke tekst naar een partner gaat door het filter uit HZW-068 (admin.md, intern oordeel, geheim_voor) en blijft een concept.</li></ul>
+          <p class="refs">Raakt HZW-050, 051, 063, 068 · open vragen A1, A2, A3</p></div></details>
+
+      <details class="card" id="d-mcp"><summary><span class="id">12</span><h3>MCP-server van de workspace</h3><span class="summary-pills"><span class="pill voorstel">Voorstel</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Officiële TypeScript-SDK, OAuth 2.1 via de auth-bibliotheek, weinig tools</span></summary>
+        <div class="body"><div><h4>Waarom</h4><p>Zo schrijven de ochtendbriefing en de weekprep direct namens de collega in de app, in plaats van via de artifact-opslag zoals nu. Standupy en Notebase doen dit allebei; Notebase laat ook zien wat niet te doen: een zelfgeschreven OAuth-server van bijna 2.000 regels in één bestand.</p></div>
+          <ul><li>Tools (voorstel): briefing schrijven, weekdoelen lezen en zetten, tracker lezen, item-status zetten, context zoeken.</li><li>Leesrecepten in de serverinstructies; bevestigen vóór schrijven; leeslog per collega.</li></ul>
+          <p class="refs">Raakt HZW-052, 053</p></div></details>
+
+      <details class="card" id="d-ops"><summary><span class="id">13</span><h3>Beheer: monitoring, back-up, herstel</h3><span class="summary-pills"><span class="pill voorstel">Voorstel</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">Uptime-check, foutregistratie, nachtelijke versleutelde back-up, maandelijkse hersteltest</span></summary>
+        <div class="body"><ul><li>Doel voorstel: maximaal 24 uur dataverlies en binnen 4 uur weer op (intern gereedschap; de bronnen zelf blijven bij Google, Slack en GitHub).</li><li>Back-up met pgBackRest of restic naar een Storage Box; de test herstelt naar een lege database en telt rijen.</li><li>Foutregistratie: GlitchTip zelf gehost of Sentry; logs zonder persoonsgegevens.</li></ul>
+          <p class="refs">Raakt HZW-007, 008, 082 · open vragen H5, H6</p></div></details>
+    </div>
+  </section>
+
+  <section aria-labelledby="kritisch">
+    <div class="sec-head"><h2 id="kritisch">Kritische kanttekeningen bij het plan</h2></div>
+    <div class="crit">
+      <article><span class="pill risk" style="align-self:flex-start">Drie takenbronnen</span><h3>Google Taken, taken.md en de tracker</h3><p>Robert plant in Google Taken, de nachtdienst schrijft taken.md, de tracker heeft eigen toezeggingen. Zonder één leidende bron per collega ontstaan dubbelingen.</p><p class="advies">Advies: per collega één takenlijst kiezen (HZW-069) en de andere als voorstel tonen, zoals het prototype nu doet.</p></article>
+      <article><span class="pill risk" style="align-self:flex-start">Twee schrijvers</span><h3>App en routines in dezelfde repo</h3><p>Nachtdiensten en klant-recap schrijven al direct op main. Een app die ook schrijft verdubbelt de kans op conflicten en fouten in actieregels.</p><p class="advies">Advies: eerst alleen lezen; schrijven pas in fase 3, achter de contextcheck en met B1 besloten.</p></article>
+      <article><span class="pill open" style="align-self:flex-start">Tempo</span><h3>Fase 2 is groot</h3><p>Zes adapters en negen schermen voordat een collega iets ziet. Het artifact doet veel daarvan al, met de connectors van claude.ai.</p><p class="advies">Advies: bouw eerst wat het artifact niet kan (echte Slack-gelezen-status, push, inloggen voor collega's) en laat het prototype de rest blijven doen tot de webapp het overneemt.</p></article>
+      <article><span class="pill open" style="align-self:flex-start">Overlap</span><h3>DiCo-platform van Mike</h3><p>Mike werkt aan een prototype voor één interface voor collega's en DiCo's. Dat raakt dezelfde behoefte.</p><p class="advies">Advies: R3 afstemmen vóór fase 2, zodat dit de basis of een onderdeel wordt in plaats van een tweede platform.</p></article>
+      <article><span class="pill risk" style="align-self:flex-start">Privacy</span><h3>Een server met toegang tot ieders mailbox</h3><p>Met refresh tokens kan de server mail, agenda en Slack van iedereen lezen. Dat is het grootste risico van dit plan.</p><p class="advies">Advies: P1 (verwerkingsregister) en de security-story vóór de pilot, niet erna; minimale scopes; auditlog van elke token-actie.</p></article>
+      <article><span class="pill voorstel" style="align-self:flex-start">Het brein</span><h3>Logica niet dubbel bouwen</h3><p>Ochtendbriefing, weekprep, nachtdienst en klant-recap bevatten al veel slimheid. Als de app dezelfde regels opnieuw bouwt, lopen ze uit elkaar.</p><p class="advies">Advies: routines blijven het brein en schrijven via MCP; de app is het gezicht en het stuur.</p></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="vragen">
+    <div class="sec-head"><h2 id="vragen">Om met je developer te beslissen</h2><span class="refs">Codes zoals S1 en B1 verwijzen naar de open vragen in het bouwplan. Aanvinken wordt niet opgeslagen.</span></div>
+    <div class="qs">
+      <label><input type="checkbox" id="q1"><span><b>Stack (S1):</b> React + Vite + Hono, of Next.js met een losse worker? Wat kent de developer het best?</span></label>
+      <label><input type="checkbox" id="q2"><span><b>Uitrol (H4):</b> Coolify, of Docker Compose + Caddy met previews via GitHub Actions?</span></label>
+      <label><input type="checkbox" id="q3"><span><b>Auth (S3):</b> Better Auth, ook als OAuth-provider voor de MCP-server, of Auth.js plus een losse OAuth-oplossing?</span></label>
+      <label><input type="checkbox" id="q4"><span><b>Rij-beveiliging (keuze 03, S2):</b> RLS in Postgres met een app-rol zonder BYPASSRLS, en de test A-mag-niet-bij-B als vaste CI-test?</span></label>
+      <label><input type="checkbox" id="q5"><span><b>Tokens (keuze 06):</b> welke versleuteling en waar staat de hoofdsleutel? Hoe roteren we hem?</span></label>
+      <label><input type="checkbox" id="q6"><span><b>Embeddings (keuze 10):</b> lokaal model of externe dienst, en is full-text voor de pilot genoeg?</span></label>
+      <label><input type="checkbox" id="q7"><span><b>Schrijven in Git (B1):</b> direct na de check of via een PR, en wie lost conflicten op?</span></label>
+      <label><input type="checkbox" id="q8"><span><b>Tests:</b> contracttests met opgenomen API-antwoorden, Playwright met screenshots per story, en wie keurt de preview goed?</span></label>
+    </div>
+  </section>
+
+  <footer>Gemaakt op 5 november 2026 op basis van het bouwplan (3 nov, bijgewerkt 5 nov), HomeZero-context commit b82999c, en de apps Standupy en Notebase als inspiratie (alleen ideeën: Notebase heeft geen licentie).</footer>
+</div>
+
+<script>
+(function () {
+  const all = () => Array.from(document.querySelectorAll('details.card'));
+  document.getElementById('open-all').addEventListener('click', () => all().forEach(d => d.open = true));
+  document.getElementById('close-all').addEventListener('click', () => all().forEach(d => d.open = false));
+  const go = id => { const d = document.getElementById(id); if (!d) return; d.open = true; d.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); const s = d.querySelector('summary'); if (s) s.focus({ preventScroll: true }); };
+  document.querySelectorAll('.plate .hit').forEach(g => {
+    g.addEventListener('click', () => go(g.dataset.d));
+    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(g.dataset.d); } });
+  });
+})();
+</script>
