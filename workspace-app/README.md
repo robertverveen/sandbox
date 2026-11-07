@@ -1,3 +1,5 @@
+> **Verhuisd (7 nov 2026):** de Workspace-app staat nu in [robertverveen/homezero-workspace](https://github.com/robertverveen/homezero-workspace). Deze map is een archief; bouw en wijzig alleen daar.
+
 # HomeZero Workspace
 
 De webapp die het artifact-prototype (`workspace-prototype/index.html`, v17) vervangt: inloggen met Google
