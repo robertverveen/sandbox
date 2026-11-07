@@ -37,6 +37,9 @@ import {
   type Db,
   type ExportCollections,
   type ImportReport,
+  trackerItemVisible,
+  upsertContextIndex,
+  deleteContextIndexPath,
 } from '../src';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -82,7 +85,7 @@ async function totals(userId: string) {
   };
 }
 
-const EXPECTED = { tracker_items: 10, weekdoelen: 6, item_state: 8, pins: 2, briefings: 2, context_index: 10 };
+const EXPECTED = { tracker_items: 14, weekdoelen: 7, item_state: 15, pins: 2, briefings: 2, context_index: 10 };
 
 describe('export lezen', () => {
   it('JSON-bestand met collections: elke collectie met zijn docs', () => {
@@ -100,7 +103,7 @@ describe('export lezen', () => {
         'weekdoelen',
       ].sort(),
     );
-    expect(cols.commitments).toHaveLength(17);
+    expect(cols.commitments).toHaveLength(22);
     expect(cols.itemstate!.find((d) => d.id === 'tk:g1')!.data).toMatchObject({ plan: '2026-11-02', moved: 1 });
   });
 
@@ -221,6 +224,107 @@ describe('plan: export naar rijen (zonder database)', () => {
     expect(p.briefings.find((b) => b.date === '2026-10-29')!.title).toBe('☀️ Briefing do 29 okt');
   });
 
+  it('gtask zoals het prototype hem schrijft: object {id, tasklist} (planCommit) of tekst "gtask:<id>" (c-gtask)', () => {
+    const p = planImport(cols);
+    const t = (id: string) => p.tracker.find((x) => x.legacyId === id)!;
+    // planCommit(): patch.gtask = await gtaskAdd(...) = {id, tasklist}
+    expect(t('gt-plan')).toMatchObject({ gtask: 'tk-demo-1', planDate: '2026-11-03', naar: 'taken.md' });
+    expect(t('gt-plan').extra!.gtask).toEqual({ tasklist: 'L' });
+    // taskFromCommit(): 'gtask:' + id
+    expect(t('old-gt').gtask).toBe('abc');
+    expect(t('old-gt').extra).toEqual({});
+    // findId() vond geen id: geen kolomwaarde, maar de hele waarde blijft in extra (en het item blijft verborgen)
+    expect(t('gt-noid').gtask).toBeNull();
+    expect(t('gt-noid').extra!.gtask).toEqual({ id: null, tasklist: 'L' });
+    expect(p.waarschuwingen).toContain('commitments/gt-noid: veld gtask past niet in zijn kolom, bewaard in extra');
+    // Geen gtask: niets in extra
+    expect(t('dc3').gtask).toBeNull();
+    expect('gtask' in t('dc3').extra!).toBe(false);
+  });
+
+  it('de vondst van de criticus: {stroom:mijn, gtask:{id,tasklist}} en itemstate {read, handledBy} gaan niet verloren', () => {
+    const p = planImport({
+      commitments: [{ id: 'x1', data: { wat: 'Taak', stroom: 'mijn', gtask: { id: 't2', tasklist: 'demo' } } }],
+      itemstate: [{ id: 'sl_C1_1.2', data: { read: true, handledBy: 'Lisanne', at: 1793264400000 } }],
+    });
+    expect(p.tracker[0]).toMatchObject({ gtask: 't2', extra: { gtask: { tasklist: 'demo' } } });
+    expect(trackerItemVisible({ ...p.tracker[0]!, bron: null, overgezet: false } as never)).toBe(false);
+    expect(p.itemState[0]).toMatchObject({ read: true, answeredBy: 'Lisanne', extra: {} });
+  });
+
+  it('itemstatus: handledBy (wat het prototype schrijft) naar answered_by; answeredBy blijft een alias', () => {
+    const p = planImport(cols);
+    const st = (k: string) => p.itemState.find((s) => s.itemKey === k)!;
+    expect(st('sl_CFE_1761670000.000300')).toMatchObject({ read: true, answeredBy: 'Lisanne', extra: {} });
+    expect(st('sl_CFE_1761660000.000200')).toMatchObject({ answeredBy: 'Lisanne', extra: {} });
+    // Beide, verschillend: handledBy wint, answeredBy blijft in extra
+    const both = planImport({ itemstate: [{ id: 'k', data: { handledBy: 'A', answeredBy: 'B' } }] }).itemState[0]!;
+    expect(both).toMatchObject({ answeredBy: 'A', extra: { answeredBy: 'B' } });
+    // De andere setState-velden uit het prototype in extra
+    expect(st('sl_CFE_1761690000.000400').extra).toEqual({ reacted: 'eyes' });
+    expect(st('wm:r3').extra).toEqual({ recapSession: 'gestart' });
+    expect(st('wm:r4')).toMatchObject({ processed: true, extra: { added: 2 } });
+    expect(st('_post-2026-W44-review').extra).toEqual({ done: true, skipped: false });
+    expect(st('_nudge-repo').extra).toEqual({ until: '2026-11-05' });
+    expect(st('_taak-1a2b3c').extra).toEqual({ done: 'gtask' });
+    expect(st('_goals-2026-W45').extra).toEqual({ skip: true });
+  });
+
+  it('toezeggingen uit Inhalen (itemToCommit): src = item-sleutel, bron met key, bewijsregel en bewijs bewaard', () => {
+    const p = planImport(cols);
+    const i = p.tracker.find((x) => x.legacyId === 'inbox1')!;
+    expect(i).toMatchObject({
+      stroom: 'aan_mij',
+      status: 'waarschijnlijk_klaar',
+      srcKey: 'sl_CFE_1761680000.000500',
+      bewijs: 'Slack-bericht van jou met “sync”',
+      bron: { key: 'sl_CFE_1761680000.000500', label: 'Slack · #feenstra-hz' },
+    });
+    expect(i.extra!.bewijsregel).toEqual({ type: 'slack', to: '', keywords: ['sync'] });
+    // Een object als src (meegenomen weekdoel: {from}) gaat bij een weekdoel naar extra
+    expect(p.weekdoelen.find((w) => w.legacyId === 'wd-mee')!.extra!.src).toEqual({ from: 'dg0' });
+    // srcOf()-object als src bij een toezegging: key naar de kolom, de rest naar extra
+    const o = planImport({
+      commitments: [{ id: 'y', data: { wat: 'Y', stroom: 'aan_mij', src: { key: 'gm:1', label: 'Mail', url: null } } }],
+    }).tracker[0]!;
+    expect(o).toMatchObject({ srcKey: 'gm:1', extra: { src: { label: 'Mail', url: null } } });
+  });
+
+  it('een doorgeschoven weekdoel (stroom mijn) houdt week, outcome, outcomeNote, checks en lastCheck in extra', () => {
+    const p = planImport(cols);
+    const w = p.tracker.find((x) => x.legacyId === 'wd-door')!;
+    expect(w.stroom).toBe('mijn');
+    expect(w.extra).toMatchObject({
+      week: '2026-W43',
+      outcome: 'doorgeschoven',
+      outcomeNote: 'Pas na de mailing',
+      lastCheck: '2026-10-22',
+      checks: [
+        { d: '2026-10-22', h: 'oranje', note: '' },
+        { d: '2026-10-24', h: 'oranje', note: 'Pas na de mailing' },
+      ],
+    });
+    // en checks met een onbekende gezondheid blijven bij een weekdoel bewaard
+    expect(p.weekdoelen.find((x) => x.legacyId === 'dg2')!.extra!.checksOngeldig).toEqual([
+      { d: '2026-10-29', h: 'paars' },
+    ]);
+  });
+
+  it('een onleesbare waarde gaat met waarschuwing naar extra, niet stil weg', () => {
+    const p = planImport({
+      commitments: [{ id: 'z', data: { wat: 'Z', stroom: 'mijn', deadline: 'volgende week', moved: 'twee' } }],
+    });
+    expect(p.tracker[0]).toMatchObject({
+      deadline: null,
+      moved: 0,
+      extra: { deadline: 'volgende week', moved: 'twee' },
+    });
+    expect(p.waarschuwingen).toEqual([
+      'commitments/z: veld deadline past niet in zijn kolom, bewaard in extra',
+      'commitments/z: veld moved past niet in zijn kolom, bewaard in extra',
+    ]);
+  });
+
   it('contextlaag: partners, projecten, meetings en acties als indexrijen; geheim_voor mee; nooit admin.md', () => {
     const p = planImport(cols);
     const ids = p.contextIndex.map((r) => r.id);
@@ -254,7 +358,7 @@ describe('import in Postgres (RLS, als hz_app)', () => {
       });
     }
     expect(await totals(robert)).toEqual(EXPECTED);
-    expect(first.voor).toMatchObject({ commitments: 17, itemstate: 8, briefings: 4, processed: 2 });
+    expect(first.voor).toMatchObject({ commitments: 22, itemstate: 15, briefings: 4, processed: 2 });
     expect(Object.values(first.verantwoord).every((v) => v.klopt)).toBe(true);
   });
 
@@ -299,20 +403,33 @@ describe('import in Postgres (RLS, als hz_app)', () => {
     expect(s[0]).toMatchObject({ planDate: '2026-11-02', moved: 1, backlog: false });
   });
 
+  it('in de database: gtask-id en tasklist, answered_by uit handledBy; gekoppelde taken niet zichtbaar', async () => {
+    const all = await withUser(db, robert, (tx) => tx.select().from(trackerItems));
+    const gp = all.find((t) => t.legacyId === 'gt-plan')!;
+    expect(gp).toMatchObject({ gtask: 'tk-demo-1', extra: expect.objectContaining({ gtask: { tasklist: 'L' } }) });
+    const zichtbaar = all.filter(trackerItemVisible).map((t) => t.legacyId);
+    for (const id of ['gt-plan', 'gt-noid', 'old-gt']) expect(zichtbaar).not.toContain(id);
+    expect(zichtbaar).toContain('inbox1');
+    const [st] = await withUser(db, robert, (tx) =>
+      tx.select().from(itemState).where(eq(itemState.itemKey, 'sl_CFE_1761670000.000300')),
+    );
+    expect(st).toMatchObject({ read: true, answeredBy: 'Lisanne', extra: {} });
+  });
+
   it('een wijziging in de app na de export blijft staan; app-rijen zonder legacy-id raakt de import niet', async () => {
     await setItemState(db, robert, 'sl_CFE_1761650000.000100', { read: false });
     const [own] = await withUser(db, robert, (tx) =>
       tx.insert(weekdoelen).values({ userId: robert, wat: 'Eigen doel uit de app', week: '2026-W45' }).returning(),
     );
     const r = await importPrototype(db, { email: ROBERT, collections: cols });
-    expect(r.tabellen.item_state).toMatchObject({ nieuw: 0, bijgewerkt: 0, inAppGewijzigd: 1, na: 8 });
+    expect(r.tabellen.item_state).toMatchObject({ nieuw: 0, bijgewerkt: 0, inAppGewijzigd: 1, na: 15 });
     const s = await withUser(db, robert, (tx) =>
       tx.select().from(itemState).where(eq(itemState.itemKey, 'sl_CFE_1761650000.000100')),
     );
     expect(s[0]!.read).toBe(false);
     const still = await withUser(db, robert, (tx) => tx.select().from(weekdoelen).where(eq(weekdoelen.id, own!.id)));
     expect(still[0]!.wat).toBe('Eigen doel uit de app');
-    expect(r.tabellen.weekdoelen).toMatchObject({ verwacht: 6, na: 6, klopt: true });
+    expect(r.tabellen.weekdoelen).toMatchObject({ verwacht: 7, na: 7, klopt: true });
   });
 
   it('een nieuwere export werkt alleen de gewijzigde rijen bij', async () => {
@@ -320,7 +437,7 @@ describe('import in Postgres (RLS, als hz_app)', () => {
     next.commitments!.find((d) => d.id === 'dc4')!.data.wat = 'Isolatierekenmodel nalopen met Lisanne';
     next.commitments!.push({ id: 'nieuw1', data: { wat: 'Nieuwe belofte', stroom: 'mijn', status: 'open' } });
     const r = await importPrototype(db, { email: ROBERT, collections: next });
-    expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 11, nieuw: 1, bijgewerkt: 1, ongewijzigd: 9, na: 11 });
+    expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 15, nieuw: 1, bijgewerkt: 1, ongewijzigd: 13, na: 15 });
     expect(r.klopt).toBe(true);
     const [dc4] = await withUser(db, robert, (tx) =>
       tx.select().from(trackerItems).where(eq(trackerItems.legacyId, 'dc4')),
@@ -349,19 +466,19 @@ describe('import in Postgres (RLS, als hz_app)', () => {
     const same = await importPrototype(db, { email: ROBERT, collections: cols });
     expect(same.klopt).toBe(true);
     expect(same.tabellen.weekdoelen).toMatchObject({
-      verwacht: 6,
+      verwacht: 7,
       nieuw: 0,
       bijgewerkt: 0,
       inAppGewijzigd: 1,
-      ongewijzigd: 5,
-      na: 6,
+      ongewijzigd: 6,
+      na: 7,
     });
     await check();
     const txt = formatReport(same);
     expect(txt).toMatch(/overgeslagen:/);
     expect(txt).toMatch(/in app gewijzigd/);
-    expect(txt).toMatch(/weekdoelen\s+6\s+0\s+0\s+5\s+1\s+0\s+6/);
-    expect(txt).toMatch(/item_state\s+8\s+0\s+0\s+7\s+1\s+0\s+8/); // de leesstatus uit de vorige test
+    expect(txt).toMatch(/weekdoelen\s+7\s+0\s+0\s+6\s+1\s+0\s+7/);
+    expect(txt).toMatch(/item_state\s+15\s+0\s+0\s+14\s+1\s+0\s+15/); // de leesstatus uit de vorige test
     expect(txt).toMatch(/De app wint: 2 rij/);
 
     // 2. Een nieuwere export die dg1 (anders) en dg2 wijzigt: dg1 blijft zoals in de app, dg2 wordt bijgewerkt.
@@ -373,7 +490,7 @@ describe('import in Postgres (RLS, als hz_app)', () => {
     next.commitments!.find((d) => d.id === 'dg2')!.data.health = 'groen';
     const newer = await importPrototype(db, { email: ROBERT, collections: next });
     expect(newer.klopt).toBe(true);
-    expect(newer.tabellen.weekdoelen).toMatchObject({ bijgewerkt: 1, inAppGewijzigd: 1, ongewijzigd: 4, na: 6 });
+    expect(newer.tabellen.weekdoelen).toMatchObject({ bijgewerkt: 1, inAppGewijzigd: 1, ongewijzigd: 5, na: 7 });
     await check();
     const [dg2] = await withUser(db, robert, (tx) =>
       tx.select().from(weekdoelen).where(eq(weekdoelen.legacyId, 'dg2')),
@@ -405,8 +522,8 @@ describe('import in Postgres (RLS, als hz_app)', () => {
     for (const c of [cols, next]) {
       const r = await importPrototype(db, { email: ROBERT, collections: c });
       expect(r.klopt).toBe(true);
-      expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 10, inAppGewijzigd: 1, inAppVerwijderd: 1, na: 9 });
-      expect(r.tabellen.weekdoelen).toMatchObject({ inAppVerwijderd: 1, na: 5 });
+      expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 14, inAppGewijzigd: 1, inAppVerwijderd: 1, na: 13 });
+      expect(r.tabellen.weekdoelen).toMatchObject({ inAppVerwijderd: 1, na: 6 });
       expect(r.tabellen.pins).toMatchObject({ nieuw: 0, inAppVerwijderd: 1, ongewijzigd: 1, na: 1 });
       const [dc3] = await withUser(db, robert, (tx) =>
         tx.select().from(trackerItems).where(eq(trackerItems.legacyId, 'dc3')),
@@ -440,7 +557,7 @@ describe('import in Postgres (RLS, als hz_app)', () => {
     const r = await importPrototype(db, { email: 'cees@homezero.nl', collections: cols, dryRun: true });
     expect(r.dryRun).toBe(true);
     expect(r.klopt).toBe(true);
-    expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 10, nieuw: 10, na: 10 });
+    expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 14, nieuw: 14, na: 14 });
     expect(await totals(r.gebruiker.id)).toMatchObject({ tracker_items: 0, weekdoelen: 0, item_state: 0, pins: 0 });
   });
 
@@ -461,9 +578,94 @@ describe('import in Postgres (RLS, als hz_app)', () => {
   it('verslag: aantallen leesbaar, zonder de inhoud van toezeggingen of briefings', () => {
     const txt = formatReport(first);
     expect(txt).toMatch(/Aantallen kloppen/);
-    expect(txt).toMatch(/tracker_items\s+10\s+10/);
+    expect(txt).toMatch(/tracker_items\s+14\s+14/);
     expect(txt).not.toContain('Rekenvoorbeeld');
     expect(txt).not.toContain('Briefing vr 30 okt');
+  });
+});
+
+describe('contextindex: opnieuw importeren ruimt verdwenen partners, meetings en acties op (als hz_indexer)', () => {
+  const ctxRows = async () =>
+    (await withPurpose(db, 'index', (tx) => tx.select({ id: contextIndex.id }).from(contextIndex)))
+      .map((r) => r.id)
+      .sort();
+  const without = () => {
+    const next = structuredClone(cols);
+    next.context_partners = next.context_partners!.filter((d) => d.id !== 'sunergy');
+    const fe = next.context_partners.find((d) => d.id === 'feenstra')!;
+    (fe.data as { meetings: unknown[] }).meetings = [];
+    const acties = next.context_acties!.find((d) => d.id === 'feenstra')!.data as { acties: Array<{ id?: string }> };
+    acties.acties = acties.acties.filter((a) => a.id !== 'feenstra-20261029-2');
+    return next;
+  };
+
+  it('verdwenen bestanden (partner, meeting) en acties gaan eruit; andere indexrijen (product, besluit) blijven', async () => {
+    await importPrototype(db, { email: ROBERT, collections: cols });
+    // Rijen van de indexjob die deze import niet maakt: nooit opruimen
+    await upsertContextIndex(db, [
+      { id: 'product/jira/HOM-1.md', kind: 'product', path: 'product/jira/HOM-1.md', title: 'Epic (voorbeeld)' },
+      { id: 'organisatie/besluiten/x.md', kind: 'besluit', path: 'organisatie/besluiten/x.md', title: 'Besluit' },
+    ]);
+    const before = await ctxRows();
+    expect(before).toContain('partners/sunergy/brief.md');
+    expect(before).toContain('partners/feenstra/meetings/2026-10-29-werksessie-zsb-flow-robert.md');
+    expect(before).toContain('partners/feenstra/acties.md#feenstra-20261029-2');
+
+    // Proefdraai: verslag zegt wat eruit gaat, de index blijft gelijk
+    const dry = await importPrototype(db, { email: ROBERT, collections: without(), dryRun: true });
+    expect(dry.context.opgeruimd?.paden).toContain('partners/sunergy/brief.md');
+    expect(await ctxRows()).toEqual(before);
+
+    const r = await importPrototype(db, { email: ROBERT, collections: without() });
+    expect(r.klopt).toBe(true);
+    expect(r.context.opgeruimd).toEqual({
+      paden: expect.arrayContaining([
+        'partners/sunergy/brief.md',
+        'partners/feenstra/meetings/2026-10-29-werksessie-zsb-flow-robert.md',
+      ]),
+      sleutels: ['partners/feenstra/acties.md#feenstra-20261029-2'],
+    });
+    const after = await ctxRows();
+    expect(after.filter((x) => x.startsWith('partners/sunergy/'))).toEqual([]);
+    expect(after).not.toContain('partners/feenstra/meetings/2026-10-29-werksessie-zsb-flow-robert.md');
+    expect(after).not.toContain('partners/feenstra/acties.md#feenstra-20261029-2');
+    expect(after).toContain('partners/feenstra/brief.md');
+    expect(after).toContain('product/jira/HOM-1.md');
+    expect(after).toContain('organisatie/besluiten/x.md');
+    expect(r.tabellen.context_index.verwijderd).toBe(before.length - after.length);
+    expect(formatReport(r)).toMatch(/Contextindex opgeruimd: \d+ rij/);
+
+    // Nog een keer: niets meer op te ruimen
+    const again = await importPrototype(db, { email: ROBERT, collections: without() });
+    expect(again.tabellen.context_index).toMatchObject({ nieuw: 0, bijgewerkt: 0, verwijderd: 0 });
+  });
+
+  it('een export zonder contextcollecties ruimt niets op; meer dan de helft weg kan alleen geforceerd', async () => {
+    const n0 = (await ctxRows()).length;
+    const noCtx = Object.fromEntries(Object.entries(cols).filter(([k]) => !k.startsWith('context_')));
+    const a = await importPrototype(db, { email: ROBERT, collections: noCtx });
+    expect(a.tabellen.context_index.verwijderd).toBe(0);
+    expect((await ctxRows()).length).toBe(n0);
+
+    // Terug naar de volledige export (zodat er meer dan 10 rijen in scope zijn), dan een export met één partner
+    await importPrototype(db, { email: ROBERT, collections: cols });
+    const full = await ctxRows();
+    const one = structuredClone(cols);
+    one.context_partners = one.context_partners!.filter((d) => d.id === 'tonzon');
+    one.context_acties = one.context_acties!.filter((d) => d.id === 'tonzon');
+    const guarded = await importPrototype(db, { email: ROBERT, collections: one });
+    expect(guarded.context.nietOpgeruimd).toMatch(/niet opgeruimd/);
+    expect(guarded.waarschuwingen.some((w) => /opruimen-forceren/.test(w))).toBe(true);
+    expect(await ctxRows()).toEqual(full);
+    const forced = await importPrototype(db, { email: ROBERT, collections: one, opruimenForceren: true });
+    expect(forced.tabellen.context_index.verwijderd).toBeGreaterThan(0);
+    expect((await ctxRows()).filter((x) => x.startsWith('partners/feenstra/'))).toEqual([]);
+
+    // Herstel voor de volgende tests: de volledige export, en de rijen van de indexjob weg
+    await importPrototype(db, { email: ROBERT, collections: cols });
+    for (const path of ['product/jira/HOM-1.md', 'organisatie/besluiten/x.md'])
+      expect(await deleteContextIndexPath(db, path)).toBe(1);
+    expect((await ctxRows()).length).toBe(EXPECTED.context_index);
   });
 });
 
@@ -509,7 +711,7 @@ describe('opdrachtregel (import:prototype)', () => {
     expect(rep.context.overgeslagen).toMatch(/hz_indexer/);
     expect(rep.tabellen.context_index.verwacht).toBe(0);
     expect(rep.verantwoord.context_partners).toMatchObject({ gebruikt: 0, overgeslagen: 5, klopt: true });
-    expect(rep.tabellen.tracker_items).toMatchObject({ nieuw: 10, na: 10 });
+    expect(rep.tabellen.tracker_items).toMatchObject({ nieuw: 14, na: 14 });
   }, 30_000);
 
   it('met HZ_INDEX_DATABASE_URL (indexer-login) schrijft hij ook de contextindex; tweede run verandert niets', () => {
@@ -521,7 +723,7 @@ describe('opdrachtregel (import:prototype)', () => {
       const rep = JSON.parse(r.stdout) as ImportReport;
       expect(rep.context.overgeslagen).toBeUndefined();
       expect(rep.tabellen.context_index).toMatchObject({ verwacht: 10, na: 10, klopt: true });
-      expect(rep.tabellen.tracker_items).toMatchObject({ nieuw: 0, bijgewerkt: 0, ongewijzigd: 10 });
+      expect(rep.tabellen.tracker_items).toMatchObject({ nieuw: 0, bijgewerkt: 0, ongewijzigd: 14 });
       expect(rep.tabellen.context_index, `ronde ${ronde}`).toMatchObject({ nieuw: 0, bijgewerkt: 0, ongewijzigd: 10 });
     }
   }, 30_000);

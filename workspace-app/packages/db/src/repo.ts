@@ -496,7 +496,12 @@ export async function listTrackerItems(db: Db, userId: string) {
  * Zichtbaar in de tracker, zoals commitVisible() in het prototype: niet de oude canvas-items (sinds 5 nov in
  * wachten-op.md), niet wat al naar de repo is overgezet, en geen taak die al in Google Taken staat.
  */
-export const trackerItemVisible = (r: Pick<TrackerItemRow, 'stroom' | 'overgezet' | 'gtask' | 'bron'>) =>
+export const trackerItemVisible = (
+  r: Pick<TrackerItemRow, 'stroom' | 'overgezet' | 'gtask' | 'bron'> & { extra?: unknown },
+) =>
   !(r.bron?.label === 'Canvas Wachten op' && (r.stroom === 'aan_mij' || r.stroom === 'bespreken')) &&
   !r.overgezet &&
-  !((r.stroom === 'mijn' || r.stroom === 'voornemen') && r.gtask);
+  // gtask: de taak-id; extra.gtask: een koppeling uit het prototype zonder bruikbare id (die verbergt hij ook)
+  !((r.stroom === 'mijn' || r.stroom === 'voornemen') && (r.gtask || hasExtraGtask(r.extra)));
+const hasExtraGtask = (x: unknown) =>
+  !!x && typeof x === 'object' && !Array.isArray(x) && !!(x as Record<string, unknown>).gtask;

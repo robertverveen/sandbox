@@ -25,6 +25,19 @@
  *   zet hem niet terug. Geldt voor tracker_items, weekdoelen, pins en briefings.
  * Het verslag telt die rijen apart: "overgeslagen: in app gewijzigd" en "in app verwijderd".
  *
+ * Velden: VELDEN zegt per veld dat het prototype schrijft waar het heen gaat (kolom of extra). Wat niet volledig in
+ * een kolom past, blijft in extra (met een waarschuwing als een waarde onleesbaar was); niets gaat stil verloren.
+ * De contracttest (test/prototype-contract.test.ts) leest de schrijfpaden uit het prototype zelf en gebruikt een
+ * export die tools/bar/record-export.mjs uit het prototype opneemt. Bijzonder:
+ * - gtask: planCommit() bewaart `{id, tasklist}`, de knop "In Google Taken" `'gtask:<id>'`; de id gaat naar
+ *   tracker_items.gtask, tasklist naar extra.gtask. Zo'n item is verborgen zoals in het prototype (commitVisible);
+ * - handledBy (checkReactions: een ander reageerde al) gaat naar item_state.answered_by; answeredBy is een alias.
+ *
+ * Contextindex: bij opnieuw importeren gaan rijen van partners, meetings en acties die niet meer in de export staan
+ * eruit (context_index_delete per verdwenen bestand, context_index_delete_id per verdwenen actie), alleen binnen de
+ * soorten die de export beschrijft en alleen op paden die de import zelf maakt. Zou meer dan de helft verdwijnen,
+ * dan niet (tenzij opruimenForceren).
+ *
  * Alles per collega loopt in één transactie als hz_app met withUser (RLS); de contextindex in één transactie als
  * hz_indexer via context_index_upsert (migratie 0009). Met dryRun wordt alles uitgevoerd en daarna teruggedraaid.
  */
@@ -155,7 +168,14 @@ export interface ImportPlan {
   overgeslagen: Skip[];
   waarschuwingen: string[];
   status: ContextStatus | null;
+  /**
+   * Welke soorten indexrijen de export volledig beschrijft: partner/project/meeting als er geldige partners in staan,
+   * actie als er geldige actielijsten in staan. Alleen binnen deze soorten ruimt een nieuwe import rijen op van
+   * bestanden of acties die niet meer in de export staan.
+   */
+  contextScope: ContextKind[];
 }
+type ContextKind = 'partner' | 'project' | 'meeting' | 'actie';
 
 const STROOM_TRACKER = ['mijn', 'voornemen', 'aan_mij', 'bespreken'] as const;
 const STROOM_DOEL = ['weekdoel', 'roadmap'] as const;
@@ -167,6 +187,8 @@ const str = (x: unknown) => (typeof x === 'string' ? x : x == null ? '' : String
 const optStr = (x: unknown) => (typeof x === 'string' && x.trim() ? x : null);
 const oneOf = <T extends string>(list: readonly T[], x: unknown): T | null =>
   typeof x === 'string' && (list as readonly string[]).includes(x) ? (x as T) : null;
+const bool = (x: unknown) => (typeof x === 'boolean' ? x : null);
+const int = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : null);
 
 /** JJJJ-MM-DD (ook uit een datum-tijd), of null. */
 export function isoDate(x: unknown): string | null {
@@ -187,53 +209,189 @@ function instant(x: unknown): Date | null {
   return null;
 }
 const isoWeek = (x: unknown) => (typeof x === 'string' && /^\d{4}-W\d{2}$/.test(x) ? x : null);
-const pick = (d: Record<string, unknown>, known: readonly string[]) =>
-  Object.fromEntries(Object.entries(d).filter(([k]) => !known.includes(k)));
-function bron(x: unknown): { label: string; url?: string } | null {
-  if (!isObj(x)) return typeof x === 'string' && x ? { label: x } : null;
+
+/**
+ * Bron van een toezegging, zonder verlies: het prototype schrijft `{label, url}` of (vanuit Inhalen, srcOf())
+ * `{key, label, url}`; een plansessie kan er meer velden in zetten. Alles blijft staan; label is altijd tekst.
+ */
+function bron(x: unknown): ({ label: string; url?: string } & Record<string, unknown>) | null {
+  if (!isObj(x)) return typeof x === 'string' && x.trim() ? { label: x } : null;
   const label = str(x.label);
   const url = optStr(x.url);
-  return label || url ? { label: label || 'Bron', ...(url ? { url } : {}) } : null;
+  if (!label && !url && !optStr(x.key)) return null;
+  // url null of leeg (srcOf() zonder link) zegt niets en valt weg; de rest blijft staan
+  const { label: _l, url: _u, ...rest } = x;
+  return { label: label || 'Bron', ...(url ? { url } : {}), ...rest };
 }
-const int = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
 
-const TRACKER_KNOWN = [
-  'wat',
-  'stroom',
-  'aan',
-  'org',
-  'status',
-  'deadline',
-  'plan',
-  'backlog',
-  'moved',
-  'reminder',
-  'naar',
-  'overgezet',
-  'gtask',
-  'src',
-  'bron',
-  'citaat',
-  'bewijs',
-  'created',
-  'createdAt',
-  'closedAt',
-] as const;
-const DOEL_KNOWN = [
-  'wat',
-  'stroom',
-  'week',
-  'deadline',
-  'status',
-  'health',
-  'outcome',
-  'checks',
-  'closedAt',
-  'bron',
-  'created',
-  'createdAt',
-] as const;
-const STATE_KNOWN = ['read', 'processed', 'skipPrep', 'answeredBy', 'plan', 'backlog', 'moved', 'at'] as const;
+/** Een gevuld veld: niet leeg, niet null/undefined/false. Zulke waarden mogen nooit stil verdwijnen. */
+const filled = (v: unknown) =>
+  v !== undefined &&
+  v !== null &&
+  v !== false &&
+  !(typeof v === 'string' && !v.trim()) &&
+  !(Array.isArray(v) && v.length === 0);
+
+/**
+ * Leest de velden van één doc. Elk veld dat niet volledig in een kolom terechtkomt, blijft in `extra`:
+ * - een veld zonder kolom (onbekend, of bewust in extra zoals bewijsregel) gaat als geheel naar extra;
+ * - een veld met kolom waarvan de waarde niet te lezen is (datum "volgende week", onbekende status, gtask zonder id)
+ *   gaat met de oorspronkelijke waarde naar extra, met een waarschuwing.
+ * Zo gaat niets wat het prototype schreef stil verloren (contracttest: test/prototype-contract.test.ts).
+ */
+class Velden {
+  private used = new Set<string>();
+  private kept: Record<string, unknown> = {};
+  constructor(
+    private d: Record<string, unknown>,
+    private where: string,
+    private warn: (w: string) => void,
+  ) {}
+  /** Lees veld k met f. Gevuld maar onleesbaar: oorspronkelijke waarde naar extra plus waarschuwing. */
+  get<T>(k: string, f: (x: unknown) => T | null | undefined): T | null {
+    this.used.add(k);
+    const v = this.d[k];
+    const out = f(v);
+    if ((out === null || out === undefined) && filled(v)) {
+      this.kept[k] = v;
+      this.warn(`${this.where}: veld ${k} past niet in zijn kolom, bewaard in extra`);
+    }
+    return out ?? null;
+  }
+  /** Veld k gaat (ook) als `value` naar extra, bijvoorbeeld het deel van een object zonder eigen kolom. */
+  keep(k: string, value: unknown) {
+    this.used.add(k);
+    this.kept[k] = value;
+  }
+  /** Veld k telt als gebruikt (de waarde zit volledig in een kolom). */
+  use(...ks: string[]) {
+    for (const k of ks) this.used.add(k);
+  }
+  extra(): Record<string, unknown> {
+    const rest = Object.fromEntries(Object.entries(this.d).filter(([k]) => !this.used.has(k)));
+    return { ...rest, ...this.kept };
+  }
+}
+
+/**
+ * Gekoppelde Google Taak. Het prototype schrijft twee vormen:
+ * - planCommit(): `patch.gtask = await gtaskAdd(...)` = `{id, tasklist}` (en leest `c.gtask?.id`);
+ * - de knop "In Google Taken" (c-gtask): `taskFromCommit()` geeft de tekst `'gtask:' + id`.
+ * Beide geven de taak-id; de rest van het object (tasklist) gaat naar extra.gtask. Is het veld gevuld maar zonder
+ * id, dan blijft de hele waarde in extra.gtask: het prototype verbergt zo'n item toch (commitVisible kijkt naar
+ * c.gtask), en trackerItemVisible() ook.
+ */
+export function gtaskId(x: unknown): string | null {
+  if (typeof x === 'string')
+    return (
+      x
+        .trim()
+        .replace(/^gtask:/, '')
+        .trim() || null
+    );
+  if (typeof x === 'number' && Number.isFinite(x)) return String(x);
+  if (isObj(x)) return typeof x.id === 'string' || typeof x.id === 'number' ? gtaskId(x.id) : null;
+  return null;
+}
+
+/**
+ * Waar elk veld dat het prototype schrijft terechtkomt: een kolom van de rij, of 'extra'. Bron van de lijst:
+ * commitAdd() (het nieuwe doc), elke commitSave(id, patch) en elke setState(key, patch) in
+ * workspace-prototype/index.html. De contracttest leest die schrijfpaden uit het prototype en eist dat elk veld hier
+ * staat, en dat de waarde na planImport in die kolom of in extra zit.
+ */
+export const VELDEN = {
+  /** commitments met stroom mijn, voornemen, aan_mij of bespreken -> tracker_items */
+  tracker: {
+    wat: 'wat',
+    stroom: 'stroom',
+    aan: 'aan',
+    org: 'org',
+    status: 'status',
+    deadline: 'deadline',
+    plan: 'planDate',
+    backlog: 'backlog',
+    moved: 'moved',
+    reminder: 'reminder',
+    naar: 'naar',
+    overgezet: 'overgezet',
+    gtask: 'gtask',
+    src: 'srcKey',
+    bron: 'bron',
+    citaat: 'citaat',
+    bewijs: 'bewijs',
+    created: 'created',
+    createdAt: 'createdAt',
+    closedAt: 'closedAt',
+    // Geen eigen kolom: in extra (velden van een doorgeschoven weekdoel, bewijsregel voor de bewijscheck)
+    bewijsregel: 'extra',
+    week: 'extra',
+    health: 'extra',
+    outcome: 'extra',
+    outcomeNote: 'extra',
+    checks: 'extra',
+    lastCheck: 'extra',
+  },
+  /** commitments met stroom weekdoel of roadmap (en collectie weekdoelen) -> weekdoelen */
+  weekdoel: {
+    wat: 'wat',
+    stroom: 'soort',
+    week: 'week',
+    deadline: 'deadline',
+    status: 'status',
+    health: 'health',
+    outcome: 'outcome',
+    checks: 'checks',
+    closedAt: 'closedAt',
+    bron: 'bron',
+    createdAt: 'createdAt',
+    // Geen eigen kolom: in extra
+    created: 'extra',
+    lastCheck: 'extra',
+    outcomeNote: 'extra',
+    org: 'extra',
+    aan: 'extra',
+    src: 'extra',
+    plan: 'extra',
+    backlog: 'extra',
+    moved: 'extra',
+    reminder: 'extra',
+    naar: 'extra',
+    overgezet: 'extra',
+    gtask: 'extra',
+    citaat: 'extra',
+    bewijs: 'extra',
+    bewijsregel: 'extra',
+  },
+  /** itemstate -> item_state (behalve doc _pins: list -> pins) */
+  itemstate: {
+    read: 'read',
+    at: 'updatedAt',
+    processed: 'processed',
+    skipPrep: 'skipPrep',
+    handledBy: 'answeredBy',
+    answeredBy: 'answeredBy',
+    plan: 'planDate',
+    backlog: 'backlog',
+    moved: 'moved',
+    list: 'pins',
+    // Geen eigen kolom: in extra (recap-sessie, reactie, plansessie, aangehouden, taken.md, aansporingen)
+    recapSession: 'extra',
+    reacted: 'extra',
+    added: 'extra',
+    done: 'extra',
+    skip: 'extra',
+    skipped: 'extra',
+    until: 'extra',
+    keuze: 'extra',
+    datum: 'extra',
+    bron: 'extra',
+    tekst: 'extra',
+    overgezet: 'extra',
+  },
+} as const;
+
+const BRIEF_KNOWN = ['date', 'title', 'sections', 'session', 'createdAt'];
 
 /** Zet een export om in rijen per tabel. Puur: raakt de database niet. */
 export function planImport(cols: ExportCollections): ImportPlan {
@@ -249,40 +407,55 @@ export function planImport(cols: ExportCollections): ImportPlan {
     overgeslagen: [],
     waarschuwingen: [],
     status: null,
+    contextScope: [],
   };
   const use = (c: string) => (plan.gebruikt[c] = (plan.gebruikt[c] ?? 0) + 1);
   const skip = (collectie: string, id: string, reden: string) => plan.overgeslagen.push({ collectie, id, reden });
+  const warn = (w: string) => plan.waarschuwingen.push(w);
   for (const [c, docs] of Object.entries(cols)) plan.voor[c] = docs.length;
 
   // Toezeggingen en doelen
   const doel = (c: string, legacyId: string, d: Record<string, unknown>, soort: 'weekdoel' | 'roadmap') => {
-    const status = oneOf(STATUS, d.status ?? 'open');
-    if (!status) plan.waarschuwingen.push(`${c}/${legacyId}: onbekende status "${str(d.status)}", gezet op open`);
-    const health = d.health == null ? null : oneOf(HEALTH, d.health);
-    if (d.health != null && !health) plan.waarschuwingen.push(`${c}/${legacyId}: onbekende health "${str(d.health)}"`);
-    const checks = Array.isArray(d.checks)
-      ? d.checks.flatMap((x) => {
-          const dd = isObj(x) ? isoDate(x.d) : null;
-          const h = isObj(x) ? oneOf(HEALTH, x.h) : null;
-          if (!dd || !h) return [];
-          const note = isObj(x) ? optStr(x.note) : null;
-          return [{ d: dd, h, ...(note ? { note } : {}) }];
-        })
-      : [];
+    const v = new Velden(d, `${c}/${legacyId.replace(/^weekdoelen:/, '')}`, warn);
+    v.use('wat', 'stroom', 'soort');
+    const status = v.get('status', (x) => oneOf(STATUS, x ?? 'open'));
+    const health = v.get('health', (x) => oneOf(HEALTH, x));
+    const bad: unknown[] = [];
+    const checks = v.get('checks', (x) => {
+      if (!Array.isArray(x)) return null;
+      return x.flatMap((ch) => {
+        const dd = isObj(ch) ? isoDate(ch.d) : null;
+        const h = isObj(ch) ? oneOf(HEALTH, ch.h) : null;
+        if (!dd || !h) {
+          bad.push(ch);
+          return [];
+        }
+        const note = isObj(ch) ? optStr(ch.note) : null;
+        return [{ d: dd, h, ...(note ? { note } : {}) }];
+      });
+    });
+    if (bad.length) {
+      v.keep('checksOngeldig', bad);
+      warn(`${c}/${legacyId}: ${bad.length} check(s) met onbekende datum of gezondheid, bewaard in extra`);
+    }
+    const createdAt = v.get('createdAt', instant);
+    // created (dag) zit in createdAt als er geen createdAt is; anders blijft hij in extra
+    const created = createdAt ? null : instant(d.created);
+    if (created) v.use('created');
     plan.weekdoelen.push({
       legacyId,
       soort,
-      week: isoWeek(d.week),
+      week: v.get('week', isoWeek),
       wat: str(d.wat).trim(),
-      deadline: isoDate(d.deadline),
+      deadline: v.get('deadline', isoDate),
       status: status ?? 'open',
       health,
-      outcome: oneOf(OUTCOME, d.outcome),
-      checks,
-      closedAt: isoDate(d.closedAt),
-      bron: bron(d.bron),
-      extra: pick(d, DOEL_KNOWN),
-      createdAt: instant(d.createdAt) ?? instant(d.created) ?? new Date(0),
+      outcome: v.get('outcome', (x) => oneOf(OUTCOME, x)),
+      checks: checks ?? [],
+      closedAt: v.get('closedAt', isoDate),
+      bron: v.get('bron', bron),
+      extra: v.extra(),
+      createdAt: createdAt ?? created ?? new Date(0),
     });
     use(c);
   };
@@ -303,32 +476,44 @@ export function planImport(cols: ExportCollections): ImportPlan {
       skip('commitments', id, `onbekende stroom "${str(stroom)}"`);
       continue;
     }
-    const status = oneOf(STATUS, d.status ?? 'open');
-    if (!status) plan.waarschuwingen.push(`commitments/${id}: onbekende status "${str(d.status)}", gezet op open`);
-    const b = bron(d.bron);
+    const v = new Velden(d, `commitments/${id}`, warn);
+    v.use('wat', 'stroom');
+    const status = v.get('status', (x) => oneOf(STATUS, x ?? 'open'));
+    const gtask = v.get('gtask', gtaskId);
+    if (gtask && isObj(d.gtask)) {
+      const { id: _id, ...rest } = d.gtask;
+      if (Object.keys(rest).length) v.keep('gtask', rest);
+    }
+    const srcKey = v.get('src', (x) => (typeof x === 'string' ? optStr(x) : isObj(x) ? optStr(x.key) : null));
+    if (srcKey && isObj(d.src)) {
+      const { key: _k, ...rest } = d.src;
+      if (Object.keys(rest).length) v.keep('src', rest);
+    }
+    const createdAt = v.get('createdAt', instant);
+    const created = v.get('created', isoDate);
     plan.tracker.push({
       legacyId: id,
       stroom: t,
       wat: str(d.wat).trim(),
-      aan: str(d.aan),
-      org: str(d.org),
+      aan: v.get('aan', optStr) ?? '',
+      org: v.get('org', optStr) ?? '',
       status: status ?? 'open',
-      deadline: isoDate(d.deadline),
-      planDate: isoDate(d.plan),
-      backlog: d.backlog === true,
-      moved: int(d.moved),
-      reminder: isoDate(d.reminder),
-      naar: optStr(d.naar),
-      overgezet: d.overgezet === true,
-      gtask: optStr(d.gtask),
-      srcKey: optStr(d.src),
-      bron: b,
-      citaat: str(d.citaat),
-      bewijs: optStr(d.bewijs),
-      created: isoDate(d.created) ?? (instant(d.createdAt) ? instant(d.createdAt)!.toISOString().slice(0, 10) : null),
-      closedAt: isoDate(d.closedAt),
-      extra: pick(d, TRACKER_KNOWN),
-      createdAt: instant(d.createdAt) ?? instant(d.created) ?? new Date(0),
+      deadline: v.get('deadline', isoDate),
+      planDate: v.get('plan', isoDate),
+      backlog: v.get('backlog', bool) ?? false,
+      moved: v.get('moved', int) ?? 0,
+      reminder: v.get('reminder', isoDate),
+      naar: v.get('naar', optStr),
+      overgezet: v.get('overgezet', bool) ?? false,
+      gtask,
+      srcKey,
+      bron: v.get('bron', bron),
+      citaat: v.get('citaat', optStr) ?? '',
+      bewijs: v.get('bewijs', optStr),
+      created: created ?? (createdAt ? createdAt.toISOString().slice(0, 10) : null),
+      closedAt: v.get('closedAt', isoDate),
+      extra: v.extra(),
+      createdAt: createdAt ?? instant(created) ?? new Date(0),
     });
     use('commitments');
   }
@@ -349,7 +534,7 @@ export function planImport(cols: ExportCollections): ImportPlan {
       const seen = new Set(plan.pins.map((p) => p.q));
       list.forEach((p, i) => {
         const q = isObj(p) ? str(p.q).trim() : '';
-        if (!q) return void plan.waarschuwingen.push(`itemstate/_pins[${i}]: geen zoekopdracht, overgeslagen`);
+        if (!q) return void warn(`itemstate/_pins[${i}]: geen zoekopdracht, overgeslagen`);
         if (seen.has(q)) return;
         seen.add(q);
         plan.pins.push({ kind: 'search', label: str((p as Record<string, unknown>).name).trim() || q, q, position: i });
@@ -361,18 +546,27 @@ export function planImport(cols: ExportCollections): ImportPlan {
       skip('itemstate', id.slice(0, 40) + '…', 'sleutel langer dan 500 tekens');
       continue;
     }
-    const at = instant(d.at);
+    const v = new Velden(d, `itemstate/${id}`, warn);
+    const at = v.get('at', instant);
+    const read = v.get('read', bool) ?? false;
+    // Het prototype schrijft handledBy (checkReactions: iemand anders reageerde al); answeredBy is een alias.
+    const handledBy = v.get('handledBy', optStr);
+    let answeredBy = handledBy;
+    if (handledBy) {
+      if (filled(d.answeredBy) && d.answeredBy !== handledBy) v.keep('answeredBy', d.answeredBy);
+      else v.use('answeredBy');
+    } else answeredBy = v.get('answeredBy', optStr);
     states.set(id, {
       itemKey: id,
-      read: d.read === true,
-      readAt: d.read === true ? at : null,
-      processed: d.processed === true,
-      skipPrep: d.skipPrep === true,
-      answeredBy: optStr(d.answeredBy),
-      planDate: isoDate(d.plan),
-      backlog: d.backlog === true,
-      moved: int(d.moved),
-      extra: pick(d, STATE_KNOWN),
+      read,
+      readAt: read ? at : null,
+      processed: v.get('processed', bool) ?? false,
+      skipPrep: v.get('skipPrep', bool) ?? false,
+      answeredBy,
+      planDate: v.get('plan', isoDate),
+      backlog: v.get('backlog', bool) ?? false,
+      moved: v.get('moved', int) ?? 0,
+      extra: v.extra(),
       updatedAt: at ?? new Date(0),
     });
     use('itemstate');
@@ -380,11 +574,14 @@ export function planImport(cols: ExportCollections): ImportPlan {
   for (const { id, data: d } of cols.processed ?? []) {
     const cur = states.get(id);
     const at = instant(d.at);
+    // Andere velden dan `at` in een processed-doc: naar extra (zonder iets van itemstate te overschrijven)
+    const rest = Object.fromEntries(Object.entries(d).filter(([k]) => k !== 'at'));
     if (cur) {
       cur.processed = true;
       if (at && cur.updatedAt instanceof Date && at > cur.updatedAt) cur.updatedAt = at;
+      cur.extra = { ...rest, ...(cur.extra as Record<string, unknown>) };
     } else {
-      states.set(id, { itemKey: id, processed: true, extra: {}, updatedAt: at ?? new Date(0) });
+      states.set(id, { itemKey: id, processed: true, extra: rest, updatedAt: at ?? new Date(0) });
     }
     use('processed');
   }
@@ -407,6 +604,9 @@ export function planImport(cols: ExportCollections): ImportPlan {
           }),
         }))
       : [];
+    // Een briefing heeft geen extra-kolom: velden die de tabel niet kent, melden (nooit stil weg)
+    const unknown = Object.keys(d).filter((k) => !BRIEF_KNOWN.includes(k) && filled(d[k]));
+    if (unknown.length) warn(`briefings/${id}: veld(en) ${unknown.join(', ')} niet bewaard (geen kolom)`);
     const row: BriefingInsert = {
       date,
       title: str(d.title) || 'Ochtendbriefing',
@@ -517,6 +717,9 @@ export function planImport(cols: ExportCollections): ImportPlan {
     });
     use('context_acties');
   }
+  if (soortOf.size) plan.contextScope.push('partner', 'project', 'meeting');
+  if (plan.contextIndex.some((r) => r.kind === 'actie') || (plan.gebruikt.context_acties ?? 0) > 0)
+    plan.contextScope.push('actie');
   for (const { id } of cols.context_persoonlijk ?? [])
     skip('context_persoonlijk', id, 'Persoonlijk-repo: de app leest die live per collega, geen kopie in de database');
 
@@ -563,6 +766,8 @@ export interface TableResult {
   /** Rijen met deze sleutels in de database na de import. */
   na: number;
   klopt: boolean;
+  /** Alleen context_index: rijen weggehaald omdat hun bestand of actie niet meer in de export staat. */
+  verwijderd?: number;
 }
 
 export interface ImportReport {
@@ -576,7 +781,15 @@ export interface ImportReport {
   overgeslagen: Skip[];
   waarschuwingen: string[];
   /** overgeslagen: waarom de contextindex niet is bijgewerkt (geen indexer-login, of --zonder-context). */
-  context: { commit: string | null; geexporteerd: string | null; overgeslagen?: string };
+  context: {
+    commit: string | null;
+    geexporteerd: string | null;
+    overgeslagen?: string;
+    /** Paden (bestanden) en sleutels (acties) die uit de index zijn gehaald; geen inhoud. */
+    opgeruimd?: { paden: string[]; sleutels: string[] };
+    /** Waarom er niet is opgeruimd (te veel tegelijk, zie opruimenForceren). */
+    nietOpgeruimd?: string;
+  };
   klopt: boolean;
 }
 
@@ -696,6 +909,12 @@ const DOEL_COLS = [
 ];
 const STATE_COLS = ['read', 'readAt', 'processed', 'skipPrep', 'answeredBy', 'planDate', 'backlog', 'moved', 'extra'];
 const BRIEF_COLS = ['title', 'sections', 'session', 'createdAt'];
+/** Kolommen die applyImport schrijft (naast de sleutel), per tabel. De contracttest legt VELDEN hiernaast. */
+export const IMPORT_COLUMNS = {
+  tracker: [...TRACKER_COLS, 'legacyId', 'createdAt'],
+  weekdoel: [...DOEL_COLS, 'legacyId', 'createdAt'],
+  itemstate: [...STATE_COLS, 'itemKey', 'updatedAt'],
+} as const;
 
 /**
  * tracker_items en weekdoelen: rijen met een legacy_id uit de export. De app wint:
@@ -756,7 +975,14 @@ export async function applyImport(
   db: Db,
   user: { id: string; email: string },
   plan: ImportPlan,
-  opts: { dryRun?: boolean; context?: boolean; indexDb?: Db; contextOvergeslagen?: string } = {},
+  opts: {
+    dryRun?: boolean;
+    context?: boolean;
+    indexDb?: Db;
+    contextOvergeslagen?: string;
+    /** Ook opruimen als meer dan de helft van de indexrijen in scope zou verdwijnen (standaard: dan niet). */
+    opruimenForceren?: boolean;
+  } = {},
 ): Promise<ImportReport> {
   const dryRun = !!opts.dryRun;
   const userId = user.id;
@@ -899,6 +1125,8 @@ export async function applyImport(
     },
   );
 
+  let opgeruimd: { paden: string[]; sleutels: string[] } | undefined;
+  let nietOpgeruimd: string | undefined;
   if (!doContext) {
     finish('context_index', 0, ZERO, 0);
   } else {
@@ -908,11 +1136,34 @@ export async function applyImport(
       async (tx) => {
         const rows = await chunked(plan.contextIndex, (part) => indexUpsertTx(tx, part));
         const ids = plan.contextIndex.map((r) => r.id);
+        // Opruimen: bestanden en acties die niet meer in de export staan (alleen binnen contextScope en alleen de
+        // paden die deze import zelf maakt). Als hz_indexer via context_index_delete / context_index_delete_id.
+        let verwijderd = 0;
+        if (plan.contextScope.length) {
+          const stale = await staleIndexRows(tx, plan);
+          const weg = stale.inScope ? stale.rows / stale.inScope : 0;
+          if (stale.rows && stale.inScope >= 10 && weg > 0.5 && !opts.opruimenForceren) {
+            nietOpgeruimd =
+              `contextindex: ${stale.rows} van ${stale.inScope} rijen zouden verdwijnen; niet opgeruimd. Klopt de ` +
+              'export (alle partners en acties)? Dan opnieuw met --opruimen-forceren.';
+          } else if (stale.rows) {
+            for (const path of stale.paden)
+              verwijderd += Number(
+                (await tx.execute<{ n: number }>(sql`select context_index_delete(${path}) as n`)).rows[0]?.n ?? 0,
+              );
+            for (const id of stale.sleutels)
+              verwijderd += Number(
+                (await tx.execute<{ n: number }>(sql`select context_index_delete_id(${id}) as n`)).rows[0]?.n ?? 0,
+              );
+            opgeruimd = { paden: stale.paden, sleutels: stale.sleutels };
+          }
+        }
         const [{ n }] = (await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(contextIndex)
           .where(ids.length ? inArray(contextIndex.id, ids) : sql`false`)) as [{ n: number }];
         finish('context_index', plan.contextIndex.length, count(plan.contextIndex.length, rows), n);
+        res.context_index.verwijderd = verwijderd;
         return null;
       },
     );
@@ -931,6 +1182,7 @@ export async function applyImport(
     verantwoord[c] = { docs, gebruikt, overgeslagen, klopt: docs === gebruikt + overgeslagen };
   }
   const waarschuwingen = [...plan.waarschuwingen];
+  if (nietOpgeruimd) waarschuwingen.push(nietOpgeruimd);
   const ctxSkip = doContext
     ? undefined
     : (opts.contextOvergeslagen ??
@@ -949,9 +1201,36 @@ export async function applyImport(
       commit: plan.status?.commit_context || null,
       geexporteerd: plan.status?.geexporteerd || null,
       ...(ctxSkip ? { overgeslagen: ctxSkip } : {}),
+      ...(opgeruimd ? { opgeruimd } : {}),
+      ...(nietOpgeruimd ? { nietOpgeruimd } : {}),
     },
     klopt,
   };
+}
+
+/** Paden die de import zelf in de index zet (partners/<slug>/… en projecten/<slug>/…). */
+const IMPORT_PATH = '^(partners|projecten)/[^/]+/(brief\\.md|acties\\.md|meetings/[^/]+\\.md)$';
+
+/**
+ * Indexrijen die niet meer in de export staan, binnen plan.contextScope en alleen op paden die de import zelf maakt:
+ * - paden: het hele bestand is weg (partner, project of meeting verdwenen; acties.md van een verdwenen partner);
+ * - sleutels: het bestand staat er nog, maar deze rij niet meer (een actie die uit acties.md verdween).
+ */
+async function staleIndexRows(tx: Tx, plan: ImportPlan) {
+  const existing = (
+    await tx.execute<{ id: string; path: string }>(
+      sql`select id, path from context_index where kind = any(${`{${plan.contextScope.join(',')}}`}::text[]) and path ~ ${IMPORT_PATH}`,
+    )
+  ).rows;
+  const ids = new Set(plan.contextIndex.map((r) => r.id));
+  const paths = new Set(plan.contextIndex.map((r) => r.path));
+  const paden = [...new Set(existing.filter((r) => !paths.has(r.path)).map((r) => r.path))].sort();
+  const sleutels = existing
+    .filter((r) => paths.has(r.path) && !ids.has(r.id))
+    .map((r) => r.id)
+    .sort();
+  const rows = existing.filter((r) => !paths.has(r.path) || !ids.has(r.id)).length;
+  return { paden, sleutels, rows, inScope: existing.length };
 }
 
 /** Lees de export, zoek of maak de collega aan (SECURITY DEFINER-functie) en importeer. */
@@ -968,6 +1247,8 @@ export async function importPrototype(
     indexDb?: Db;
     /** Waarom de context is overgeslagen (voor het verslag), als context false is. */
     contextOvergeslagen?: string;
+    /** Opruimen in de contextindex ook als meer dan de helft zou verdwijnen. */
+    opruimenForceren?: boolean;
   },
 ): Promise<ImportReport> {
   const cols = opts.collections ?? (opts.exportPath ? readExport(opts.exportPath) : null);
@@ -984,6 +1265,7 @@ export async function importPrototype(
     context: opts.context,
     indexDb: opts.indexDb,
     contextOvergeslagen: opts.contextOvergeslagen,
+    opruimenForceren: opts.opruimenForceren,
   });
 }
 
@@ -994,6 +1276,15 @@ export function formatReport(r: ImportReport): string {
   if (r.context.commit || r.context.geexporteerd)
     L.push(`Contextlaag: commit ${r.context.commit ?? '?'}, geëxporteerd ${r.context.geexporteerd ?? '?'}`);
   if (r.context.overgeslagen) L.push(`Contextlaag: ${r.context.overgeslagen}`);
+  const op = r.context.opgeruimd;
+  if (op && (op.paden.length || op.sleutels.length)) {
+    L.push(
+      `Contextindex opgeruimd: ${r.tabellen.context_index?.verwijderd ?? 0} rij(en) van ${op.paden.length} verdwenen ` +
+        `bestand(en) en ${op.sleutels.length} verdwenen actie(s).`,
+    );
+    for (const x of [...op.paden, ...op.sleutels].slice(0, 20)) L.push(`  weg: ${x}`);
+    if (op.paden.length + op.sleutels.length > 20) L.push(`  … en ${op.paden.length + op.sleutels.length - 20} meer`);
+  }
   L.push('', 'Export (voor)                docs  gebruikt  overgeslagen');
   for (const [c, v] of Object.entries(r.verantwoord))
     L.push(

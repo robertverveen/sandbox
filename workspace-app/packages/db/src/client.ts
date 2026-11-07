@@ -122,7 +122,8 @@ export class UnsafeAppLoginError extends Error {
 export async function assertAppLogin(client: Pick<pg.ClientBase, 'query'>, opts: { allowRoles?: string[] } = {}) {
   const c = await checkAppLogin(client);
   const forbidden = c.memberOf.filter((r) => !(opts.allowRoles ?? []).includes(r));
-  if (c.superuser || c.bypassRls || c.ownedRelations > 0 || forbidden.length) throw new UnsafeAppLoginError(c, forbidden);
+  if (c.superuser || c.bypassRls || c.ownedRelations > 0 || forbidden.length)
+    throw new UnsafeAppLoginError(c, forbidden);
   return c;
 }
 

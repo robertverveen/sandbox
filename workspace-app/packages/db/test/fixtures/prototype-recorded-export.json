@@ -1,0 +1,167 @@
+{
+  "source": "opgenomen uit workspace-prototype/index.html met tools/bar/record-export.mjs (synthetisch)",
+  "collections": {
+    "commitments": {
+      "rec1": {
+        "wat": "Offerte warmtepomp naar Sanne sturen",
+        "stroom": "mijn",
+        "aan": "Sanne de Wit",
+        "org": "Feenstra",
+        "deadline": "2026-11-10",
+        "status": "open",
+        "plan": "2026-11-10",
+        "backlog": false,
+        "week": null,
+        "health": null,
+        "reminder": null,
+        "gtask": {
+          "id": "tk-rec-1",
+          "tasklist": "L"
+        },
+        "src": null,
+        "closedAt": null,
+        "naar": "taken.md",
+        "overgezet": false,
+        "bron": {
+          "label": "Eigen invoer"
+        },
+        "bewijsregel": {
+          "type": "mail",
+          "to": "",
+          "keywords": [
+            "offerte"
+          ]
+        },
+        "citaat": "Ik stuur je de offerte",
+        "created": "2026-11-07",
+        "createdAt": 1793170860000,
+        "moved": 0
+      },
+      "rec2": {
+        "wat": "Isolatierekenmodel helemaal nalopen",
+        "stroom": "voornemen",
+        "aan": "",
+        "org": "",
+        "deadline": null,
+        "status": "open",
+        "plan": null,
+        "backlog": false,
+        "week": null,
+        "health": null,
+        "reminder": null,
+        "gtask": "gtask:tk-rec-2",
+        "src": null,
+        "closedAt": null,
+        "naar": "taken.md",
+        "overgezet": false,
+        "bron": {
+          "label": "Eigen invoer"
+        },
+        "bewijsregel": {
+          "type": "geen"
+        },
+        "citaat": "",
+        "created": "2026-11-07",
+        "createdAt": 1793170920000
+      },
+      "rec3": {
+        "wat": "Reageren op Emiel: Kun je de sync-fix bevestigen?",
+        "stroom": "aan_mij",
+        "aan": "Emiel",
+        "org": "",
+        "deadline": null,
+        "status": "open",
+        "plan": null,
+        "backlog": false,
+        "week": null,
+        "health": null,
+        "reminder": "2026-11-05",
+        "gtask": null,
+        "src": "sl_CFE_1761680000.000500",
+        "closedAt": null,
+        "naar": "wachten-op.md",
+        "overgezet": false,
+        "bron": {
+          "key": "sl_CFE_1761680000.000500",
+          "label": "Slack · #feenstra-hz",
+          "url": "https://example.slack.com/archives/CFE/p1761680000000500"
+        },
+        "bewijsregel": {
+          "type": "geen"
+        },
+        "citaat": "",
+        "created": "2026-11-07",
+        "createdAt": 1793170980000
+      },
+      "rec4": {
+        "wat": "Isolatieflow live op acceptatie",
+        "stroom": "weekdoel",
+        "aan": "",
+        "org": "",
+        "deadline": "2026-11-07",
+        "status": "open",
+        "plan": null,
+        "backlog": false,
+        "week": "2026-W45",
+        "health": null,
+        "reminder": null,
+        "gtask": null,
+        "src": null,
+        "closedAt": null,
+        "naar": null,
+        "overgezet": false,
+        "bron": {
+          "label": "Plansessie"
+        },
+        "bewijsregel": {
+          "type": "geen"
+        },
+        "citaat": "",
+        "created": "2026-11-07",
+        "createdAt": 1793171040000
+      }
+    },
+    "itemstate": {
+      "sl_CFE_1761680000.000500": {
+        "read": true,
+        "handledBy": "Lisanne",
+        "at": 1793171100000
+      },
+      "sl_CFE_1761690000.000400": {
+        "read": true,
+        "reacted": "eyes",
+        "at": 1793171160000
+      },
+      "wm:r1": {
+        "processed": true,
+        "at": 1793171220000
+      },
+      "wm:r3": {
+        "recapSession": "gestart",
+        "at": 1793171280000
+      },
+      "ev_abc_google.com": {
+        "skipPrep": true,
+        "at": 1793171340000
+      },
+      "_pins": {
+        "list": [
+          {
+            "id": "p1",
+            "q": "feenstra, offerte",
+            "name": "Feenstra · offerte"
+          }
+        ],
+        "at": 1793171400000
+      },
+      "_nudge-repo": {
+        "until": "2026-11-11",
+        "at": 1793171460000
+      },
+      "_taak-1a2b3c": {
+        "done": "genegeerd",
+        "at": 1793171520000
+      }
+    }
+  }
+}

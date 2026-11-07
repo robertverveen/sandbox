@@ -168,7 +168,9 @@ describe('worker-rol: alleen de worker-login kent de id’s van alle collega’s
       );
       expect(codeOf(plain)).toBe('42501');
       for (const purpose of ['system', 'auth'] as const) {
-        const e = await withPurpose(api.db, purpose, (tx) => tx.execute(sql`select * from system_active_user_ids()`)).then(
+        const e = await withPurpose(api.db, purpose, (tx) =>
+          tx.execute(sql`select * from system_active_user_ids()`),
+        ).then(
           () => null,
           (x: E) => x,
         );

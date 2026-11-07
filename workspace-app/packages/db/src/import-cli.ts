@@ -3,13 +3,15 @@
  *
  *   DATABASE_URL=postgres://hz_app_login:…@host/db \
  *     pnpm --filter @hz/db import:prototype -- --export /pad/buiten/de/repo/export.json --email robert@homezero.nl \
- *       [--naam Robert] [--proef] [--zonder-context] [--json]
+ *       [--naam Robert] [--proef] [--zonder-context] [--opruimen-forceren] [--json]
  *
  * De export maakt een mens (README, "Import uit het prototype"); hij staat nooit in Git. Draait als hz_app met RLS:
  * het script kan alleen rijen van deze collega schrijven. De gedeelde contextindex schrijft het als hz_indexer:
  * met HZ_INDEX_DATABASE_URL (sql/indexer-login.sql), of met DATABASE_URL als die login lid is van hz_indexer (lokaal
  * de migratierol). Kan dat niet (de app-login), dan slaat het de contextindex over en zegt dat in het verslag.
  * Opnieuw draaien mag, ook met een nieuwere export: wat de collega in de app wijzigde of verwijderde blijft staan.
+ * Partners, meetings en acties die niet meer in de export staan, haalt het uit de contextindex (zou meer dan de
+ * helft verdwijnen, dan niet: controleer de export en draai met --opruimen-forceren).
  * Exitcode 0 = aantallen kloppen; 1 = aantallen kloppen niet; 2 = fout in de invoer.
  */
 import { canIndex, createDb, createIndexerDb, DEFAULT_DATABASE_URL, type Db } from './client';
@@ -32,7 +34,7 @@ function args(argv: string[]) {
 }
 
 const USAGE =
-  'gebruik: import:prototype -- --export <bestand of map> --email <collega@homezero.nl> [--naam <naam>] [--proef] [--zonder-context] [--json]';
+  'gebruik: import:prototype -- --export <bestand of map> --email <collega@homezero.nl> [--naam <naam>] [--proef] [--zonder-context] [--opruimen-forceren] [--json]';
 
 let a: Record<string, string | boolean>;
 try {
@@ -66,6 +68,7 @@ try {
     context,
     indexDb,
     contextOvergeslagen,
+    opruimenForceren: a['opruimen-forceren'] === true,
   });
   console.log(a.json ? JSON.stringify(r, null, 2) : formatReport(r));
   process.exitCode = r.klopt ? 0 : 1;

@@ -215,6 +215,174 @@
         "wat": "Status die niet bestaat",
         "stroom": "mijn",
         "status": "misschien"
+      },
+      "gt-plan": {
+        "wat": "Offerte warmtepomp naar Sanne sturen",
+        "stroom": "mijn",
+        "aan": "Sanne de Wit",
+        "org": "Feenstra",
+        "deadline": "2026-11-04",
+        "status": "open",
+        "plan": "2026-11-03",
+        "backlog": false,
+        "week": null,
+        "health": null,
+        "reminder": null,
+        "gtask": {
+          "id": "tk-demo-1",
+          "tasklist": "L"
+        },
+        "src": "gm:18a2b3c4d5e6f701",
+        "closedAt": null,
+        "naar": "taken.md",
+        "overgezet": false,
+        "bron": {
+          "key": "gm:18a2b3c4d5e6f701",
+          "label": "Mail · Sanne de Wit",
+          "url": null
+        },
+        "bewijsregel": {
+          "type": "mail",
+          "to": "",
+          "keywords": ["offerte", "warmtepomp"]
+        },
+        "citaat": "Ik stuur je de offerte morgen",
+        "created": "2026-10-28",
+        "createdAt": 1793170800000,
+        "moved": 0
+      },
+      "gt-noid": {
+        "wat": "Rekenmodel isolatie delen",
+        "stroom": "voornemen",
+        "aan": "",
+        "org": "",
+        "deadline": null,
+        "status": "open",
+        "plan": "2026-11-04",
+        "backlog": false,
+        "week": null,
+        "health": null,
+        "reminder": null,
+        "gtask": {
+          "id": null,
+          "tasklist": "L"
+        },
+        "src": null,
+        "closedAt": null,
+        "naar": "taken.md",
+        "overgezet": false,
+        "bron": {
+          "label": "Eigen invoer"
+        },
+        "bewijsregel": {
+          "type": "geen"
+        },
+        "citaat": "",
+        "created": "2026-10-29",
+        "createdAt": 1793257200000
+      },
+      "inbox1": {
+        "wat": "Reageren op Emiel: sync-fix bevestigen",
+        "stroom": "aan_mij",
+        "aan": "Emiel",
+        "org": "Feenstra",
+        "deadline": null,
+        "status": "waarschijnlijk_klaar",
+        "plan": null,
+        "backlog": false,
+        "week": null,
+        "health": null,
+        "reminder": "2026-11-05",
+        "gtask": null,
+        "src": "sl_CFE_1761680000.000500",
+        "closedAt": null,
+        "naar": "wachten-op.md",
+        "overgezet": false,
+        "bron": {
+          "key": "sl_CFE_1761680000.000500",
+          "label": "Slack · #feenstra-hz",
+          "url": "https://example.slack.com/archives/CFE/p1761680000000500"
+        },
+        "bewijsregel": {
+          "type": "slack",
+          "to": "",
+          "keywords": ["sync"]
+        },
+        "citaat": "",
+        "created": "2026-10-29",
+        "createdAt": 1793260800000,
+        "bewijs": "Slack-bericht van jou met “sync”"
+      },
+      "wd-door": {
+        "wat": "Installateursnetwerk: eerste vijf aanmeldingen",
+        "stroom": "mijn",
+        "aan": "",
+        "org": "",
+        "deadline": "2026-10-24",
+        "status": "open",
+        "plan": null,
+        "backlog": false,
+        "week": "2026-W43",
+        "health": null,
+        "reminder": null,
+        "gtask": null,
+        "src": null,
+        "closedAt": null,
+        "naar": null,
+        "overgezet": false,
+        "bron": {
+          "label": "Plansessie"
+        },
+        "bewijsregel": {
+          "type": "geen"
+        },
+        "citaat": "",
+        "created": "2026-10-20",
+        "createdAt": 1792479600000,
+        "outcome": "doorgeschoven",
+        "outcomeNote": "Pas na de mailing",
+        "lastCheck": "2026-10-22",
+        "checks": [
+          {
+            "d": "2026-10-22",
+            "h": "oranje",
+            "note": ""
+          },
+          {
+            "d": "2026-10-24",
+            "h": "oranje",
+            "note": "Pas na de mailing"
+          }
+        ]
+      },
+      "wd-mee": {
+        "wat": "Release notes sprint 63 naar alle partners",
+        "stroom": "weekdoel",
+        "aan": "",
+        "org": "",
+        "deadline": null,
+        "status": "open",
+        "plan": null,
+        "backlog": false,
+        "week": "2026-W44",
+        "health": "oranje",
+        "reminder": null,
+        "gtask": null,
+        "src": {
+          "from": "dg0"
+        },
+        "closedAt": null,
+        "naar": null,
+        "overgezet": false,
+        "bron": {
+          "label": "Eigen invoer"
+        },
+        "bewijsregel": {
+          "type": "geen"
+        },
+        "citaat": "",
+        "created": "2026-10-24",
+        "createdAt": 1792825200000
       }
     },
     "itemstate": {
@@ -276,6 +444,38 @@
           }
         ],
         "at": 1793278800000
+      },
+      "sl_CFE_1761670000.000300": {
+        "read": true,
+        "handledBy": "Lisanne",
+        "at": 1793278000000
+      },
+      "sl_CFE_1761690000.000400": {
+        "read": true,
+        "reacted": "eyes",
+        "at": 1793279000000
+      },
+      "wm:r3": {
+        "recapSession": "gestart",
+        "at": 1793280000000
+      },
+      "wm:r4": {
+        "processed": true,
+        "added": 2,
+        "at": 1793281000000
+      },
+      "_post-2026-W44-review": {
+        "done": true,
+        "skipped": false,
+        "at": 1793282000000
+      },
+      "_nudge-repo": {
+        "until": "2026-11-05",
+        "at": 1793283000000
+      },
+      "_taak-1a2b3c": {
+        "done": "gtask",
+        "at": 1793284000000
       }
     },
     "processed": {

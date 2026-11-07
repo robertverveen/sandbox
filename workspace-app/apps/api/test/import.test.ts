@@ -10,6 +10,7 @@ import { routes, type CommitItem } from '@hz/shared';
 import { createProviders } from '@hz/providers';
 import { createDb, ensureDatabase, importPrototype, readExport, runMigrations, type ExportCollections } from '@hz/db';
 import { createApp, SESSION_COOKIE } from '../src/app';
+import { stateKey } from '../src/services';
 import { loadConfig } from '../src/config';
 import { DbStore } from '../src/store';
 
@@ -79,6 +80,10 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     for (const id of ['cm:dc3', 'cm:dc4', 'cm:q1', 'cm:b1', 'cm:k1', 'cm:zonder-stroom']) expect(ids).toContain(id);
     // verborgen zoals commitVisible(): canvas-item, al in Google Taken, al overgezet naar de repo
     for (const id of ['cm:canvas-x', 'cm:old-gt', 'cm:ov1']) expect(ids).not.toContain(id);
+    // gekoppeld aan een Google Taak zoals planCommit() dat bewaart: gtask = {id, tasklist}, ook zonder bruikbare id
+    for (const id of ['cm:gt-plan', 'cm:gt-noid']) expect(ids).not.toContain(id);
+    // uit Inhalen (itemToCommit) naar wachten op: wel zichtbaar, met de bewijsregel nog in de rij (zie db-test)
+    expect(commits.find((c) => c.id === 'cm:inbox1')).toMatchObject({ stroom: 'aan_mij', aan: 'Emiel' });
     const dc3 = commits.find((c) => c.id === 'cm:dc3')!;
     expect(dc3).toMatchObject({ stroom: 'mijn', status: 'te_laat', aan: 'Marie-José', deadline: '2026-10-29' });
     expect(dc3.entities).toContain('feenstra');
@@ -98,7 +103,7 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     const t = routes.tracker.response.parse(await robert.get('/api/tracker'));
     const dg1 = t.weekdoelen.find((w) => w.wat === 'Isolatieflow TonZon live op acceptatie')!;
     expect(dg1).toMatchObject({ week: '2026-W44', health: 'groen', lastCheck: '2026-10-29', created: '2026-10-26' });
-    expect(t.weekdoelen).toHaveLength(6);
+    expect(t.weekdoelen).toHaveLength(7);
     const b = routes.briefing.response.parse(await robert.get(routes.briefing.path));
     expect(b.briefing).toMatchObject({ date: '2026-10-30' });
     expect(b.briefing!.sections.map((s) => s.title)).toEqual([
@@ -152,6 +157,48 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     const w = again.weekdoelen.find((x) => x.id === dg1.id)!;
     expect(w).toMatchObject(want);
     expect(w.checks).toHaveLength(dg1.checks.length + 1);
+  });
+
+  it('"beantwoord door" uit het prototype (handledBy) komt in item_state.answered_by en maakt een Slack-item beantwoord', async () => {
+    const robert = client();
+    await robert.login('robert@homezero.nl');
+    const robertId = (routes.session.response.parse(await robert.get(routes.session.path)) as { user: { id: string } })
+      .user.id;
+    const st = await store.itemStates(robertId);
+    expect(st['sl_CFE_1761670000.000300']).toMatchObject({ read: true, answeredBy: 'Lisanne' });
+    expect(st['sl_CFE_1761660000.000200']).toMatchObject({ answeredBy: 'Lisanne' }); // alias answeredBy
+
+    // Een Slack-item uit de fixtures dat nog niet beantwoord is: zoals checkReactions() het bewaart, dan opnieuw importeren
+    const before = routes.items.response.parse(await robert.get('/api/items')).items;
+    const sl = before.find((i) => i.type === 'slack' && !i.answered && !i.read)!;
+    expect(sl).toBeDefined();
+    const key = stateKey(sl);
+    const r = await reimport({ itemstate: [{ id: key, data: { read: true, handledBy: 'Lisanne', at: Date.now() } }] });
+    expect(r.klopt).toBe(true);
+    const after = routes.items.response.parse(await robert.get('/api/items')).items.find((i) => i.id === sl.id)!;
+    expect(after).toMatchObject({ read: true, answered: true });
+    expect((await store.itemStates(robertId))[key]).toMatchObject({ answeredBy: 'Lisanne', extra: {} });
+  });
+
+  it('een export opgenomen uit het prototype zelf (record-export.mjs): gekoppelde taken één keer, niet als tracker-item', async () => {
+    const rec = readExport(join(here, '../../../packages/db/test/fixtures/prototype-recorded-export.json'));
+    const { db, close } = createDb(url, 2);
+    try {
+      const r = await importPrototype(db, { email: 'dirk@homezero.nl', name: 'Dirk', collections: rec });
+      expect(r.klopt).toBe(true);
+      expect(r.waarschuwingen).toEqual([]);
+    } finally {
+      await close();
+    }
+    const dirk = client();
+    await dirk.login('dirk@homezero.nl');
+    const { items } = routes.items.response.parse(await dirk.get('/api/items'));
+    const ids = items.filter((i) => i.type === 'commit').map((i) => i.id);
+    expect(ids).not.toContain('cm:rec1'); // planCommit: gtask {id, tasklist}
+    expect(ids).not.toContain('cm:rec2'); // knop In Google Taken: 'gtask:<id>'
+    expect(ids).toContain('cm:rec3'); // wachten op uit Inhalen
+    expect(ids).toContain('cm:rec4'); // weekdoel
+    expect(ids.filter((i) => i === 'cm:rec3')).toHaveLength(1);
   });
 
   it('een andere collega ziet niets van Roberts import', async () => {
