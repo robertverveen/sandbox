@@ -14,24 +14,13 @@
         "week": null,
         "health": null,
         "reminder": null,
-        "gtask": {
-          "id": "tk-rec-1",
-          "tasklist": "L"
-        },
+        "gtask": { "id": "tk-rec-1", "tasklist": "L" },
         "src": null,
         "closedAt": null,
         "naar": "taken.md",
         "overgezet": false,
-        "bron": {
-          "label": "Eigen invoer"
-        },
-        "bewijsregel": {
-          "type": "mail",
-          "to": "",
-          "keywords": [
-            "offerte"
-          ]
-        },
+        "bron": { "label": "Eigen invoer" },
+        "bewijsregel": { "type": "mail", "to": "", "keywords": ["offerte"] },
         "citaat": "Ik stuur je de offerte",
         "created": "2026-11-07",
         "createdAt": 1793170860000,
@@ -54,12 +43,8 @@
         "closedAt": null,
         "naar": "taken.md",
         "overgezet": false,
-        "bron": {
-          "label": "Eigen invoer"
-        },
-        "bewijsregel": {
-          "type": "geen"
-        },
+        "bron": { "label": "Eigen invoer" },
+        "bewijsregel": { "type": "geen" },
         "citaat": "",
         "created": "2026-11-07",
         "createdAt": 1793170920000
@@ -86,9 +71,7 @@
           "label": "Slack · #feenstra-hz",
           "url": "https://example.slack.com/archives/CFE/p1761680000000500"
         },
-        "bewijsregel": {
-          "type": "geen"
-        },
+        "bewijsregel": { "type": "geen" },
         "citaat": "",
         "created": "2026-11-07",
         "createdAt": 1793170980000
@@ -110,58 +93,25 @@
         "closedAt": null,
         "naar": null,
         "overgezet": false,
-        "bron": {
-          "label": "Plansessie"
-        },
-        "bewijsregel": {
-          "type": "geen"
-        },
+        "bron": { "label": "Plansessie" },
+        "bewijsregel": { "type": "geen" },
         "citaat": "",
         "created": "2026-11-07",
         "createdAt": 1793171040000
       }
     },
     "itemstate": {
-      "sl_CFE_1761680000.000500": {
-        "read": true,
-        "handledBy": "Lisanne",
-        "at": 1793171100000
-      },
-      "sl_CFE_1761690000.000400": {
-        "read": true,
-        "reacted": "eyes",
-        "at": 1793171160000
-      },
-      "wm:r1": {
-        "processed": true,
-        "at": 1793171220000
-      },
-      "wm:r3": {
-        "recapSession": "gestart",
-        "at": 1793171280000
-      },
-      "ev_abc_google.com": {
-        "skipPrep": true,
-        "at": 1793171340000
-      },
+      "sl_CFE_1761680000.000500": { "read": true, "handledBy": "Lisanne", "at": 1793171100000 },
+      "sl_CFE_1761690000.000400": { "read": true, "reacted": "eyes", "at": 1793171160000 },
+      "wm:r1": { "processed": true, "at": 1793171220000 },
+      "wm:r3": { "recapSession": "gestart", "at": 1793171280000 },
+      "ev_abc_google.com": { "skipPrep": true, "at": 1793171340000 },
       "_pins": {
-        "list": [
-          {
-            "id": "p1",
-            "q": "feenstra, offerte",
-            "name": "Feenstra · offerte"
-          }
-        ],
+        "list": [{ "id": "p1", "q": "feenstra, offerte", "name": "Feenstra · offerte" }],
         "at": 1793171400000
       },
-      "_nudge-repo": {
-        "until": "2026-11-11",
-        "at": 1793171460000
-      },
-      "_taak-1a2b3c": {
-        "done": "genegeerd",
-        "at": 1793171520000
-      }
+      "_nudge-repo": { "until": "2026-11-11", "at": 1793171460000 },
+      "_taak-1a2b3c": { "done": "genegeerd", "at": 1793171520000 }
     }
   }
 }

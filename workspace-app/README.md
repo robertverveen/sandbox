@@ -70,14 +70,19 @@ Rollen (HZW-020):
 |---|---|---|
 | `hz_dev` (migratierol; productie: eigen migratie-login) | draait `pnpm db:migrate`, eigenaar van alle tabellen en van de SECURITY DEFINER-functies | LOGIN, CREATEDB, geen superuser, geen BYPASSRLS |
 | `hz_app` (runtime-rol) | waar elke app-query als draait | NOLOGIN, NOBYPASSRLS, eigenaar van niets; alleen SELECT/INSERT/UPDATE/DELETE (op `users` alleen de kolom `name`; op `context_index` alleen lezen) |
-| `hz_app_login` (app-login; productie: zelfde naam, eigen wachtwoord) | de login van `DATABASE_URL` voor api en worker | LOGIN, NOINHERIT, lid van alleen `hz_app`, eigenaar van niets; zonder `SET ROLE hz_app` geen enkel tabelrecht |
+| `hz_app_login` (app-login; productie: zelfde naam, eigen wachtwoord) | de login van `DATABASE_URL` voor de api | LOGIN, NOINHERIT, lid van alleen `hz_app`, eigenaar van niets; zonder `SET ROLE hz_app` geen enkel tabelrecht |
+| `hz_worker` (rol van de worker, migratie 0010) | mag als enige `system_active_user_ids()` uitvoeren (de id's van alle actieve collega's) | NOLOGIN, NOBYPASSRLS, geen tabelrechten; `USAGE` op `public` en `EXECUTE` op die ene functie |
+| `hz_worker_login` (worker-login) | `DATABASE_URL` van de worker | LOGIN, NOINHERIT, lid van alleen `hz_app` en `hz_worker`, eigenaar van niets |
 | `hz_indexer` (rol van de indexer) | schrijft in de gedeelde `context_index`, alleen via `context_index_upsert`/`context_index_delete` | NOLOGIN, NOBYPASSRLS, eigenaar van niets; lezen op `context_index` en `EXECUTE` op die twee functies |
 | `hz_indexer_login` (indexer-login) | `HZ_INDEX_DATABASE_URL` van de indexjob (context-stuk) en van het importscript | LOGIN, NOINHERIT, lid van alleen `hz_indexer`, eigenaar van niets |
 | `hz_boss` (pg-boss-login) | `HZ_BOSS_DATABASE_URL` van de worker | LOGIN, NOINHERIT, nergens lid van; eigenaar van alleen schema `pgboss`; mag niets in `public` |
 
-- `packages/db/sql/bootstrap-roles.sql` (eenmalig, beheerder; opnieuw draaien mag) maakt `hz_app` en `hz_indexer` aan
-  en maakt de migratierol er lid van. Migratie `0004_app_role.sql` weigert te draaien zonder `hz_app`, `0009` zonder
-  `hz_indexer`.
+- `packages/db/sql/bootstrap-roles.sql` (eenmalig, beheerder; opnieuw draaien mag) maakt `hz_app`, `hz_indexer` en
+  `hz_worker` aan en maakt de migratierol er lid van. Migratie `0004_app_role.sql` weigert te draaien zonder `hz_app`,
+  `0009` zonder `hz_indexer`, `0010` zonder `hz_worker`. **Na deze ronde:** op een bestaande server
+  `bootstrap-roles.sql` opnieuw draaien vóór `pnpm db:migrate`, en `sql/worker-login.sql` voor de worker.
+- `packages/db/sql/worker-login.sql` (eenmalig, beheerder) maakt de login van de worker (lid van `hz_app` en
+  `hz_worker`). Lokaal en in CI met testwachtwoord `hz_worker_login`.
 - `packages/db/sql/indexer-login.sql` en `boss-login.sql` (eenmalig, beheerder) maken de logins van de indexer en van
   pg-boss, met dezelfde controles als `app-login.sql`. Lokaal en in CI met testwachtwoorden (`hz_indexer_login`,
   `hz_boss_test`), alleen voor tests.
@@ -88,7 +93,11 @@ Rollen (HZW-020):
   `runMigrations()` gebruikt `createOwnerDb()`.
 - In `NODE_ENV=production` controleert `createDb()` elke nieuwe verbinding (`assertAppLogin`): is de login superuser,
   BYPASSRLS of eigenaar van een tabel (ook via een rol waar hij lid van is), dan faalt elke query met
-  `UnsafeAppLoginError`. De migratierol als `DATABASE_URL` in productie kan dus niet.
+  `UnsafeAppLoginError`. De migratierol als `DATABASE_URL` in productie kan dus niet. Ook een login die lid is van
+  `hz_worker` of `hz_indexer` weigert hij, behalve wat de aanroeper toestaat (`allowRoles`: de worker `hz_worker`,
+  `createIndexerDb()` `hz_indexer`). Zo kan de api niet per ongeluk met de worker-login draaien.
+- Sessies duren hoogstens 30 dagen: `auth_create_session` en `auth_touch_session` kappen de verloopdatum op
+  `now() + 30 dagen` (migratie 0010); een verloopdatum in het verleden geeft een fout.
 - Elke tabel heeft `ENABLE` + `FORCE ROW LEVEL SECURITY`. Omdat `hz_app` en de app-login geen eigenaar zijn, kan de app
   RLS niet uitzetten (`NO FORCE`, `DISABLE`, `DROP POLICY` geven `must be owner`), ook niet na `SET ROLE NONE` of
   `RESET ROLE` in een request (dan heeft de login door NOINHERIT zelfs geen leesrecht).
@@ -147,9 +156,12 @@ adapter deze SECURITY DEFINER-functies (eigenaar: de migratierol; `EXECUTE` alle
 | `auth_upsert_user(email, naam)` | aanmaken als hij niet bestaat, **altijd als `member`** en alleen als het domein in `auth_domains` staat (anders 42501); bestaande blijft ongewijzigd; auditregel. De server checkt daarnaast `email_verified`, `hd` en de allowlist | `upsertUser` |
 | `auth_create_session(user_id, token_hash, user_agent, expires_at)` | sessie voor een bestaande, niet geblokkeerde gebruiker met een toegestaan domein; alleen sha256-hash (64 hex) van het token; auditregel | `createSession` |
 | `auth_session_by_token(token_hash)` | de geldige sessie bij precies één hash (niet ingetrokken, niet verlopen, gebruiker niet geblokkeerd, domein nog toegestaan) | `findSession` |
-| `auth_touch_session(token_hash, expires_at?)` | laatst gezien bijwerken, desgewenst verlengen (glijdende sessie) | `touchSession` |
+| `auth_touch_session(token_hash, expires_at?)` | laatst gezien bijwerken, desgewenst verlengen (glijdende sessie, hoogstens 30 dagen na nu; verleden = fout) | `touchSession` |
 | `auth_revoke_session(token_hash)` | uitloggen; auditregel | `revokeSession` |
-| `system_active_user_ids()` | worker: alleen de id's van actieve collega's; per id daarna `withUser` | `activeUserIds` |
+| `system_active_user_ids()` | worker: alleen de id's van actieve collega's; per id daarna `withUser`. **Alleen `hz_worker`** (0010): een request (hz_app) kan geen gebruikers-id's opvragen om als `app.user_id` te zetten | `activeUserIds` (als `hz_worker`, `withWorker`) |
+
+`auth_create_session` kapt de verloopdatum ook op 30 dagen. Een bibliotheek met een langere standaardduur (Better
+Auth: `session.expiresIn`) zet die op hoogstens 30 dagen; anders krijgt de sessie stil 30 dagen.
 
 Admin word je alleen via een beheerscript als de migratierol: `psql "<migratie-url>" -v email=… -v role=admin -f
 packages/db/sql/set-role.sql` (auditregel `user.role`). Een domein toevoegen: als de migratierol
@@ -182,9 +194,9 @@ deel. De gedeelde contextindex schrijft het als `hz_indexer`: met `HZ_INDEX_DATA
 | Collectie | Naar | Sleutel (idempotent) |
 |---|---|---|
 | `commitments` stroom `weekdoel`, `roadmap` | `weekdoelen` (velden zonder kolom in `extra`) | `legacy_id` = doc-id |
-| `commitments` stroom `mijn`, `voornemen`, `aan_mij`, `bespreken` (leeg = `mijn`) | `tracker_items` | `legacy_id` = doc-id |
+| `commitments` stroom `mijn`, `voornemen`, `aan_mij`, `bespreken` (leeg = `mijn`) | `tracker_items` (`gtask` als `{id, tasklist}` of `'gtask:<id>'` -> kolom `gtask` = de taak-id, `tasklist` in `extra.gtask`; `src` -> `src_key`; `bron` met `key`; bewijsregel, week, outcome, checks, lastCheck in `extra`) | `legacy_id` = doc-id |
 | `weekdoelen` (optioneel) | `weekdoelen` | `legacy_id` = `weekdoelen:<id>` |
-| `itemstate` | `item_state` (read, processed, skipPrep, answeredBy, plan, backlog, moved; rest in `extra`) | item-sleutel |
+| `itemstate` | `item_state` (read, processed, skipPrep, **handledBy** of answeredBy -> `answered_by`, plan, backlog, moved, at -> `updated_at`; rest in `extra`) | item-sleutel |
 | `itemstate/_pins` | `pins` | zoekopdracht |
 | `processed` (optioneel) | `item_state.processed` | item-sleutel |
 | `briefings` | `briefings` (één per dag; de nieuwste wint) | dag |
@@ -208,13 +220,39 @@ ongewijzigd + `overgeslagen: in app gewijzigd` + `in app verwijderd`, en rijen n
 verwijderd. Het toont geen inhoud van toezeggingen of briefings. Een tweede run met dezelfde export geeft dus 0 nieuw
 en 0 bijgewerkt; wat in de app is aangepast staat in de kolom `in app gewijzigd`.
 
+**Niets gaat stil verloren.** `VELDEN` in `packages/db/src/import.ts` zegt per veld dat het prototype schrijft
+(`commitAdd()`, elke `commitSave()` en `setState()` in `index.html`) of het in een kolom of in `extra` landt. Een
+waarde die niet in zijn kolom past (een datum als "volgende week", een onbekende status, een gtask zonder id) blijft
+met de oorspronkelijke waarde in `extra`, met een waarschuwing in het verslag. Een briefing heeft geen `extra`:
+onbekende velden noemt het verslag. Toezeggingen die aan een Google Taak gekoppeld zijn (`gtask`, ook zonder
+bruikbare id) zijn in de tracker verborgen zoals `commitVisible()` in het prototype: de taak staat al in Google Taken,
+dus Robert ziet hem één keer.
+
+**Contextindex opruimen.** Bij opnieuw importeren met een export die partners (en acties) bevat, haalt het script
+rijen weg van bestanden die niet meer in de export staan (een verdwenen partner of meeting: `context_index_delete`
+per pad) en van acties die uit `acties.md` verdwenen (`context_index_delete_id` per sleutel), als `hz_indexer`.
+Alleen binnen de soorten die de export beschrijft en alleen op de paden die de import zelf maakt
+(`partners|projecten/<slug>/brief.md`, `acties.md`, `meetings/*.md`); rijen van de indexjob (product, besluiten)
+blijven. Zou meer dan de helft van die rijen verdwijnen (minstens 10 in scope), dan ruimt het niets op en waarschuwt;
+met `--opruimen-forceren` wel. Het verslag noemt de weggehaalde paden en sleutels (geen inhoud).
+
 Een geïmporteerd weekdoel houdt de item-sleutel uit het prototype, `cm:<doc-id>` (`Weekdoel.legacyId`), net als
 tracker-items; leesstatus en planning uit `itemstate` blijven er dus aan hangen. `PATCH /api/weekdoelen/:id` gebruikt
 het rij-id (`docId`).
-Test: `packages/db/test/import.test.ts` (synthetische export `test/fixtures/prototype-export.json`; o.a. een
-aangepast weekdoel en tracker-item blijven staan bij dezelfde en een nieuwere export, verwijderd blijft weg; de
-opdrachtregel als app-login met en zonder indexer-login) en `apps/api/test/import.test.ts` (na de import ziet Robert
-zijn tracker terug in de API, met `cm:dg1`; PATCH op een weekdoel overleeft opnieuw importeren; een collega ziet niets).
+Tests:
+- `packages/db/test/import.test.ts`: synthetische export `test/fixtures/prototype-export.json`, opgebouwd uit de
+  schrijfpaden van het prototype (gtask als object en als tekst, handledBy, itemToCommit met `src` en `bron.key`,
+  een doorgeschoven en een meegenomen weekdoel, done/skip/until/recapSession/reacted in itemstate); o.a. een aangepast
+  weekdoel en tracker-item blijven staan bij dezelfde en een nieuwere export, verwijderd blijft weg; de contextindex
+  ruimt verdwenen partners, meetings en acties op; de opdrachtregel als app-login met en zonder indexer-login.
+- `packages/db/test/prototype-contract.test.ts`: leest `commitAdd`/`commitSave`/`setState` uit
+  `workspace-prototype/index.html` (en welke collecties het schrijft) en eist dat elk veld in `VELDEN` staat en na
+  `planImport` in zijn kolom of in `extra` zit. Plus `test/fixtures/prototype-recorded-export.json`: opgenomen uit het
+  prototype zelf met `node tools/bar/record-export.mjs` (commitAdd, planCommit, de knop In Google Taken,
+  itemToCommit, setState, setPins); opnieuw opnemen na een nieuwe versie van het prototype.
+- `apps/api/test/import.test.ts`: na de import ziet Robert zijn tracker terug in de API, met `cm:dg1`; gekoppelde
+  taken staan er niet dubbel in; handledBy maakt een Slack-item beantwoord; PATCH op een weekdoel overleeft opnieuw
+  importeren; een collega ziet niets.
 
 ### Worker
 
@@ -224,19 +262,21 @@ lokaal valt hij terug op `DATABASE_URL`). In `NODE_ENV=production` weigert de wo
 eigenaar is van iets buiten het pg-boss-schema (dus nooit de migratierol: dan stond de credential van de
 tabeleigenaar in het worker-proces), superuser of BYPASSRLS is (`UnsafeBossLoginError`, `assertBossLogin` hergebruikt
 `checkAppLogin` met een uitzondering voor dat schema), of als `DATABASE_URL` en `HZ_BOSS_DATABASE_URL` gelijk zijn.
-App-tabellen gaan via `createDb(DATABASE_URL)` als `hz_app` (productie: de app-login, ook gecontroleerd); jobs per
-collega gebruiken `activeUserIds()` en daarna `withUser`. `hz_app` heeft geen rechten op het pg-boss-schema.
+App-tabellen gaan via `createDb(DATABASE_URL, …, { allowRoles: ['hz_worker'] })` als `hz_app` (productie: de
+worker-login `hz_worker_login` uit `sql/worker-login.sql`, ook gecontroleerd); jobs per collega gebruiken
+`activeUserIds()` (als `hz_worker`) en daarna `withUser`. `hz_app` heeft geen rechten op het pg-boss-schema.
 `boss-login.sql` geeft `hz_boss` ook CREATE op de database, omdat pg-boss bij elke start `CREATE SCHEMA IF NOT EXISTS`
 draait (Postgres controleert dat recht ook als het schema al bestaat). Test: `apps/worker/test/app-db.test.ts`
-(draait met `NODE_ENV=production`, pg-boss als `hz_boss`, jobs als `hz_app_login`; de migratierol als pg-boss-login
-wordt geweigerd).
+(draait met `NODE_ENV=production`, pg-boss als `hz_boss`, jobs als `hz_worker_login`; de migratierol als
+pg-boss-login wordt geweigerd; de api-login kan `system_active_user_ids()` niet uitvoeren, ook niet met app.purpose;
+`createDb()` weigert in productie de worker-login voor de api).
 
 ## CI
 
 De git-root is de map boven `workspace-app`, dus de workflow staat in `../.github/workflows/workspace-app.yml` (met
 `defaults.run.working-directory: workspace-app` en pnpm uit `package.json`). De Postgres-service draait met superuser
 `postgres`; een stap maakt `hz_dev` aan zonder SUPERUSER en draait `bootstrap-roles.sql`, `app-login.sql`,
-`indexer-login.sql` en `boss-login.sql`. `packages/db/test/ci.test.ts` bewaakt dat.
+`indexer-login.sql`, `worker-login.sql` en `boss-login.sql`. `packages/db/test/ci.test.ts` bewaakt dat.
 
 ## Mapstructuur
 
@@ -251,7 +291,8 @@ packages/
   context/    TypeScript-port van export_context.py (register, brief, actieregel, wachten-op, taken, aangehouden, status)
   db/         Drizzle-schema, migraties, RLS, envelope-versleuteling van tokens, datatoegang
 tools/
-  bar/        screenshots van de lat (prototype met nep-window.claude)
+  bar/        screenshots van de lat (prototype met nep-window.claude); record-export.mjs neemt een export op uit
+              de echte schrijfpaden van het prototype (fixture voor de import)
   shot/       screenshots van onze app (start zelf api en web op 8790/8791)
   compare.mjs lat en onze app naast elkaar, desgewenst blind
 e2e/          Playwright-tests (schil, Dagstart, toetsenbord, axe, 400 px)

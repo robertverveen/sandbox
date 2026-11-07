@@ -37,8 +37,11 @@ describe('CI-workflow', () => {
     expect(text).toMatch(/-v migrator=hz_dev -f packages\/db\/sql\/bootstrap-roles\.sql/);
   });
 
-  it('maakt de logins die de tests als productie gebruiken: app, indexer en pg-boss (stuk E2)', () => {
+  it('maakt de logins die de tests als productie gebruiken: app, indexer, worker en pg-boss (stuk E2)', () => {
     expect(text).toMatch(/-v login=hz_app_login -v password=hz_app_login -f packages\/db\/sql\/app-login\.sql/);
+    expect(text).toMatch(
+      /-v login=hz_worker_login -v password=hz_worker_login -f packages\/db\/sql\/worker-login\.sql/,
+    );
     expect(text).toMatch(
       /-v login=hz_indexer_login -v password=hz_indexer_login -f packages\/db\/sql\/indexer-login\.sql/,
     );

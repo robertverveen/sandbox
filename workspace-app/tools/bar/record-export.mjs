@@ -20,6 +20,7 @@
  */
 /* global LV, ST, commitAdd, commitItems, planCommit, itemToCommit, setState, setPins, stateKey */
 import { chromium } from 'playwright';
+import * as prettier from 'prettier';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -209,7 +210,9 @@ let t = 1793170800000;
 for (const d of Object.values(exp.collections.commitments))
   if (typeof d.createdAt === 'number') d.createdAt = t += 60000;
 for (const d of Object.values(exp.collections.itemstate)) if (typeof d.at === 'number') d.at = t += 60000;
-writeFileSync(out, JSON.stringify(exp, null, 2) + '\n');
+// In de stijl van de repo (prettier), zodat format:check groen blijft na een nieuwe opname.
+const cfg = (await prettier.resolveConfig(out)) ?? {};
+writeFileSync(out, await prettier.format(JSON.stringify(exp), { ...cfg, parser: 'json' }));
 console.log(
   `${Object.keys(store.commitments).length} commitments, ${Object.keys(store.itemstate).length} itemstate -> ${out}`,
 );
