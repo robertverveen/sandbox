@@ -303,6 +303,8 @@ export class DbStore implements AppStore {
       checks: r.checks as Weekdoel['checks'],
       closedAt: r.closedAt ?? undefined,
       bron: r.bron ?? undefined,
+      lastCheck: r.checks.length ? r.checks[r.checks.length - 1]!.d : undefined,
+      created: r.createdAt.getTime() > 0 ? r.createdAt.toISOString().slice(0, 10) : undefined,
     };
   }
   async weekdoelen(userId: string) {
@@ -334,8 +336,33 @@ export class DbStore implements AppStore {
         }
       : null;
   }
-  async legacyCommits() {
-    return [];
+  /** Tracker-items uit de import van het prototype (tracker_items), zoals commitItems() daar. */
+  async legacyCommits(userId: string): Promise<CommitItem[]> {
+    const rows = await dbm.listTrackerItems(this.db, userId);
+    return rows.filter(dbm.trackerItemVisible).map((r) => {
+      const label = r.bron?.label ?? '';
+      const parts = [r.aan, label, r.bewijs ?? ''].filter(Boolean);
+      // De organisatie helpt de herkenning (recognize leest titel en body); niet dubbel als hij er al in staat.
+      if (r.org && !parts.join(' ').toLowerCase().includes(r.org.toLowerCase())) parts.splice(1, 0, r.org);
+      return {
+        id: 'cm:' + (r.legacyId ?? r.id),
+        docId: r.id,
+        type: 'commit' as const,
+        title: r.wat,
+        entities: [],
+        stroom: r.stroom,
+        status: r.status,
+        aan: r.aan,
+        deadline: r.deadline,
+        plan: r.planDate,
+        backlog: r.backlog,
+        reminder: r.reminder,
+        moved: r.moved,
+        url: r.bron?.url ?? null,
+        time: r.created ? r.created + 'T09:00' : null,
+        body: parts.join(' · '),
+      };
+    });
   }
   async connections(userId: string) {
     const rows = await dbm.listConnections(this.db, userId);

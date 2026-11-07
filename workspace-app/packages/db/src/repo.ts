@@ -15,6 +15,7 @@ import {
   pins,
   preferences,
   repoQueue,
+  trackerItems,
   weekdoelen,
 } from './schema';
 
@@ -436,3 +437,23 @@ export async function searchContextIndex(db: Db, userId: string, q: string, limi
       .limit(limit),
   );
 }
+
+/* ---------- Tracker-items uit het prototype (HZW-021) ---------- */
+
+export type TrackerItemRow = typeof trackerItems.$inferSelect;
+
+/** Tracker-items van een collega (geïmporteerd uit de artifact-opslag), oudste eerst. */
+export async function listTrackerItems(db: Db, userId: string) {
+  return withUser(db, userId, (tx) =>
+    tx.select().from(trackerItems).orderBy(asc(trackerItems.created), asc(trackerItems.createdAt)),
+  );
+}
+
+/**
+ * Zichtbaar in de tracker, zoals commitVisible() in het prototype: niet de oude canvas-items (sinds 5 nov in
+ * wachten-op.md), niet wat al naar de repo is overgezet, en geen taak die al in Google Taken staat.
+ */
+export const trackerItemVisible = (r: Pick<TrackerItemRow, 'stroom' | 'overgezet' | 'gtask' | 'bron'>) =>
+  !(r.bron?.label === 'Canvas Wachten op' && (r.stroom === 'aan_mij' || r.stroom === 'bespreken')) &&
+  !r.overgezet &&
+  !((r.stroom === 'mijn' || r.stroom === 'voornemen') && r.gtask);
