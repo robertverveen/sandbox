@@ -1,89 +1,106 @@
 # Server en uitrol als code (stuk E0)
 
-Alles om de HomeZero Workspace op één Hetzner Cloud-server te draaien, als code in deze map: cloud-init, Docker-images,
-Compose, Caddy, GitHub Actions, back-ups, secrets, monitoring en een runbook. Lokaal gevalideerd (zonder Docker);
-het echte aanmaken van server, DNS, Storage Box en secrets is mensenwerk met exacte stappen in
-[`RUNBOOK.md`](RUNBOOK.md) en de bijlage van `../HUMAN_INPUT.md`.
+Alles om de HomeZero Workspace te draaien op **de bestaande Hetzner-server van Robert**, die al in zijn tailnet zit
+en waar andere projecten op draaien (plaat, keuze 01, besloten 7 nov). Als code in deze map: voorcheck,
+serverinrichting, Docker-images, Compose, de router en het site-blok voor de proxy die er al draait, GitHub Actions
+via Tailscale, back-ups, secrets, monitoring en een runbook. Lokaal gevalideerd (zonder Docker-daemon en zonder
+server); wat op de echte server en in de consoles moet, staat met exacte stappen in [`RUNBOOK.md`](RUNBOOK.md) en de
+bijlage van `../HUMAN_INPUT.md`.
 
 Stories: HZW-002 (server), 003 (DNS en TLS), 004 (CI/CD), 005 (preview per PR), 006 (secrets), 007 (monitoring),
 008 (back-ups), 082 (verhuizen). HZW-001 (repo en CI) stond al; E0 voegt de infra-workflows toe.
 
-## Keuze: Compose + Caddy, niet Coolify (plaat, keuze 01, open vraag H4)
+## Het servermodel: naast de andere projecten, niets van hen raken
 
-De plaat stelt Coolify voor, met Compose + Caddy als alternatief, en laat de keuze open (H4: "Coolify, of Docker
-Compose + Caddy met previews via GitHub Actions?"). Gekozen: **Compose + Caddy, uitgerold door GitHub Actions**.
+| Eis (HZW-002, 004, plaat 01) | Hoe |
+|---|---|
+| Geen nieuwe server | Geen cloud-init in de hoofdroute. `scripts/server-setup.sh` zet de workspace op de bestaande server, als root via Tailscale. Cloud-init en `hetzner-create.sh` zijn alleen een optie voor HZW-082. |
+| Voorcheck op botsingen, droog | `scripts/server-check.sh --voorcheck` kijkt alleen: poorten, de reverse proxy op 443, Docker-netwerken, compose-projecten en containers, volumes, mappen onder `/srv` en `/opt`, gebruiker, systemd-units en onze domeinen in de config van de proxy en in labels van andere containers. Rood = stoppen. Draait vóór `server-setup.sh` en vóór elke uitrol (`deploy.sh`). |
+| Eigen geïsoleerde stack | Gebruiker `hz-workspace`, map `/srv/hz-workspace` (met merkbestand `.hz-workspace`), compose-projecten `hz-workspace-prod`, `-test`, `-pr-<nr>`, `-ops`, `-router`, netwerken `hz-workspace-net` en `<project>-net`, eigen Postgres-volume per instantie, units `hz-workspace-*`. Alles draagt het label `nl.homezero.workspace=1`, zo herkent de voorcheck wat van ons is. |
+| Geheugen- en CPU-limieten | `mem_limit` en `cpus` op elke service (instelbaar met `HZ_MEM_*`/`HZ_CPUS_*` in `hz.env`; previews kleiner, maximaal 3). Samen hooguit 5760 MiB voor productie, test, GlitchTip en router; de voorcheck vergelijkt dat met het vrije geheugen. |
+| Aansluiten op de proxy die er al draait | Geen eigen proxy op 80/443. Eén **router** (Caddy, zonder TLS, zonder publieke poort) verdeelt onze domeinen over de instanties. De bestaande proxy krijgt alleen een site-blok (Caddy, `scripts/proxy-snippet.sh caddy`) of leest labels van de router (Traefik, ook de proxy van Coolify). Alleen de router doet mee in het netwerk van de proxy (of luistert op 127.0.0.1 als de proxy op de host draait). |
+| Beheer alleen via Tailscale, publiek alleen 443 | De servercontrole eist dat sshd alleen op het tailnet-adres luistert (of dat ufw 22 alleen op `tailscale0` toelaat), alleen met sleutel. Publiek alleen 443 (de proxy; 80 mag alleen doorsturen). De workspace publiceert zelf niets buiten 127.0.0.1. |
+| Uitrol nooit via publieke SSH | GitHub Actions wordt een tijdelijke, getagde Tailscale-node (`tailscale/github-action`, `tag:ci`, ephemeral, OAuth-client). `scripts/ci-ssh.sh` weigert elk doel dat niet naar een tailnet-adres wijst. De ACL (`tailscale/acl.hujson`) laat `tag:ci` alleen bij poort 22 van de server; op de server mag die sleutel alleen `hz-ssh-dispatch`. |
+| Automatische beveiligingsupdates | De servercontrole eist `unattended-upgrades` aan. |
 
-| | Coolify | Compose + Caddy (gekozen) |
+## Keuze: Compose + router achter de bestaande proxy, niet Coolify (plaat keuze 01, H4)
+
+De plaat stelt Coolify voor, met Compose + Caddy als alternatief; sinds 7 nov staat vast dat het de bestaande server
+wordt, "aangesloten op de reverse proxy die er al draait (Caddy, Traefik of Coolify, wat het onderzoek vindt)".
+Gekozen: **Compose, uitgerold door GitHub Actions via Tailscale, met een eigen router achter die proxy**.
+
+| | Coolify erbij installeren | Compose + router (gekozen) |
 |---|---|---|
-| Alles in Git | Nee: projecten, omgevingen en secrets staan in de database van Coolify | Ja: compose, Caddyfile, scripts en versleutelde secrets |
-| Lokaal te testen | Nee (alleen in een draaiende Coolify) | Ja: schema's, Caddy, scripts met nep-docker, back-up tegen Postgres |
-| Stories | HZW-004 vraagt images in GHCR en uitrol vanuit Actions; Coolify bouwt zelf | Past precies: Actions bouwt, de server haalt op |
-| Onderhoud | Coolify zelf moet updates krijgen (de plaat noemt dat als nadeel) | Alleen Ubuntu (automatisch), Docker en Caddy (images, Dependabot) |
-| Verhuizen (HZW-082) | Coolify-database meeverhuizen | Cloud-init opnieuw draaien en de back-up terugzetten |
-| Previews per PR | Ingebouwd | Gebouwd: `preview.sh` en workflow `workspace-preview` (on-demand TLS) |
-
-De plaat zegt het zelf: "Kent je developer Coolify niet, dan is Compose + Caddy het eenvoudigere alternatief", en de
-briefing vraagt "alles als script in de repo". De bouwers zijn hier AI-agents zonder draaiende Coolify, dus wat
-Coolify extra geeft (een UI) is niet te testen, en wat het kost (state buiten Git) botst met de werkwijze. De
-compose-bestanden zijn gewone Compose: overstappen naar Coolify later kan met dezelfde bestanden
-(Docker Compose-buildpack), als het team dat toch wil.
+| Op een server met andere projecten | Nieuw beheerplatform met eigen proxy (Traefik op 80/443): botst met de proxy die er al draait | Alleen een router zonder poort; de bestaande proxy blijft de baas |
+| Alles in Git | Nee: projecten, omgevingen en secrets in de database van Coolify | Ja: compose, router, scripts, versleutelde secrets |
+| Lokaal te testen | Nee | Ja: schema's, Caddy echt gestart, scripts met nep-docker en een nep-server met andere projecten |
+| Draait er al Coolify? | - | Dan is de proxy Traefik op netwerk `coolify`: `HZ_PROXY_KIND=traefik`, de router krijgt labels; geen Coolify-project nodig |
+| Previews per PR | Ingebouwd | `preview.sh` en workflow `workspace-preview`; de router routeert `pr-<nr>`, de proxy vraagt het certificaat on-demand |
 
 ## Op de server
 
 ```
-Hetzner Cloud CX32 (Ubuntu 24.04, Neurenberg)          firewall: 22, 80, 443 (Hetzner + ufw)
-├── hz-edge     Caddy: TLS (Let's Encrypt), http->https, routering per domein; on-demand TLS voor previews
-├── hz-prod     db (Postgres 16), migrate, api, worker, web     https://{HZ_DOMAIN}
-├── hz-test     idem, eigen database                            https://{HZ_TEST_DOMAIN}
-├── hz-pr-<nr>  idem, demodata, achter wachtwoord               https://pr-<nr>.{HZ_TEST_DOMAIN}
-├── hz-ops      GlitchTip (foutregistratie)                     https://{HZ_ERRORS_DOMAIN}
-└── systemd     hz-backup (02:30), hz-hersteltest (maandelijks), hz-heartbeat (elke 5 min)
+Bestaande Hetzner-server (in Roberts tailnet)          publiek alleen 443 (de proxy); SSH alleen via tailscale0
+├── bestaande proxy (Caddy/Traefik, van de andere projecten)  TLS voor onze domeinen -> hz-workspace-router
+├── andere projecten                                     ongemoeid; de voorcheck bewaakt dat
+└── /srv/hz-workspace (gebruiker hz-workspace)
+    ├── hz-workspace-router   Caddy zonder TLS: domein -> instantie, previewwachtwoord, headers, logs zonder PII
+    ├── hz-workspace-prod     db (Postgres 16), migrate, api, worker, web     https://{HZ_DOMAIN}
+    ├── hz-workspace-test     idem, eigen database                            https://{HZ_TEST_DOMAIN}
+    ├── hz-workspace-pr-<nr>  idem, demodata, achter wachtwoord               https://pr-<nr>.{HZ_TEST_DOMAIN}
+    ├── hz-workspace-ops      GlitchTip (foutregistratie)                     https://{HZ_ERRORS_DOMAIN}
+    └── systemd               hz-workspace-backup (02:30), -hersteltest (maandelijks), -heartbeat (elke 5 min)
 ```
 
-- Per instantie serveert de web-container (Caddy) de SPA en zet `/api` door naar zijn eigen api; de edge kent per
-  instantie één adres (`<instantie>-web`). Domeinen staan alleen in `/etc/hz/hz.env`: een ander domein of een
-  tweede server is geen codewijziging.
+- Per instantie serveert de web-container (Caddy) de SPA en zet `/api` door naar zijn eigen api; de router kent per
+  instantie één adres (`<instantie>-web` op `hz-workspace-net`). Domeinen staan alleen in `/srv/hz-workspace/etc/hz.env`:
+  een ander domein of een andere server is geen codewijziging.
 - De database heeft geen open poort. Rollen (`postgres/hz-roles.sh`): `hz_migrator` (eigenaar, migraties en
   pg-boss), `hz_app` (runtime, RLS), `hz_app_login` (DATABASE_URL van api en worker, alleen lid van hz_app),
   `hz_backup` (BYPASSRLS, alleen lezen: een dump als eigenaar faalt door FORCE RLS).
-- GitHub Actions komt binnen als gebruiker `deploy` met een SSH-sleutel die alleen `hz-ssh-dispatch` mag draaien
-  (deploy, rollback, preview up/down, status, check). Het registry-token is de GITHUB_TOKEN van die run.
-- De uitrolbundel (deze map plus de rollen-SQL) reist mee in het api-image; compose, Caddyfile en scripts horen dus
-  altijd bij dezelfde versie van de app.
+- De uitrolbundel (deze map plus de rollen-SQL) reist mee in het api-image; compose, router, scripts en voorcheck
+  horen dus altijd bij dezelfde versie van de app.
+- `hz-workspace` zit in de groep `docker` (nodig voor Compose). Docker-toegang is op elke server root-gelijk; daarom
+  kan de CI-sleutel alleen `hz-ssh-dispatch` draaien en staan de vaste scripts in een map van root.
 
 ## Mappen
 
 | Pad | Wat |
 |---|---|
-| `cloud-init/render.mjs` | user-data voor een nieuwe server (gebruikers, SSH, ufw, updates, Docker, timers, vaste scripts) |
-| `docker/*.Dockerfile`, `docker/build-app.sh` | images voor api, worker en web; `build-app.sh` is wat de Dockerfiles draaien |
-| `docker/web.Caddyfile`, `docker/web-csp.mjs` | web-container: SPA, `/api`, CSP met de hash van het inline thema-script |
-| `compose/app.yaml`, `edge.yaml`, `ops.yaml` | een instantie, de edge-proxy, GlitchTip |
-| `caddy/Caddyfile` | edge: TLS, routering, previews, logs zonder persoonsgegevens |
-| `postgres/hz-roles.sh` | databaserollen (eerste start van de db-container, en bij een verhuizing) |
-| `scripts/deploy.sh`, `preview.sh`, `hz-ssh-dispatch.sh` | uitrol met health-check en rollback, previews, forced command |
+| `scripts/server-check.sh` | servercontrole en voorcheck (alleen lezen) |
+| `scripts/server-setup.sh` | workspace klaarzetten op een server, na een groene voorcheck; `--dry-run` wijzigt niets |
+| `scripts/proxy-snippet.sh` | site-blok voor een bestaande Caddy (of de eigen edge), controle-uitvoer voor Traefik |
+| `compose/app.yaml`, `ops.yaml` | een instantie, GlitchTip |
+| `compose/router.yaml` + `router-network.yaml`, `router-loopback.yaml`, `router-traefik.yaml` | de router en hoe de proxy hem bereikt |
+| `compose/edge.yaml`, `caddy/edge/Caddyfile` | eigen edge op 443, **alleen** voor een server zonder proxy (HZW-082) |
+| `caddy/router/Caddyfile` | routering, previews (wachtwoord, toestemming voor on-demand TLS), headers, logs zonder PII |
+| `docker/*.Dockerfile`, `docker/build-app.sh`, `docker/web.Caddyfile`, `docker/web-csp.mjs` | images voor api, worker en web |
+| `postgres/hz-roles.sh` | databaserollen (eerste start van de db-container, elke uitrol, verhuizing) |
+| `scripts/deploy.sh`, `preview.sh`, `hz-ssh-dispatch.sh`, `ci-ssh.sh` | uitrol met voorcheck, health-check en rollback; previews; forced command; SSH alleen via het tailnet |
 | `scripts/backup.sh`, `restore.sh`, `hersteltest.sh` | back-up (age) naar de Storage Box, herstel, hersteltest met rijen tellen |
 | `scripts/secrets.sh`, `secrets/` | secrets met age: versleuteld in Git, `.keys` zegt welke er moeten zijn |
-| `scripts/heartbeat.sh`, `server-check.sh`, `tls-check.sh` | uptime-hartslag, servercontrole, TLS-controle |
-| `scripts/verhuis-proef.sh`, `hetzner-create.sh` | proefverhuizing, server aanmaken met hcloud |
-| `systemd/` | timers voor back-up, hersteltest en hartslag |
-| `test/` | vitest: schema's, parsers, scripts met nep-docker, back-up en verhuizing tegen Postgres |
+| `scripts/heartbeat.sh`, `tls-check.sh` | uptime-hartslag (alleen containers van de workspace), TLS-controle |
+| `tailscale/acl.hujson` | fragment voor de tailnet-policy: `tag:ci` alleen naar poort 22 van de server, met policytests |
+| `cloud-init/render.mjs`, `scripts/hetzner-create.sh`, `scripts/verhuis-proef.sh` | **optie voor HZW-082**: eigen server (Tailscale, ufw alleen 443, daarna `server-setup.sh`), proefverhuizing |
+| `systemd/` | timers voor back-up, hersteltest en hartslag (`hz-workspace-*`) |
+| `test/` | vitest: schema's, parsers, router echt in Caddy, scripts met nep-docker, nep-server met andere projecten, back-up en verhuizing tegen Postgres |
 
 Workflows (in `../../.github/workflows`): `workspace-deploy` (test bij merge, productie bij release),
 `workspace-preview` (per PR), `workspace-infra` (statische controles, images echt bouwen, rooktest web-container),
-`workspace-server-check` (wekelijks, uitkomst in een issue). De bestaande `workspace-app` installeert nu ook `age`
-voor de infra-tests.
+`workspace-server-check` (wekelijks, van buiten en via het tailnet; uitkomst in een issue). De bestaande
+`workspace-app` installeert nu ook `age`, `shellcheck` en `caddy` voor de infra-tests.
 
 ## Lokaal controleren
 
 ```bash
 pnpm --filter @hz/infra test          # alle infra-tests (Postgres op localhost:5432 nodig, zie hieronder)
-bash infra/scripts/validate.sh        # shellcheck, actionlint, caddy validate, compose config, timers, cloud-init
+bash infra/scripts/validate.sh        # shellcheck, actionlint, caddy validate (router, site-blok, edge), compose config, timers, cloud-init
 node infra/scripts/web-smoke.mjs      # web-container (Caddy + CSP) in een echte browser; vereist caddy en apps/web/dist
 ```
 
 De back-up- en verhuistests maken rollen met BYPASSRLS en hebben dus een superuser nodig: `HZ_PG_ADMIN_URL`, of in CI
-`postgres` met `PGPASSWORD`, of lokaal als root via `su postgres` (maakt `hz_e0_admin`). Testdatabases en -rollen
+`postgres` met `PGPASSWORD`, of lokaal als root via `su postgres` een tijdelijke `hz_e0_admin` met een willekeurig
+wachtwoord. Na de run ruimt `test/global-setup.ts` alle rollen `hz_e0_*` op, ook die beheerder. Testdatabases
 beginnen met `hz_e0_`.
 
 ## Wat er in de app veranderde (klein, toevoegend)
@@ -92,6 +109,7 @@ beginnen met `hz_e0_`.
   persoonsgegevens, access-log met gemaskeerde paden, hartslag voor de worker.
 - `apps/api/src/index.ts`: `installOps`, access-log rond `app.fetch`, en `HZ_API_HOST` (container: `0.0.0.0`).
 - `apps/worker/src/index.ts`: `installOps` en de hartslag, onderaan.
+- `eslint.config.js` en `.prettierignore`: `tools/lead/` (workflow-scripts van de lead) overgeslagen.
 
 Nieuwe omgevingsvariabelen (alle optioneel; lokaal staat alles uit, de images zetten de productiewaarden):
 `HZ_API_HOST` (container `0.0.0.0`), `HZ_ERROR_DSN` (GlitchTip), `HZ_LOG_FORMAT=json`, `HZ_ENVIRONMENT`,

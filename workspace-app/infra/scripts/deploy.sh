@@ -56,7 +56,7 @@ if [[ -f "$infra/secrets/server.env.age" ]]; then
 else
   : >"$server_env"
 fi
-# Server-secrets: de edge heeft het previewwachtwoord nodig; productie ook back-ups en de hartslag (server.keys).
+# Server-secrets: de router heeft het previewwachtwoord nodig; productie ook back-ups en de hartslag (server.keys).
 if [[ "$env" == prod ]]; then
   miss="$(missing_keys "$server_env" "$infra/secrets/server.keys")"
 else
@@ -170,7 +170,8 @@ else
   die "uitrol $tag mislukt (geen vorige versie om naar terug te gaan)"
 fi
 
-# 5. Opruimen: oude bundels (houd de 5 nieuwste plus wat in gebruik is) en ongebruikte images.
+# 5. Opruimen: oude bundels (houd de 5 nieuwste plus wat in gebruik is) en onze eigen oude images. Nooit
+# 'docker image prune': op deze server staan images van andere projecten.
 keep="$(cat "$HZ_ROOT"/env/*/current "$HZ_ROOT"/env/*/previous 2>/dev/null | sort -u || true)"
 if [[ -d "$HZ_ROOT/releases" ]]; then
   # shellcheck disable=SC2012 # namen zijn tags; sorteren op tijd
@@ -179,4 +180,11 @@ if [[ -d "$HZ_ROOT/releases" ]]; then
     grep -qxF "$t" <<<"$keep" || rm -rf "$dir"
   done < <(ls -1dt "$HZ_ROOT"/releases/*/ 2>/dev/null | tail -n +6)
 fi
-"$HZ_DOCKER" image prune -af --filter "until=168h" >/dev/null 2>&1 || true
+previews="$(cat "$HZ_ROOT"/previews/pr-*/tag 2>/dev/null || true)"
+for repo in "$HZ_REGISTRY/hz-api" "$HZ_REGISTRY/hz-worker" "$HZ_REGISTRY/hz-web"; do
+  while IFS= read -r t; do
+    [[ -n "$t" && "$t" != "<none>" ]] || continue
+    grep -qxF "$t" <<<"$keep"$'\n'"$previews" && continue
+    "$HZ_DOCKER" image rm "$repo:$t" >/dev/null 2>&1 || true
+  done < <("$HZ_DOCKER" image ls "$repo" --format '{{.Tag}}' 2>/dev/null || true)
+done

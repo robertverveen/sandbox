@@ -84,7 +84,7 @@ case "$cmd" in
     ensure_net
     compose_pr "$nr" pull --quiet
     compose_pr "$nr" up -d --remove-orphans --wait --wait-timeout "${HZ_WAIT_TIMEOUT:-300}" || die "preview pr-$nr wordt niet gezond"
-    # Health-check binnen de instantie (de edge vraagt een wachtwoord): web -> api -> database.
+    # Health-check binnen de instantie (de router vraagt een wachtwoord): web -> api -> database.
     body="$(compose_pr "$nr" exec -T web wget -q -O - http://127.0.0.1:8080/api/health)" || die "health-check pr-$nr faalt"
     [[ "$body" == *'"ok":true'* && "$body" != *'"db":"error"'* ]] || die "health-check pr-$nr: $body"
     printf '%s\n' "$tag" >"$dir/tag"

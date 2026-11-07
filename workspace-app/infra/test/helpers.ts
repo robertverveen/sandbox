@@ -146,6 +146,7 @@ case "$args" in
   *" create "*) echo cid123; exit 0 ;;
   *" cp cid123:/app/bundle/. "*) dest="\${@: -1}"; cp -R "\${FAKE_DOCKER_BUNDLE:?}/." "$dest"; exit 0 ;;
   *" ps --filter health=unhealthy "*) printf '%s' "\${FAKE_DOCKER_UNHEALTHY:-}"; exit 0 ;;
+  *" image ls "*) printf '%s\n' \${FAKE_DOCKER_IMAGE_TAGS:-}; exit 0 ;;
   *" ps -a --format "*) [[ -n "\${FAKE_DOCKER_PS:-}" ]] && cat "$FAKE_DOCKER_PS"; exit 0 ;;
   *" network ls --format "*) [[ -n "\${FAKE_DOCKER_NETWORKS:-}" ]] && cat "$FAKE_DOCKER_NETWORKS"; exit 0 ;;
   *" volume ls --format "*) [[ -n "\${FAKE_DOCKER_VOLUMES:-}" ]] && cat "$FAKE_DOCKER_VOLUMES"; exit 0 ;;

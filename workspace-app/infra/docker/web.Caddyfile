@@ -1,5 +1,5 @@
 # Web-container van één instantie: serveert de gebouwde SPA (apps/web/dist) en zet /api door naar de api van
-# dezelfde instantie. TLS doet de edge-proxy; deze Caddy praat alleen http op het interne netwerk.
+# dezelfde instantie. TLS doet de bestaande proxy, de router verdeelt; deze Caddy praat alleen http op het interne netwerk.
 # De CSP met de hash van het inline thema-script wordt bij het bouwen van het image gemaakt (web-csp.mjs -> csp.caddy).
 {
 	admin off
@@ -11,7 +11,7 @@
 }
 
 :8080 {
-	# Geen toegangslog hier: de edge logt al (zonder persoonsgegevens).
+	# Geen toegangslog hier: de router logt al (zonder persoonsgegevens).
 	respond /healthz "ok" 200
 
 	handle /api/* {

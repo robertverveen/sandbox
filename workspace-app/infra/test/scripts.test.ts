@@ -202,6 +202,24 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     expect(readFileSync(join(t.env.HZ_LOG_DIR, 'deploys.log'), 'utf8')).toMatch(/ test sha-aaaaaaa - ok\n$/);
   });
 
+  it('ruimt alleen eigen oude images op (huidige, vorige en preview-tags blijven); nooit image prune', async () => {
+    const t = await setup();
+    expect((await t.deploy('test', 'sha-aaaaaaa')).code).toBe(0);
+    mkdirSync(join(t.env.HZ_ROOT, 'previews/pr-7'), { recursive: true });
+    writeFileSync(join(t.env.HZ_ROOT, 'previews/pr-7/tag'), 'pr-7-abcdef1\n');
+    const r = await t.deploy('test', 'sha-bbbbbbb', {
+      FAKE_DOCKER_IMAGE_TAGS: 'sha-0000000 sha-aaaaaaa sha-bbbbbbb pr-7-abcdef1',
+    });
+    expect(r.code, r.all).toBe(0);
+    const rm = t.docker.calls().filter((c) => c.startsWith('image rm '));
+    expect(rm.map((c) => c.split(' ')[2])).toEqual([
+      'ghcr.io/homezerotech/hz-api:sha-0000000',
+      'ghcr.io/homezerotech/hz-worker:sha-0000000',
+      'ghcr.io/homezerotech/hz-web:sha-0000000',
+    ]);
+    expect(t.docker.calls().some((c) => /\b(image|system) prune\b/.test(c))).toBe(false);
+  });
+
   it('tweede uitrol: vorige versie bewaard, Caddy niet onnodig herladen', async () => {
     const t = await setup();
     expect((await t.deploy('test', 'sha-aaaaaaa')).code).toBe(0);
@@ -487,6 +505,21 @@ describe('forced command voor GitHub Actions (hz-ssh-dispatch)', () => {
         .filter(Boolean)
         .map((l) => l.replace(/ cfg=.*/, '')),
     ).toEqual(['preview.sh up 12 pr-12-abcdef123456', 'preview.sh down 12']);
+  });
+
+  it('voorcheck: zonder root, alleen de vaste kopie van server-check.sh met --voorcheck', async () => {
+    const t = await setup();
+    mkdirSync(join(t.env.HZ_ROOT, 'bin'), { recursive: true });
+    writeFileSync(
+      join(t.env.HZ_ROOT, 'bin/hz-server-check'),
+      `#!/usr/bin/env bash\necho "check $*" >> "${t.root}/called"\n`,
+      {
+        mode: 0o755,
+      },
+    );
+    expect((await t.ssh('voorcheck')).code).toBe(0);
+    expect(t.called()).toBe('check --voorcheck --markdown\n');
+    expect((await t.ssh('voorcheck extra')).code).toBe(1);
   });
 
   it('rollback naar de vorige versie die nog op de server staat', async () => {
