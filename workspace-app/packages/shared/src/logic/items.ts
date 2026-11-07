@@ -105,7 +105,7 @@ export function kindOf(it: Item): Kind {
 export function weekdoelToItem(w: Weekdoel, today: string): CommitItem {
   const status = w.status === 'open' && w.deadline && w.deadline < today ? 'te_laat' : w.status;
   return {
-    id: 'cm:' + w.id,
+    id: 'cm:' + (w.legacyId ?? w.id),
     docId: w.id,
     type: 'commit',
     title: w.wat,

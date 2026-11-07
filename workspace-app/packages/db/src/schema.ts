@@ -140,6 +140,13 @@ export const weekdoelen = pgTable(
     /** Velden uit het prototype zonder eigen kolom (outcomeNote, lastCheck, …); niets gaat verloren bij import. */
     extra: jsonb('extra').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: ts('created_at').notNull().defaultNow(),
+    /** Laatste wijziging. Een trigger zet dit bij elke UPDATE (0007), ook als de app het vergeet. */
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+    /**
+     * Moment van de laatste import van deze rij (HZW-021). updated_at > imported_at = in de app gewijzigd sinds de
+     * import; dan laat een volgende import de rij staan (de app wint).
+     */
+    importedAt: ts('imported_at'),
   },
   (t) => [
     index('weekdoelen_user_week_idx').on(t.userId, t.week),
@@ -193,7 +200,10 @@ export const trackerItems = pgTable(
     closedAt: date('closed_at'),
     extra: jsonb('extra').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: ts('created_at').notNull().defaultNow(),
+    /** Laatste wijziging; een trigger zet dit bij elke UPDATE (0007). */
     updatedAt: ts('updated_at').notNull().defaultNow(),
+    /** Moment van de laatste import (zie weekdoelen.importedAt): updated_at > imported_at = de app wint. */
+    importedAt: ts('imported_at'),
   },
   (t) => [
     uniqueIndex('tracker_items_user_legacy_uq').on(t.userId, t.legacyId),
@@ -332,6 +342,35 @@ export const contextIndex = pgTable(
   (t) => [index('context_index_slug_idx').on(t.slug), index('context_index_tsv_idx').using('gin', t.tsv)],
 );
 
+/**
+ * Welke sleutels de import van het prototype (HZW-021) per collega al eens schreef. Zo zet een volgende import
+ * niets terug wat de collega in de app heeft verwijderd (een weekdoel, een vastgezette zoekopdracht).
+ */
+export const importKeys = pgTable(
+  'import_keys',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Doeltabel: tracker_items, weekdoelen, pins of briefings. */
+    tabel: text('tabel').notNull(),
+    /** Sleutel in die tabel: legacy_id, zoekopdracht of dag. */
+    sleutel: text('sleutel').notNull(),
+    importedAt: ts('imported_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.tabel, t.sleutel] })],
+);
+
+/**
+ * Toegestane e-maildomeinen voor nieuwe gebruikers (0008). Alleen de SECURITY DEFINER-functies auth_upsert_user en
+ * auth_create_session lezen hem; hz_app heeft er geen rechten op. Een domein toevoegen doet een beheerder als de
+ * migratierol (README, "Inloggen en de auth-bibliotheek").
+ */
+export const authDomains = pgTable('auth_domains', {
+  domain: text('domain').primaryKey(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
 /** Tabellen met user_id: die vallen onder de per-collega RLS-regel. */
 export const PER_USER_TABLES = [
   'connections',
@@ -342,5 +381,6 @@ export const PER_USER_TABLES = [
   'pins',
   'preferences',
   'tracker_items',
+  'import_keys',
 ] as const;
 export const ALL_TABLES = ['users', 'sessions', ...PER_USER_TABLES, 'audit_log', 'context_index'] as const;

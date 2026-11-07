@@ -25,8 +25,11 @@ import {
   planImport,
   readExport,
   runMigrations,
+  deletePin,
+  listPins,
   setItemState,
   trackerItems,
+  updateWeekdoel,
   upsertUser,
   weekdoelen,
   withPurpose,
@@ -302,7 +305,7 @@ describe('import in Postgres (RLS, als hz_app)', () => {
       tx.insert(weekdoelen).values({ userId: robert, wat: 'Eigen doel uit de app', week: '2026-W45' }).returning(),
     );
     const r = await importPrototype(db, { email: ROBERT, collections: cols });
-    expect(r.tabellen.item_state).toMatchObject({ nieuw: 0, bijgewerkt: 0, na: 8 });
+    expect(r.tabellen.item_state).toMatchObject({ nieuw: 0, bijgewerkt: 0, inAppGewijzigd: 1, na: 8 });
     const s = await withUser(db, robert, (tx) =>
       tx.select().from(itemState).where(eq(itemState.itemKey, 'sl_CFE_1761650000.000100')),
     );
@@ -326,6 +329,93 @@ describe('import in Postgres (RLS, als hz_app)', () => {
     // terug naar de vaste export voor de volgende tests
     await withUser(db, robert, (tx) => tx.delete(trackerItems).where(eq(trackerItems.legacyId, 'nieuw1')));
     await importPrototype(db, { email: ROBERT, collections: cols });
+  });
+
+  it('opnieuw importeren zet een in de app aangepast weekdoel niet terug (dezelfde en een nieuwere export)', async () => {
+    // De fout uit ronde 1: health rood + notitie via PATCH /api/weekdoelen/:id, daarna opnieuw importeren.
+    const [dg1] = await withUser(db, robert, (tx) =>
+      tx.select().from(weekdoelen).where(eq(weekdoelen.legacyId, 'dg1')),
+    );
+    expect(dg1).toMatchObject({ health: 'groen', wat: 'Isolatieflow TonZon live op acceptatie' });
+    const patched = await updateWeekdoel(db, robert, dg1!.id, { health: 'rood', note: 'vast' }, '2026-11-06');
+    expect(patched!.updatedAt.getTime()).toBeGreaterThan(patched!.importedAt!.getTime());
+    const appChecks = [...dg1!.checks, { d: '2026-11-06', h: 'rood', note: 'vast' }];
+    const check = async () => {
+      const [w] = await withUser(db, robert, (tx) => tx.select().from(weekdoelen).where(eq(weekdoelen.id, dg1!.id)));
+      expect(w).toMatchObject({ health: 'rood', checks: appChecks, wat: 'Isolatieflow TonZon live op acceptatie' });
+    };
+
+    // 1. Dezelfde export: de app wint, het verslag zegt "overgeslagen: in app gewijzigd", niet "bijgewerkt".
+    const same = await importPrototype(db, { email: ROBERT, collections: cols });
+    expect(same.klopt).toBe(true);
+    expect(same.tabellen.weekdoelen).toMatchObject({
+      verwacht: 6,
+      nieuw: 0,
+      bijgewerkt: 0,
+      inAppGewijzigd: 1,
+      ongewijzigd: 5,
+      na: 6,
+    });
+    await check();
+    const txt = formatReport(same);
+    expect(txt).toMatch(/overgeslagen:/);
+    expect(txt).toMatch(/in app gewijzigd/);
+    expect(txt).toMatch(/weekdoelen\s+6\s+0\s+0\s+5\s+1\s+0\s+6/);
+    expect(txt).toMatch(/item_state\s+8\s+0\s+0\s+7\s+1\s+0\s+8/); // de leesstatus uit de vorige test
+    expect(txt).toMatch(/De app wint: 2 rij/);
+
+    // 2. Een nieuwere export die dg1 (anders) en dg2 wijzigt: dg1 blijft zoals in de app, dg2 wordt bijgewerkt.
+    const next = structuredClone(cols);
+    const d1 = next.commitments!.find((d) => d.id === 'dg1')!.data;
+    d1.health = 'groen';
+    d1.wat = 'Isolatieflow TonZon live op productie';
+    d1.checks = [...(d1.checks as unknown[]), { d: '2026-11-05', h: 'groen' }];
+    next.commitments!.find((d) => d.id === 'dg2')!.data.health = 'groen';
+    const newer = await importPrototype(db, { email: ROBERT, collections: next });
+    expect(newer.klopt).toBe(true);
+    expect(newer.tabellen.weekdoelen).toMatchObject({ bijgewerkt: 1, inAppGewijzigd: 1, ongewijzigd: 4, na: 6 });
+    await check();
+    const [dg2] = await withUser(db, robert, (tx) =>
+      tx.select().from(weekdoelen).where(eq(weekdoelen.legacyId, 'dg2')),
+    );
+    expect(dg2!.health).toBe('groen');
+    // dg2 kwam uit de import: niet als "in app gewijzigd" gemarkeerd
+    expect(dg2!.updatedAt.getTime()).toBe(dg2!.importedAt!.getTime());
+
+    // 3. Terug naar de vaste export: dg1 blijft van de app, dg2 terug naar oranje.
+    const back = await importPrototype(db, { email: ROBERT, collections: cols });
+    expect(back.tabellen.weekdoelen).toMatchObject({ bijgewerkt: 1, inAppGewijzigd: 1 });
+    await check();
+  });
+
+  it('ook tracker-items: in de app gewijzigd blijft staan, in de app verwijderd komt niet terug', async () => {
+    // Zoals het Tracker-stuk een item bijwerkt (als hz_app, onder RLS). updated_at zet de trigger.
+    await withUser(db, robert, (tx) =>
+      tx.update(trackerItems).set({ status: 'klaar', closedAt: '2026-11-06' }).where(eq(trackerItems.legacyId, 'dc3')),
+    );
+    await withUser(db, robert, (tx) => tx.delete(trackerItems).where(eq(trackerItems.legacyId, 'b1')));
+    const [w] = await withUser(db, robert, (tx) => tx.select().from(weekdoelen).where(eq(weekdoelen.legacyId, 'dr1')));
+    await withUser(db, robert, (tx) => tx.delete(weekdoelen).where(eq(weekdoelen.id, w!.id)));
+    const pin = (await listPins(db, robert)).find((x) => x.q === 'tonzon, tijdlijn')!;
+    expect(await deletePin(db, robert, pin.id)).toBe(true);
+
+    const next = structuredClone(cols);
+    next.commitments!.find((d) => d.id === 'dc3')!.data.wat = 'Rekenvoorbeeld thuisbatterij (nieuwe tekst)';
+    next.commitments!.find((d) => d.id === 'b1')!.data.wat = 'Ook gewijzigd in de export';
+    for (const c of [cols, next]) {
+      const r = await importPrototype(db, { email: ROBERT, collections: c });
+      expect(r.klopt).toBe(true);
+      expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 10, inAppGewijzigd: 1, inAppVerwijderd: 1, na: 9 });
+      expect(r.tabellen.weekdoelen).toMatchObject({ inAppVerwijderd: 1, na: 5 });
+      expect(r.tabellen.pins).toMatchObject({ nieuw: 0, inAppVerwijderd: 1, ongewijzigd: 1, na: 1 });
+      const [dc3] = await withUser(db, robert, (tx) =>
+        tx.select().from(trackerItems).where(eq(trackerItems.legacyId, 'dc3')),
+      );
+      expect(dc3).toMatchObject({ status: 'klaar', wat: 'Rekenvoorbeeld thuisbatterij naar Feenstra sturen' });
+      const b1 = await withUser(db, robert, (tx) => tx.select().from(trackerItems).where(eq(trackerItems.legacyId, 'b1')));
+      expect(b1).toEqual([]);
+      expect((await listPins(db, robert)).map((x) => x.q)).toEqual(['feenstra, offerte']);
+    }
   });
 
   it('rij-beveiliging: een andere collega ziet niets van Roberts import en zijn eigen import raakt Robert niet', async () => {
@@ -396,6 +486,42 @@ describe('opdrachtregel (import:prototype)', () => {
     expect(r.status).toBe(0);
     const rep = JSON.parse(r.stdout) as ImportReport;
     expect(rep.tabellen.context_index.verwacht).toBe(10);
+  }, 30_000);
+
+  const as = (login: string) => {
+    const u = new URL(URL_);
+    u.username = login;
+    u.password = login;
+    return u.toString();
+  };
+
+  it('als app-login zonder indexer-login: contextindex overgeslagen met uitleg, de rest geïmporteerd, exitcode 0', () => {
+    const r = run(['--export', FIXTURE, '--email', 'eva@homezero.nl', '--json'], {
+      DATABASE_URL: as('hz_app_login'),
+      HZ_INDEX_DATABASE_URL: '',
+    });
+    expect(r.stderr).toBe('');
+    expect(r.status).toBe(0);
+    const rep = JSON.parse(r.stdout) as ImportReport;
+    expect(rep.klopt).toBe(true);
+    expect(rep.context.overgeslagen).toMatch(/hz_indexer/);
+    expect(rep.tabellen.context_index.verwacht).toBe(0);
+    expect(rep.verantwoord.context_partners).toMatchObject({ gebruikt: 0, overgeslagen: 5, klopt: true });
+    expect(rep.tabellen.tracker_items).toMatchObject({ nieuw: 10, na: 10 });
+  }, 30_000);
+
+  it('met HZ_INDEX_DATABASE_URL (indexer-login) schrijft hij ook de contextindex; tweede run verandert niets', () => {
+    const env = { DATABASE_URL: as('hz_app_login'), HZ_INDEX_DATABASE_URL: as('hz_indexer_login') };
+    // Eva is in de vorige test al geïmporteerd (zonder context); de contextrijen bestaan al van Roberts import.
+    for (const ronde of [1, 2]) {
+      const r = run(['--export', FIXTURE, '--email', 'eva@homezero.nl', '--json'], env);
+      expect(r.status).toBe(0);
+      const rep = JSON.parse(r.stdout) as ImportReport;
+      expect(rep.context.overgeslagen).toBeUndefined();
+      expect(rep.tabellen.context_index).toMatchObject({ verwacht: 10, na: 10, klopt: true });
+      expect(rep.tabellen.tracker_items).toMatchObject({ nieuw: 0, bijgewerkt: 0, ongewijzigd: 10 });
+      expect(rep.tabellen.context_index, `ronde ${ronde}`).toMatchObject({ nieuw: 0, bijgewerkt: 0, ongewijzigd: 10 });
+    }
   }, 30_000);
 
   it('zonder export of e-mail: exitcode 2 met uitleg; een onbekend pad ook', () => {

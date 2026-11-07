@@ -1,5 +1,6 @@
 -- Eenmalig, door een databasebeheerder (superuser of rol met CREATEROLE), per Postgres-server.
 -- Maakt de runtime-rol van de app aan: geen login, geen superuser, geen BYPASSRLS, eigenaar van niets.
+-- En de rol hz_indexer (schrijven in de contextindex, alleen via SECURITY DEFINER-functies). Idempotent.
 -- De migratierol (lokaal en in CI: hz_dev) blijft eigenaar van alle tabellen en wordt lid van hz_app,
 -- zodat withUser/withPurpose per transactie `SET LOCAL ROLE hz_app` kunnen doen.
 --
@@ -19,4 +20,12 @@ BEGIN
     RAISE EXCEPTION 'migratierol % bestaat niet', m;
   END IF;
   EXECUTE format('GRANT hz_app TO %I', m);
+  -- hz_indexer (stuk E2, migratie 0009): de enige rol die in de contextindex mag schrijven, via
+  -- context_index_upsert/context_index_delete. NOLOGIN; de indexer verbindt met een eigen login die lid is
+  -- (sql/indexer-login.sql). De migratierol wordt lid voor beheer en tests.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hz_indexer') THEN
+    CREATE ROLE hz_indexer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  ALTER ROLE hz_indexer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+  EXECUTE format('GRANT hz_indexer TO %I', m);
 END $$;

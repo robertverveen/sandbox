@@ -4,12 +4,20 @@
  * Inloggen, sessies en de worker gaan via SECURITY DEFINER-functies die precies één sleutel opzoeken.
  * Eigen, verse database (hz_e2_test_auth) op localhost:5432.
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   activeUserIds,
+  canIndex,
   createDb,
+  createIndexerDb,
+  deleteContextIndexPath,
+  upsertContextIndex,
+  withIndexer,
   createOwnerDb,
   createSession,
   ensureDatabase,
@@ -27,6 +35,7 @@ import {
   type Db,
 } from '../src';
 
+const here = dirname(fileURLToPath(import.meta.url));
 const URL_ = process.env.HZ_TEST_DATABASE_URL_AUTH ?? 'postgres://hz_dev:hz_dev@localhost:5432/hz_e2_test_auth';
 let db: Db;
 let close: () => Promise<void>;
@@ -151,10 +160,9 @@ describe('SECURITY DEFINER-functies: precies één sleutel', () => {
   });
 
   it('upsert is idempotent, wijzigt een bestaande gebruiker niet en weigert onzin', async () => {
-    const again = await upsertUser(db, 'Anna@HomeZero.nl', 'Andere naam', 'admin');
+    const again = await upsertUser(db, 'Anna@HomeZero.nl', 'Andere naam');
     expect(again).toMatchObject({ id: A, name: 'Anna', role: 'member' });
     await expect(upsertUser(db, 'geen-adres', 'X')).rejects.toThrow();
-    await expect(upsertUser(db, 'x@homezero.nl', 'X', 'root' as 'admin')).rejects.toThrow();
   });
 
   it('sessie maken weigert een ruw token, een verloopdatum in het verleden en een onbekende gebruiker', async () => {
@@ -212,6 +220,206 @@ describe('SECURITY DEFINER-functies: precies één sleutel', () => {
   });
 });
 
+describe('auth_upsert_user: geen rol van buiten, alleen toegestane domeinen (0008)', () => {
+  const asRequest = <T>(fn: (tx: Parameters<Parameters<typeof withUser>[2]>[0]) => Promise<T>) =>
+    withUser(db, A, async (tx) => {
+      await tx.execute(sql`select set_config('app.purpose', 'auth', true)`);
+      return fn(tx);
+    });
+
+  it('een gewone request-transactie maakt geen admin buiten het domein en geen sessie voor zo iemand', async () => {
+    // De aanval uit ronde 1: auth_upsert_user('evil@example.com', 'x', 'admin') en dan auth_create_session.
+    const e1 = await errOf(asRequest((tx) => tx.execute(sql`select * from auth_upsert_user('evil@example.com', 'x', 'admin')`)));
+    expect(codeOf(e1)).toBe('42883'); // die functie (met rol) bestaat niet meer
+    const e2 = await errOf(asRequest((tx) => tx.execute(sql`select * from auth_upsert_user('evil@example.com', 'x')`)));
+    expect(codeOf(e2)).toBe('42501');
+    for (const evil of ['evil@homezero.nl.example.com', 'evil@example.com', 'x@sub.homezero.nl', 'evil@homezero.nl@x.com'])
+      expect(codeOf(await errOf(upsertUser(db, evil, 'x'))), evil).not.toBeUndefined();
+    const n = await owner.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from users where email not like '%@homezero.nl'`,
+    );
+    expect(n.rows[0]!.n).toBe(0);
+  });
+
+  it('een nieuwe gebruiker is altijd member en kan zichzelf geen admin maken (alleen de naam wijzigen)', async () => {
+    const c = await upsertUser(db, 'cor@homezero.nl', 'Cor');
+    expect(c.role).toBe('member');
+    for (const set of [{ role: 'admin' as const }, { email: 'baas@homezero.nl' }, { blockedAt: null }]) {
+      const e = await errOf(withUser(db, c.id, (tx) => tx.update(users).set(set)));
+      expect(codeOf(e), JSON.stringify(set)).toBe('42501');
+    }
+    await withUser(db, c.id, (tx) => tx.update(users).set({ name: 'Cor de Vries' }));
+    expect(await findUserByEmail(db, 'cor@homezero.nl')).toMatchObject({ role: 'member', name: 'Cor de Vries' });
+  });
+
+  it('de app kan de domeinlijst niet lezen of uitbreiden', async () => {
+    const e1 = await errOf(asRequest((tx) => tx.execute(sql`select * from auth_domains`)));
+    expect(codeOf(e1)).toBe('42501');
+    const e2 = await errOf(asRequest((tx) => tx.execute(sql`insert into auth_domains (domain) values ('example.com')`)));
+    expect(codeOf(e2)).toBe('42501');
+    const e3 = await errOf(asRequest((tx) => tx.execute(sql`select auth_domain_allowed('x@example.com')`)));
+    expect(codeOf(e3)).toBe('42501');
+  });
+
+  it('een gebruiker buiten het domein (bijv. van vóór 0008) krijgt geen sessie, en een bestaande sessie werkt niet meer', async () => {
+    const x = (
+      await owner.db.execute<{ id: string }>(
+        sql`insert into users (email, name) values ('oud@example.com', 'Oud') returning id`,
+      )
+    ).rows[0]!.id;
+    expect(await errOf(createSession(db, x, 'oud'))).not.toBeNull();
+    // Sessie die er al stond (ingevoegd door de eigenaar) geldt niet meer
+    const tok = 'f'.repeat(64);
+    await owner.db.execute(
+      sql`insert into sessions (user_id, token_hash, expires_at) values (${x}::uuid, ${tok}, now() + interval '1 day')`,
+    );
+    const r = await withPurpose(db, 'auth', (tx) => tx.execute(sql`select * from auth_session_by_token(${tok})`));
+    expect(r.rows).toHaveLength(0);
+  });
+
+  it('beheerscript sql/set-role.sql: als migratierol een collega admin maken', async () => {
+    const script = readFileSync(join(here, '../sql/set-role.sql'), 'utf8');
+    const body = /DO \$\$[\s\S]*END \$\$;/.exec(script)![0];
+    const c = await owner.pool.connect();
+    try {
+      await c.query(`select set_config('hz.email', 'Bram@HomeZero.nl', false), set_config('hz.role', 'admin', false)`);
+      await c.query(body);
+      await c.query(`select set_config('hz.email', 'niemand@homezero.nl', false)`);
+      await expect(c.query(body)).rejects.toThrow(/geen \(unieke\) gebruiker/);
+    } finally {
+      c.release();
+    }
+    expect((await findUserByEmail(db, 'bram@homezero.nl'))?.role).toBe('admin');
+  });
+});
+
+describe('contextindex: schrijven alleen als hz_indexer, niet via app.purpose (0009)', () => {
+  const row = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    kind: 'partner',
+    slug: 'zonnig',
+    path: `partners/zonnig/brief.md`,
+    title: 'Zonnig (voorbeeld)',
+    body: 'warmtepompen',
+    data: {},
+    geheim_voor: ['zonnig'],
+    commit: 'abc',
+    ...extra,
+  });
+  beforeAll(async () => {
+    await upsertContextIndex(db, [
+      { id: 'partners/zonnig/brief.md', kind: 'partner', slug: 'zonnig', path: 'partners/zonnig/brief.md', title: 'Zonnig (voorbeeld)', geheimVoor: ['zonnig'] },
+      { id: 'partners/regen/brief.md', kind: 'partner', slug: 'regen', path: 'partners/regen/brief.md', title: 'Regen (voorbeeld)' },
+    ]);
+  });
+
+  it('een request-transactie met app.purpose=index wijzigt niets: geen UPDATE, INSERT, DELETE of geheim_voor', async () => {
+    for (const q of [
+      sql`update context_index set geheim_voor = '{}'`,
+      sql`insert into context_index (id, kind, path, title) values ('x', 'overig', 'x.md', 'X')`,
+      sql`delete from context_index`,
+    ]) {
+      const e = await errOf(
+        withUser(db, A, async (tx) => {
+          await tx.execute(sql`select set_config('app.purpose', 'index', true)`);
+          return tx.execute(q);
+        }),
+      );
+      expect(codeOf(e)).toBe('42501');
+    }
+    const e = await errOf(
+      withPurpose(db, 'index', (tx) => tx.execute(sql`update context_index set title = 'gekaapt'`)),
+    );
+    expect(codeOf(e)).toBe('42501');
+    const r = await owner.db.execute<{ g: string[] }>(
+      sql`select geheim_voor as g from context_index where id = 'partners/zonnig/brief.md'`,
+    );
+    expect(r.rows[0]!.g).toEqual(['zonnig']);
+  });
+
+  it('hz_app mag context_index_upsert en context_index_delete niet aanroepen, ook niet met app.purpose=index', async () => {
+    for (const q of [
+      sql`select * from context_index_upsert(${JSON.stringify([row('partners/zonnig/brief.md', { geheim_voor: [] })])}::jsonb)`,
+      sql`select context_index_delete('partners/zonnig/brief.md')`,
+    ]) {
+      const e = await errOf(
+        withUser(db, A, async (tx) => {
+          await tx.execute(sql`select set_config('app.purpose', 'index', true)`);
+          return tx.execute(q);
+        }),
+      );
+      expect(codeOf(e)).toBe('42501');
+    }
+  });
+
+  it('de app-login (hz_app_login) kan geen hz_indexer worden', async () => {
+    const u = new URL(URL_);
+    u.username = 'hz_app_login';
+    u.password = 'hz_app_login';
+    const app = createDb(u.toString(), 1);
+    try {
+      expect(await canIndex(app.db)).toBe(false);
+      const e = await errOf(withIndexer(app.db, (tx) => tx.execute(sql`select 1`)));
+      expect(codeOf(e)).toBe('42501');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('de indexer-login (hz_indexer_login) schrijft via de functies; admin.md weigert de database zelf', async () => {
+    const u = new URL(URL_);
+    u.username = 'hz_indexer_login';
+    u.password = 'hz_indexer_login';
+    const ix = createIndexerDb(u.toString(), 1);
+    try {
+      expect(await canIndex(ix.db)).toBe(true);
+      const who = await withIndexer(ix.db, (tx) =>
+        tx.execute<{ cu: string; su: string }>(sql`select current_user as cu, session_user as su`),
+      );
+      expect(who.rows[0]).toEqual({ cu: 'hz_indexer', su: 'hz_indexer_login' });
+      const up = await withIndexer(ix.db, (tx) =>
+        tx.execute<{ row_id: string; was_inserted: boolean }>(
+          sql`select * from context_index_upsert(${JSON.stringify([row('partners/zonnig/brief.md'), row('partners/zon/brief.md', { slug: 'zon', path: 'partners/zon/brief.md' })])}::jsonb)`,
+        ),
+      );
+      expect(up.rows.map((x) => [x.row_id, x.was_inserted]).sort()).toEqual([
+        ['partners/zon/brief.md', true],
+        ['partners/zonnig/brief.md', false],
+      ]);
+      // Zelfde rijen nog een keer: niets gewijzigd
+      const again = await upsertContextIndex(ix.db, [
+        { id: 'partners/zon/brief.md', kind: 'partner', slug: 'zon', path: 'partners/zon/brief.md', title: 'Zonnig (voorbeeld)', body: 'warmtepompen', geheimVoor: ['zonnig'], commit: 'abc' },
+      ]);
+      expect(again).toBe(0);
+      for (const bad of [
+        row('partners/x/admin.md', { path: 'partners/x/admin.md' }),
+        row('partners/x/admin.md#r1', { path: 'partners/x/brief.md' }),
+        row('partners/x/ADMIN.md', { path: 'partners/x/ADMIN.md' }),
+      ]) {
+        const e = await errOf(
+          withIndexer(ix.db, (tx) => tx.execute(sql`select * from context_index_upsert(${JSON.stringify([bad])}::jsonb)`)),
+        );
+        expect(e?.cause?.message ?? e?.message, bad.id).toMatch(/admin\.md/);
+      }
+      const e2 = await errOf(
+        withIndexer(ix.db, (tx) =>
+          tx.execute(sql`select * from context_index_upsert(${JSON.stringify([row('y', { kind: 'geheim' })])}::jsonb)`),
+        ),
+      );
+      expect(codeOf(e2)).toBe('22023');
+      // Rechtstreeks schrijven mag ook de indexer niet: alleen via de functies
+      const e3 = await errOf(withIndexer(ix.db, (tx) => tx.execute(sql`update context_index set title = 'x'`)));
+      expect(codeOf(e3)).toBe('42501');
+      expect(await deleteContextIndexPath(ix.db, 'partners/zon/brief.md')).toBe(1);
+      expect(codeOf(await errOf(deleteContextIndexPath(ix.db, '%')))).toBe('22023');
+    } finally {
+      await ix.close();
+    }
+    const n = await owner.db.execute<{ n: number }>(sql`select count(*)::int as n from context_index where path ilike '%admin.md'`);
+    expect(n.rows[0]!.n).toBe(0);
+  });
+});
+
 describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
   const FNS = [
     'auth_user_by_email',
@@ -259,7 +467,13 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
       select polname, (select string_agg(pg_get_userbyid(x), ',') from unnest(polroles) x) as roles
       from pg_policy where polname like '%\_definer'`);
     const me = (await owner.db.execute<{ u: string }>(sql`select current_user as u`)).rows[0]!.u;
-    expect(r.rows.map((x) => x.polname).sort()).toEqual(['audit_definer', 'sessions_definer', 'users_definer']);
+    expect(r.rows.map((x) => x.polname).sort()).toEqual([
+      'audit_definer',
+      'auth_domains_definer',
+      'context_index_definer',
+      'sessions_definer',
+      'users_definer',
+    ]);
     for (const p of r.rows) expect(p.roles).toBe(me);
     const m = await db.execute<{ member: boolean }>(sql`select pg_has_role('hz_app', ${me}, 'MEMBER') as member`);
     expect(m.rows[0]!.member).toBe(false);

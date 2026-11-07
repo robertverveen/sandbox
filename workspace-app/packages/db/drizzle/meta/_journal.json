@@ -50,6 +50,27 @@
       "when": 1794056345382,
       "tag": "0006_e2_auth_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794066808520,
+      "tag": "0007_e2_import_app_wins",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794066840673,
+      "tag": "0008_e2_auth_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794066875413,
+      "tag": "0009_e2_context_index_writer",
+      "breakpoints": true
     }
   ]
 }

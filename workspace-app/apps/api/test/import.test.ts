@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { routes, type CommitItem } from '@hz/shared';
 import { createProviders } from '@hz/providers';
-import { createDb, ensureDatabase, importPrototype, runMigrations } from '@hz/db';
+import { createDb, ensureDatabase, importPrototype, readExport, runMigrations, type ExportCollections } from '@hz/db';
 import { createApp, SESSION_COOKIE } from '../src/app';
 import { loadConfig } from '../src/config';
 import { DbStore } from '../src/store';
@@ -19,6 +19,17 @@ const url =
   process.env.HZ_TEST_DATABASE_URL_API_IMPORT ?? 'postgres://hz_dev:hz_dev@localhost:5432/hz_e2_test_api_import';
 
 let store: DbStore;
+let cols: ExportCollections;
+
+/** Opnieuw importeren zoals Robert dat doet (zelfde export, of een nieuwere). */
+async function reimport(c: ExportCollections) {
+  const { db, close } = createDb(url, 2);
+  try {
+    return await importPrototype(db, { email: 'robert@homezero.nl', collections: c });
+  } finally {
+    await close();
+  }
+}
 
 function client() {
   const env = { HZ_STORE: 'db', DATABASE_URL: url };
@@ -41,9 +52,12 @@ function client() {
 beforeAll(async () => {
   await ensureDatabase(url, { recreate: true });
   await runMigrations(url);
+  // De synthetische export, plus een itemstate-sleutel zoals het prototype die voor een weekdoel bewaart (cm:<doc-id>).
+  cols = readExport(FIXTURE);
+  cols.itemstate!.push({ id: 'cm:dg1', data: { read: true, at: 1793264400000 } });
   const { db, close } = createDb(url, 2);
   try {
-    const r = await importPrototype(db, { email: 'robert@homezero.nl', name: 'Robert', exportPath: FIXTURE });
+    const r = await importPrototype(db, { email: 'robert@homezero.nl', name: 'Robert', collections: cols });
     expect(r.klopt).toBe(true);
   } finally {
     await close();
@@ -94,6 +108,46 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     ]);
     const p = routes.pins.response.parse(await robert.get('/api/pins'));
     expect(p.pins.map((x) => x.q)).toEqual(['feenstra, offerte', 'tonzon, tijdlijn']);
+  });
+
+  it('een geïmporteerd weekdoel heeft de item-sleutel uit het prototype (cm:dg1), zodat itemstate eraan blijft hangen', async () => {
+    const robert = client();
+    await robert.login('robert@homezero.nl');
+    const { items } = routes.items.response.parse(await robert.get('/api/items'));
+    const dg1 = items.find((i): i is CommitItem => i.type === 'commit' && i.id === 'cm:dg1');
+    expect(dg1).toMatchObject({ stroom: 'weekdoel', title: 'Isolatieflow TonZon live op acceptatie', read: true });
+    expect(dg1!.docId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(items.some((i) => i.type === 'commit' && i.id === `cm:${dg1!.docId}`)).toBe(false);
+    // Ook een weekdoel dat in de app is gemaakt (zonder doc-id uit het prototype) houdt cm:<id>
+    const w = routes.addWeekdoel.response.parse(
+      await (await robert.req('POST', '/api/weekdoelen', { wat: 'Doel uit de app', week: '2026-W45' })).json(),
+    );
+    expect(w.legacyId).toBeUndefined();
+    const after = routes.items.response.parse(await robert.get('/api/items'));
+    expect(after.items.some((i) => i.id === `cm:${w.id}`)).toBe(true);
+  });
+
+  it('PATCH op een weekdoel en daarna opnieuw importeren: de wijziging uit de app blijft staan', async () => {
+    const robert = client();
+    await robert.login('robert@homezero.nl');
+    const t = routes.tracker.response.parse(await robert.get('/api/tracker'));
+    const dg1 = t.weekdoelen.find((w) => w.legacyId === 'dg1')!;
+    const res = await robert.req('PATCH', `/api/weekdoelen/${dg1.id}`, { health: 'rood', note: 'vast' });
+    expect(res.status).toBe(200);
+    const want = { health: 'rood', lastCheck: expect.any(String), checks: expect.arrayContaining([expect.objectContaining({ h: 'rood', note: 'vast' })]) };
+
+    const same = await reimport(cols);
+    expect(same.klopt).toBe(true);
+    expect(same.tabellen.weekdoelen).toMatchObject({ bijgewerkt: 0, inAppGewijzigd: 1 });
+    const next = structuredClone(cols);
+    next.commitments!.find((d) => d.id === 'dg1')!.data.health = 'oranje';
+    const newer = await reimport(next);
+    expect(newer.tabellen.weekdoelen).toMatchObject({ bijgewerkt: 0, inAppGewijzigd: 1 });
+
+    const again = routes.tracker.response.parse(await robert.get('/api/tracker'));
+    const w = again.weekdoelen.find((x) => x.id === dg1.id)!;
+    expect(w).toMatchObject(want);
+    expect(w.checks).toHaveLength(dg1.checks.length + 1);
   });
 
   it('een andere collega ziet niets van Roberts import', async () => {

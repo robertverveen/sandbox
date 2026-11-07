@@ -4,7 +4,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { withPurpose, withUser, type Db, type Tx } from './client';
+import { withIndexer, withPurpose, withUser, type Db, type Tx } from './client';
 import { openToken, sealToken } from './crypto';
 import {
   auditLog,
@@ -53,9 +53,13 @@ export async function findUserByEmail(db: Db, email: string): Promise<AuthUser |
   });
 }
 
-export async function upsertUser(db: Db, email: string, name: string, role: 'admin' | 'member' = 'member') {
+/**
+ * Gebruiker opzoeken of aanmaken (na de checks van de server). Altijd als 'member' en alleen voor een domein uit
+ * auth_domains (standaard homezero.nl); anders faalt hij (42501). Admin wordt je alleen via sql/set-role.sql.
+ */
+export async function upsertUser(db: Db, email: string, name: string) {
   return asApp(db, async (tx) => {
-    const r = await tx.execute<AuthUserRow>(sql`select * from auth_upsert_user(${email}, ${name}, ${role})`);
+    const r = await tx.execute<AuthUserRow>(sql`select * from auth_upsert_user(${email}, ${name})`);
     return toUser(r.rows[0]!);
   });
 }
@@ -403,18 +407,46 @@ export async function countQueuedIds(db: Db, userId: string, slug: string, yyyym
 
 export type ContextIndexRow = typeof contextIndex.$inferInsert;
 
-/** Alleen met purpose 'index' (RLS); de indexjob roept dit aan na elke push (HZW-060). */
+/** Rij voor context_index_upsert (snake_case, zoals de kolommen). */
+export const toIndexJson = (r: ContextIndexRow) => ({
+  id: r.id,
+  kind: r.kind,
+  slug: r.slug ?? null,
+  path: r.path,
+  title: r.title,
+  body: r.body ?? '',
+  data: r.data ?? {},
+  geheim_voor: r.geheimVoor ?? [],
+  commit: r.commit ?? null,
+});
+
+/** Rijen schrijven via context_index_upsert; geeft de rijen terug die echt nieuw of gewijzigd zijn. */
+export async function indexUpsertTx(tx: Tx, rows: ContextIndexRow[]) {
+  if (!rows.length) return [];
+  for (const r of rows)
+    if (/(^|\/)admin\.md($|#)/i.test(r.path) || /(^|\/)admin\.md($|#)/i.test(r.id))
+      throw new Error('admin.md hoort nooit in de index');
+  const res = await tx.execute<{ row_id: string; was_inserted: boolean }>(
+    sql`select row_id, was_inserted from context_index_upsert(${JSON.stringify(rows.map(toIndexJson))}::jsonb)`,
+  );
+  return res.rows.map((x) => ({ id: x.row_id, inserted: x.was_inserted }));
+}
+
+/**
+ * Contextindex bijwerken (de indexjob na elke push, HZW-060). Alleen als hz_indexer: geef een verbinding van
+ * createIndexerDb() (productie: HZ_INDEX_DATABASE_URL). De app-login kan dit niet (migratie 0009). admin.md weigert
+ * zowel deze functie als de database zelf.
+ */
 export async function upsertContextIndex(db: Db, rows: ContextIndexRow[]) {
   if (!rows.length) return 0;
-  return withPurpose(db, 'index', async (tx) => {
-    for (const r of rows) {
-      if (/(^|\/)admin\.md$/i.test(r.path)) throw new Error('admin.md hoort nooit in de index');
-      await tx
-        .insert(contextIndex)
-        .values(r)
-        .onConflictDoUpdate({ target: contextIndex.id, set: { ...r, updatedAt: new Date() } });
-    }
-    return rows.length;
+  return withIndexer(db, async (tx) => (await indexUpsertTx(tx, rows)).length);
+}
+
+/** Alle rijen van één bestand uit de index halen (bestand weg of hernoemd). Alleen als hz_indexer. */
+export async function deleteContextIndexPath(db: Db, path: string) {
+  return withIndexer(db, async (tx) => {
+    const r = await tx.execute<{ n: number }>(sql`select context_index_delete(${path}) as n`);
+    return r.rows[0]?.n ?? 0;
   });
 }
 

@@ -146,6 +146,14 @@ describe('Dagstart-logica', () => {
     );
     expect(it).toMatchObject({ id: 'cm:w', stroom: 'weekdoel', status: 'te_laat' });
   });
+
+  it('geïmporteerd weekdoel: item-sleutel cm:<doc-id uit het prototype>, docId blijft de rij (voor PATCH)', () => {
+    const it = weekdoelToItem(
+      { id: '6f1c', legacyId: 'dg1', wat: 'Doel', soort: 'weekdoel', status: 'open', checks: [] },
+      '2026-10-30',
+    );
+    expect(it).toMatchObject({ id: 'cm:dg1', docId: '6f1c' });
+  });
 });
 
 describe('agenda-lagen', () => {

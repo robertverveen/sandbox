@@ -15,18 +15,27 @@
  * - context_status -> alleen gelezen (commit en exportdatum in het verslag en in context_index.commit)
  *
  * Idempotent: elke rij heeft een vaste sleutel (doc-id, item-sleutel, dag, zoekopdracht, pad). Een tweede run met
- * dezelfde export verandert niets. item_state: de nieuwste wint (een wijziging in de app na de export blijft staan).
- * Alles per collega loopt in één transactie als hz_app met withUser (RLS); de contextindex in één transactie met
- * purpose 'index'. Met dryRun wordt alles uitgevoerd en daarna teruggedraaid.
+ * dezelfde export verandert niets.
+ *
+ * De app wint van de export (opnieuw importeren met een nieuwere export mag, en zet niets terug):
+ * - tracker_items en weekdoelen: in de app gewijzigd sinds de vorige import (updated_at > imported_at; een trigger
+ *   zet updated_at bij elke UPDATE) = de import laat de rij staan;
+ * - item_state en briefings: de nieuwste wint (updated_at, created_at);
+ * - in de app verwijderd na een eerdere import (import_keys onthoudt welke sleutels de import al schreef) = de import
+ *   zet hem niet terug. Geldt voor tracker_items, weekdoelen, pins en briefings.
+ * Het verslag telt die rijen apart: "overgeslagen: in app gewijzigd" en "in app verwijderd".
+ *
+ * Alles per collega loopt in één transactie als hz_app met withUser (RLS); de contextindex in één transactie als
+ * hz_indexer via context_index_upsert (migratie 0009). Met dryRun wordt alles uitgevoerd en daarna teruggedraaid.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { and, eq, getTableName, inArray, sql } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { ContextStatus, Partner, PartnerActies } from '@hz/shared';
-import { withPurpose, withUser, type Db, type Tx } from './client';
-import { upsertUser } from './repo';
-import { briefings, contextIndex, itemState, pins, trackerItems, weekdoelen } from './schema';
+import { canIndex, withIndexer, withUser, type Db, type Tx } from './client';
+import { indexUpsertTx, upsertUser } from './repo';
+import { briefings, contextIndex, importKeys, itemState, pins, trackerItems, weekdoelen } from './schema';
 
 /* ---------- Export lezen ---------- */
 
@@ -547,6 +556,10 @@ export interface TableResult {
   nieuw: number;
   bijgewerkt: number;
   ongewijzigd: number;
+  /** Overgeslagen: in de app gewijzigd sinds de vorige import. De app wint; de import laat de rij staan. */
+  inAppGewijzigd: number;
+  /** Overgeslagen: na een eerdere import in de app verwijderd. De import zet hem niet terug. */
+  inAppVerwijderd: number;
   /** Rijen met deze sleutels in de database na de import. */
   na: number;
   klopt: boolean;
@@ -562,7 +575,8 @@ export interface ImportReport {
   tabellen: Record<ImportTable, TableResult>;
   overgeslagen: Skip[];
   waarschuwingen: string[];
-  context: { commit: string | null; geexporteerd: string | null };
+  /** overgeslagen: waarom de contextindex niet is bijgewerkt (geen indexer-login, of --zonder-context). */
+  context: { commit: string | null; geexporteerd: string | null; overgeslagen?: string };
   klopt: boolean;
 }
 
@@ -582,15 +596,45 @@ function excluded<T extends PgTable>(table: T, keys: string[]) {
 }
 
 const inserted = sql<boolean>`(xmax = 0)`;
-type Counts = Pick<TableResult, 'nieuw' | 'bijgewerkt' | 'ongewijzigd'>;
-const count = (n: number, rows: Array<{ inserted: boolean }>): Counts => {
+type Counts = Pick<TableResult, 'nieuw' | 'bijgewerkt' | 'ongewijzigd' | 'inAppGewijzigd' | 'inAppVerwijderd'>;
+/** Tellingen uit de teruggegeven rijen (alleen echt nieuw of gewijzigd) plus wat de app won. */
+const count = (n: number, rows: Array<{ inserted: boolean }>, app = 0, weg = 0): Counts => {
   const nieuw = rows.filter((r) => r.inserted).length;
-  return { nieuw, bijgewerkt: rows.length - nieuw, ongewijzigd: n - rows.length };
+  return {
+    nieuw,
+    bijgewerkt: rows.length - nieuw,
+    ongewijzigd: n - rows.length - app - weg,
+    inAppGewijzigd: app,
+    inAppVerwijderd: weg,
+  };
 };
+const ZERO: Counts = { nieuw: 0, bijgewerkt: 0, ongewijzigd: 0, inAppGewijzigd: 0, inAppVerwijderd: 0 };
 async function chunked<T, R>(rows: T[], fn: (part: T[]) => Promise<R[]>, size = 200): Promise<R[]> {
   const out: R[] = [];
   for (let i = 0; i < rows.length; i += size) out.push(...(await fn(rows.slice(i, i + size))));
   return out;
+}
+
+type KeyTable = (typeof importKeys.$inferInsert)['tabel'];
+/** Sleutels die een eerdere import voor deze collega al schreef (import_keys, RLS). */
+async function seenKeys(tx: Tx, tabel: KeyTable, keys: string[]) {
+  if (!keys.length) return new Set<string>();
+  const rows = await chunked(keys, (part) =>
+    tx
+      .select({ k: importKeys.sleutel })
+      .from(importKeys)
+      .where(and(eq(importKeys.tabel, tabel), inArray(importKeys.sleutel, part))),
+  );
+  return new Set(rows.map((r) => r.k));
+}
+async function markKeys(tx: Tx, userId: string, tabel: KeyTable, keys: string[]) {
+  await chunked(keys, async (part) => {
+    await tx
+      .insert(importKeys)
+      .values(part.map((sleutel) => ({ userId, tabel, sleutel })))
+      .onConflictDoNothing();
+    return [];
+  });
 }
 
 class Rollback extends Error {
@@ -652,65 +696,117 @@ const DOEL_COLS = [
 ];
 const STATE_COLS = ['read', 'readAt', 'processed', 'skipPrep', 'answeredBy', 'planDate', 'backlog', 'moved', 'extra'];
 const BRIEF_COLS = ['title', 'sections', 'session', 'createdAt'];
-const CTX_COLS = ['kind', 'slug', 'path', 'title', 'body', 'data', 'geheimVoor', 'commit'];
 
-/** Schrijf een plan voor één collega (RLS) en de contextindex (purpose 'index'). */
+/**
+ * tracker_items en weekdoelen: rijen met een legacy_id uit de export. De app wint:
+ * - in de app gewijzigd sinds de vorige import (updated_at > imported_at; een trigger zet updated_at): niet bijwerken;
+ * - na een eerdere import in de app verwijderd (sleutel in import_keys, rij weg): niet opnieuw aanmaken;
+ * - anders: nieuw, of bijwerken als de export echt verschilt (imported_at = updated_at = nu).
+ */
+async function upsertLegacy(
+  tx: Tx,
+  userId: string,
+  tabel: 'tracker_items' | 'weekdoelen',
+  rows: Array<TrackerInsert | WeekdoelInsert>,
+  cols: string[],
+): Promise<{ counts: Counts; na: number }> {
+  const table = (tabel === 'tracker_items' ? trackerItems : weekdoelen) as typeof trackerItems;
+  const ids = rows.map((r) => r.legacyId!);
+  const existing = await chunked(ids, (part) =>
+    tx
+      .select({
+        id: table.legacyId,
+        app: sql<boolean>`(${table.importedAt} is null or ${table.updatedAt} > ${table.importedAt})`,
+      })
+      .from(table)
+      .where(inArray(table.legacyId, part)),
+  );
+  const have = new Map(existing.map((e) => [e.id!, e.app]));
+  const seen = await seenKeys(tx, tabel, ids);
+  const weg = rows.filter((r) => !have.has(r.legacyId!) && seen.has(r.legacyId!)).length;
+  const todo = rows.filter((r) => have.has(r.legacyId!) || !seen.has(r.legacyId!));
+  const app = rows.filter((r) => have.get(r.legacyId!) === true).length;
+  const ex = excluded(table, cols);
+  const returned = await chunked(todo, (part) =>
+    tx
+      .insert(table)
+      .values(part.map((r) => ({ ...(r as TrackerInsert), userId, importedAt: sql`now()`, updatedAt: sql`now()` })))
+      .onConflictDoUpdate({
+        target: [table.userId, table.legacyId],
+        // updated_at zet de trigger (gelijk aan imported_at als de import schrijft).
+        set: { ...ex.set, importedAt: sql`now()` },
+        setWhere: sql`${table.importedAt} is not null and ${table.updatedAt} <= ${table.importedAt} and ${ex.changed}`,
+      })
+      .returning({ inserted }),
+  );
+  await markKeys(tx, userId, tabel, ids);
+  const [{ n }] = (await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(table)
+    .where(ids.length ? inArray(table.legacyId, ids) : sql`false`)) as [{ n: number }];
+  return { counts: count(rows.length, returned, app, weg), na: n };
+}
+
+/**
+ * Schrijf een plan voor één collega (RLS, als hz_app) en de contextindex (als hz_indexer, via
+ * context_index_upsert). `indexDb`: verbinding van createIndexerDb(); standaard `db` (lokaal mag de migratierol
+ * hz_indexer worden, de app-login niet).
+ */
 export async function applyImport(
   db: Db,
   user: { id: string; email: string },
   plan: ImportPlan,
-  opts: { dryRun?: boolean; context?: boolean } = {},
+  opts: { dryRun?: boolean; context?: boolean; indexDb?: Db; contextOvergeslagen?: string } = {},
 ): Promise<ImportReport> {
   const dryRun = !!opts.dryRun;
   const userId = user.id;
   const res = {} as Record<ImportTable, TableResult>;
   const finish = (t: ImportTable, verwacht: number, c: Counts, na: number) =>
-    (res[t] = { verwacht, ...c, na, klopt: na === verwacht && c.nieuw + c.bijgewerkt + c.ongewijzigd === verwacht });
+    (res[t] = {
+      verwacht,
+      ...c,
+      na,
+      klopt:
+        na === verwacht - c.inAppVerwijderd &&
+        c.ongewijzigd >= 0 &&
+        c.nieuw + c.bijgewerkt + c.ongewijzigd + c.inAppGewijzigd + c.inAppVerwijderd === verwacht,
+    });
+  const doContext = opts.context !== false;
+  if (doContext && plan.contextIndex.length && !(await canIndex(opts.indexDb ?? db)))
+    throw new Error(
+      'contextindex: deze login mag niet in de index schrijven (geen lid van hz_indexer). Geef HZ_INDEX_DATABASE_URL ' +
+        '(sql/indexer-login.sql) of importeer zonder context (--zonder-context).',
+    );
 
   await maybeRollback(
     dryRun,
     (fn) => withUser(db, userId, fn),
     async (tx) => {
-      // tracker_items
       {
-        const ex = excluded(trackerItems, TRACKER_COLS);
-        const rows = await chunked(plan.tracker, (part) =>
-          tx
-            .insert(trackerItems)
-            .values(part.map((r) => ({ ...r, userId })))
-            .onConflictDoUpdate({
-              target: [trackerItems.userId, trackerItems.legacyId],
-              set: { ...ex.set, updatedAt: sql`now()` },
-              setWhere: ex.changed,
-            })
-            .returning({ inserted }),
-        );
-        const ids = plan.tracker.map((r) => r.legacyId!);
-        const [{ n }] = (await tx
-          .select({ n: sql<number>`count(*)::int` })
-          .from(trackerItems)
-          .where(inArray(trackerItems.legacyId, ids))) as [{ n: number }];
-        finish('tracker_items', plan.tracker.length, count(plan.tracker.length, rows), n);
+        const r = await upsertLegacy(tx, userId, 'tracker_items', plan.tracker, TRACKER_COLS);
+        finish('tracker_items', plan.tracker.length, r.counts, r.na);
       }
-      // weekdoelen
       {
-        const ex = excluded(weekdoelen, DOEL_COLS);
-        const rows = await chunked(plan.weekdoelen, (part) =>
-          tx
-            .insert(weekdoelen)
-            .values(part.map((r) => ({ ...r, userId })))
-            .onConflictDoUpdate({ target: [weekdoelen.userId, weekdoelen.legacyId], set: ex.set, setWhere: ex.changed })
-            .returning({ inserted }),
-        );
-        const ids = plan.weekdoelen.map((r) => r.legacyId!);
-        const [{ n }] = (await tx
-          .select({ n: sql<number>`count(*)::int` })
-          .from(weekdoelen)
-          .where(inArray(weekdoelen.legacyId, ids))) as [{ n: number }];
-        finish('weekdoelen', plan.weekdoelen.length, count(plan.weekdoelen.length, rows), n);
+        const r = await upsertLegacy(tx, userId, 'weekdoelen', plan.weekdoelen, DOEL_COLS);
+        finish('weekdoelen', plan.weekdoelen.length, r.counts, r.na);
       }
       // item_state: de nieuwste wint (updated_at), en alleen als er echt iets verschilt
       {
+        const keys = plan.itemState.map((r) => r.itemKey);
+        const cur = new Map(
+          (
+            await chunked(keys, (part) =>
+              tx
+                .select({ k: itemState.itemKey, at: itemState.updatedAt })
+                .from(itemState)
+                .where(inArray(itemState.itemKey, part)),
+            )
+          ).map((r) => [r.k, r.at]),
+        );
+        const app = plan.itemState.filter((r) => {
+          const at = cur.get(r.itemKey);
+          return at && r.updatedAt instanceof Date && at > r.updatedAt;
+        }).length;
         const ex = excluded(itemState, [...STATE_COLS, 'updatedAt']);
         const rows = await chunked(plan.itemState, (part) =>
           tx
@@ -723,44 +819,65 @@ export async function applyImport(
             })
             .returning({ inserted }),
         );
-        const keys = plan.itemState.map((r) => r.itemKey);
         const [{ n }] = (await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(itemState)
-          .where(inArray(itemState.itemKey, keys))) as [{ n: number }];
-        finish('item_state', plan.itemState.length, count(plan.itemState.length, rows), n);
+          .where(keys.length ? inArray(itemState.itemKey, keys) : sql`false`)) as [{ n: number }];
+        finish('item_state', plan.itemState.length, count(plan.itemState.length, rows, app), n);
       }
-      // pins: sleutel is de zoekopdracht
+      // pins: sleutel is de zoekopdracht; een in de app weggehaalde pin komt niet terug
       {
         const qs = plan.pins.map((p) => p.q!);
         const have = new Set(
-          (
-            await tx
-              .select({ q: pins.q })
-              .from(pins)
-              .where(and(eq(pins.kind, 'search'), inArray(pins.q, qs)))
-          ).map((r) => r.q),
+          qs.length
+            ? (
+                await tx
+                  .select({ q: pins.q })
+                  .from(pins)
+                  .where(and(eq(pins.kind, 'search'), inArray(pins.q, qs)))
+              ).map((r) => r.q)
+            : [],
         );
-        const fresh = plan.pins.filter((p) => !have.has(p.q!));
+        const seen = await seenKeys(tx, 'pins', qs);
+        const fresh = plan.pins.filter((p) => !have.has(p.q!) && !seen.has(p.q!));
+        const weg = plan.pins.filter((p) => !have.has(p.q!) && seen.has(p.q!)).length;
         if (fresh.length) {
           const [{ n: base }] = (await tx.select({ n: sql<number>`count(*)::int` }).from(pins)) as [{ n: number }];
           await tx.insert(pins).values(fresh.map((p, i) => ({ ...p, userId, position: base + i })));
         }
+        await markKeys(tx, userId, 'pins', qs);
         const [{ n }] = (await tx
           .select({ n: sql<number>`count(distinct ${pins.q})::int` })
           .from(pins)
-          .where(and(eq(pins.kind, 'search'), inArray(pins.q, qs)))) as [{ n: number }];
+          .where(qs.length ? and(eq(pins.kind, 'search'), inArray(pins.q, qs)) : sql`false`)) as [{ n: number }];
         finish(
           'pins',
           plan.pins.length,
-          { nieuw: fresh.length, bijgewerkt: 0, ongewijzigd: plan.pins.length - fresh.length },
+          { ...ZERO, nieuw: fresh.length, ongewijzigd: plan.pins.length - fresh.length - weg, inAppVerwijderd: weg },
           n,
         );
       }
-      // briefings: één per dag
+      // briefings: één per dag; een nieuwere briefing in de app (routine, MCP) wint, een verwijderde komt niet terug
       {
+        const dates = plan.briefings.map((r) => r.date);
+        const cur = new Map(
+          (dates.length
+            ? await tx
+                .select({ d: briefings.date, at: briefings.createdAt })
+                .from(briefings)
+                .where(inArray(briefings.date, dates))
+            : []
+          ).map((r) => [r.d, r.at]),
+        );
+        const seen = await seenKeys(tx, 'briefings', dates);
+        const todo = plan.briefings.filter((r) => cur.has(r.date) || !seen.has(r.date));
+        const weg = plan.briefings.length - todo.length;
+        const app = plan.briefings.filter((r) => {
+          const at = cur.get(r.date);
+          return at && r.createdAt instanceof Date && at > r.createdAt;
+        }).length;
         const ex = excluded(briefings, BRIEF_COLS);
-        const rows = await chunked(plan.briefings, (part) =>
+        const rows = await chunked(todo, (part) =>
           tx
             .insert(briefings)
             .values(part.map((r) => ({ ...r, userId })))
@@ -771,56 +888,53 @@ export async function applyImport(
             })
             .returning({ inserted }),
         );
-        const dates = plan.briefings.map((r) => r.date);
+        await markKeys(tx, userId, 'briefings', dates);
         const [{ n }] = (await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(briefings)
-          .where(inArray(briefings.date, dates))) as [{ n: number }];
-        finish('briefings', plan.briefings.length, count(plan.briefings.length, rows), n);
+          .where(dates.length ? inArray(briefings.date, dates) : sql`false`)) as [{ n: number }];
+        finish('briefings', plan.briefings.length, count(plan.briefings.length, rows, app, weg), n);
       }
       return null;
     },
   );
 
-  if (opts.context === false) {
-    finish('context_index', 0, { nieuw: 0, bijgewerkt: 0, ongewijzigd: 0 }, 0);
+  if (!doContext) {
+    finish('context_index', 0, ZERO, 0);
   } else {
     await maybeRollback(
       dryRun,
-      (fn) => withPurpose(db, 'index', fn),
+      (fn) => withIndexer(opts.indexDb ?? db, fn),
       async (tx) => {
-        for (const r of plan.contextIndex)
-          if (/(^|\/)admin\.md($|#)/i.test(r.path) || /(^|\/)admin\.md($|#)/i.test(r.id))
-            throw new Error('admin.md hoort nooit in de index');
-        const ex = excluded(contextIndex, CTX_COLS);
-        const rows = await chunked(plan.contextIndex, (part) =>
-          tx
-            .insert(contextIndex)
-            .values(part)
-            .onConflictDoUpdate({
-              target: contextIndex.id,
-              set: { ...ex.set, updatedAt: sql`now()` },
-              setWhere: ex.changed,
-            })
-            .returning({ inserted }),
-        );
+        const rows = await chunked(plan.contextIndex, (part) => indexUpsertTx(tx, part));
         const ids = plan.contextIndex.map((r) => r.id);
         const [{ n }] = (await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(contextIndex)
-          .where(inArray(contextIndex.id, ids))) as [{ n: number }];
+          .where(ids.length ? inArray(contextIndex.id, ids) : sql`false`)) as [{ n: number }];
         finish('context_index', plan.contextIndex.length, count(plan.contextIndex.length, rows), n);
         return null;
       },
     );
   }
 
+  const CONTEXT_COLS = new Set(['context_partners', 'context_acties', 'context_status']);
   const verantwoord: ImportReport['verantwoord'] = {};
   for (const [c, docs] of Object.entries(plan.voor)) {
+    if (!doContext && CONTEXT_COLS.has(c)) {
+      // Niet geschreven: alles telt als overgeslagen (één regel in de waarschuwingen, niet per doc).
+      verantwoord[c] = { docs, gebruikt: 0, overgeslagen: docs, klopt: true };
+      continue;
+    }
     const gebruikt = plan.gebruikt[c] ?? 0;
     const overgeslagen = plan.overgeslagen.filter((s) => s.collectie === c).length;
     verantwoord[c] = { docs, gebruikt, overgeslagen, klopt: docs === gebruikt + overgeslagen };
   }
+  const waarschuwingen = [...plan.waarschuwingen];
+  const ctxSkip = doContext
+    ? undefined
+    : (opts.contextOvergeslagen ?? 'contextindex overgeslagen (--zonder-context); de indexjob van de contextlaag vult hem');
+  if (ctxSkip && Object.keys(plan.voor).some((c) => CONTEXT_COLS.has(c))) waarschuwingen.push(ctxSkip);
   const klopt = Object.values(res).every((r) => r.klopt) && Object.values(verantwoord).every((v) => v.klopt);
   return {
     gebruiker: user,
@@ -829,8 +943,12 @@ export async function applyImport(
     verantwoord,
     tabellen: res,
     overgeslagen: plan.overgeslagen,
-    waarschuwingen: plan.waarschuwingen,
-    context: { commit: plan.status?.commit_context || null, geexporteerd: plan.status?.geexporteerd || null },
+    waarschuwingen,
+    context: {
+      commit: plan.status?.commit_context || null,
+      geexporteerd: plan.status?.geexporteerd || null,
+      ...(ctxSkip ? { overgeslagen: ctxSkip } : {}),
+    },
     klopt,
   };
 }
@@ -845,13 +963,27 @@ export async function importPrototype(
     collections?: ExportCollections;
     dryRun?: boolean;
     context?: boolean;
+    /** Verbinding als hz_indexer voor de contextindex (createIndexerDb); standaard db. */
+    indexDb?: Db;
+    /** Waarom de context is overgeslagen (voor het verslag), als context false is. */
+    contextOvergeslagen?: string;
   },
 ): Promise<ImportReport> {
   const cols = opts.collections ?? (opts.exportPath ? readExport(opts.exportPath) : null);
   if (!cols) throw new Error('import: geef een export (pad of collecties)');
   const plan = planImport(cols);
+  if (opts.context !== false && plan.contextIndex.length && !(await canIndex(opts.indexDb ?? db)))
+    throw new Error(
+      'contextindex: deze login mag niet in de index schrijven (geen lid van hz_indexer). Geef HZ_INDEX_DATABASE_URL ' +
+        '(sql/indexer-login.sql) of importeer zonder context (--zonder-context).',
+    );
   const u = await upsertUser(db, opts.email, opts.name ?? '');
-  return applyImport(db, { id: u.id, email: u.email }, plan, { dryRun: opts.dryRun, context: opts.context });
+  return applyImport(db, { id: u.id, email: u.email }, plan, {
+    dryRun: opts.dryRun,
+    context: opts.context,
+    indexDb: opts.indexDb,
+    contextOvergeslagen: opts.contextOvergeslagen,
+  });
 }
 
 /** Leesbaar verslag voor de terminal (Nederlands, zonder inhoud uit de export). */
@@ -860,15 +992,26 @@ export function formatReport(r: ImportReport): string {
   L.push(`Import prototype -> ${r.gebruiker.email}${r.dryRun ? ' (proefdraai, niets opgeslagen)' : ''}`);
   if (r.context.commit || r.context.geexporteerd)
     L.push(`Contextlaag: commit ${r.context.commit ?? '?'}, geëxporteerd ${r.context.geexporteerd ?? '?'}`);
+  if (r.context.overgeslagen) L.push(`Contextlaag: ${r.context.overgeslagen}`);
   L.push('', 'Export (voor)                docs  gebruikt  overgeslagen');
   for (const [c, v] of Object.entries(r.verantwoord))
     L.push(
       `  ${c.padEnd(26)} ${String(v.docs).padStart(5)} ${String(v.gebruikt).padStart(9)} ${String(v.overgeslagen).padStart(13)}${v.klopt ? '' : '  KLOPT NIET'}`,
     );
-  L.push('', 'Database (na)            verwacht  nieuw  bijgewerkt  ongewijzigd    na');
+  L.push(
+    '',
+    '                                                               overgeslagen:',
+    'Database (na)            verwacht  nieuw  bijgewerkt  ongewijzigd  in app gewijzigd  in app verwijderd    na',
+  );
   for (const [t, v] of Object.entries(r.tabellen))
     L.push(
-      `  ${t.padEnd(22)} ${String(v.verwacht).padStart(9)} ${String(v.nieuw).padStart(6)} ${String(v.bijgewerkt).padStart(11)} ${String(v.ongewijzigd).padStart(12)} ${String(v.na).padStart(5)}${v.klopt ? '' : '  KLOPT NIET'}`,
+      `  ${t.padEnd(22)} ${String(v.verwacht).padStart(9)} ${String(v.nieuw).padStart(6)} ${String(v.bijgewerkt).padStart(11)} ${String(v.ongewijzigd).padStart(12)} ${String(v.inAppGewijzigd).padStart(17)} ${String(v.inAppVerwijderd).padStart(18)} ${String(v.na).padStart(5)}${v.klopt ? '' : '  KLOPT NIET'}`,
+    );
+  const appWint = Object.values(r.tabellen).reduce((s, v) => s + v.inAppGewijzigd + v.inAppVerwijderd, 0);
+  if (appWint)
+    L.push(
+      '',
+      `De app wint: ${appWint} rij(en) zijn na de vorige import in de app gewijzigd of verwijderd en bleven zoals in de app.`,
     );
   if (r.overgeslagen.length) {
     L.push('', `Overgeslagen (${r.overgeslagen.length}):`);

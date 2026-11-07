@@ -6,10 +6,13 @@
  *       [--naam Robert] [--proef] [--zonder-context] [--json]
  *
  * De export maakt een mens (README, "Import uit het prototype"); hij staat nooit in Git. Draait als hz_app met RLS:
- * het script kan alleen rijen van deze collega schrijven (en de gedeelde contextindex met purpose 'index').
+ * het script kan alleen rijen van deze collega schrijven. De gedeelde contextindex schrijft het als hz_indexer:
+ * met HZ_INDEX_DATABASE_URL (sql/indexer-login.sql), of met DATABASE_URL als die login lid is van hz_indexer (lokaal
+ * de migratierol). Kan dat niet (de app-login), dan slaat het de contextindex over en zegt dat in het verslag.
+ * Opnieuw draaien mag, ook met een nieuwere export: wat de collega in de app wijzigde of verwijderde blijft staan.
  * Exitcode 0 = aantallen kloppen; 1 = aantallen kloppen niet; 2 = fout in de invoer.
  */
-import { createDb, DEFAULT_DATABASE_URL } from './client';
+import { canIndex, createDb, createIndexerDb, DEFAULT_DATABASE_URL, type Db } from './client';
 import { formatReport, importPrototype } from './import';
 
 function args(argv: string[]) {
@@ -44,13 +47,25 @@ if (typeof a.export !== 'string' || typeof a.email !== 'string') {
 }
 
 const { db, close } = createDb(process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL, 2);
+const indexer = process.env.HZ_INDEX_DATABASE_URL ? createIndexerDb(process.env.HZ_INDEX_DATABASE_URL, 1) : null;
 try {
+  let context = a['zonder-context'] !== true;
+  let contextOvergeslagen: string | undefined;
+  const indexDb: Db = indexer?.db ?? db;
+  if (context && !(await canIndex(indexDb))) {
+    context = false;
+    contextOvergeslagen =
+      'contextindex overgeslagen: deze login mag niet in de index schrijven (geen lid van hz_indexer). Zet ' +
+      'HZ_INDEX_DATABASE_URL (sql/indexer-login.sql); de indexjob van de contextlaag vult de index ook zelf.';
+  }
   const r = await importPrototype(db, {
     email: a.email,
     name: typeof a.naam === 'string' ? a.naam : '',
     exportPath: a.export,
     dryRun: a.proef === true || a['dry-run'] === true,
-    context: a['zonder-context'] !== true,
+    context,
+    indexDb,
+    contextOvergeslagen,
   });
   console.log(a.json ? JSON.stringify(r, null, 2) : formatReport(r));
   process.exitCode = r.klopt ? 0 : 1;
@@ -59,4 +74,5 @@ try {
   process.exitCode = 2;
 } finally {
   await close();
+  await indexer?.close();
 }

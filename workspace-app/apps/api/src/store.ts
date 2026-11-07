@@ -245,8 +245,12 @@ export class DbStore implements AppStore {
   get db() {
     return this.conn.db;
   }
-  async ensureUser(email: string, name: string, role: User['role'] = 'member') {
-    const u = await dbm.upsertUser(this.db, email, name, role);
+  /**
+   * Rol uit de database: een nieuwe gebruiker is altijd 'member' (auth_upsert_user, migratie 0008). Admin zet een
+   * beheerder met packages/db/sql/set-role.sql; de gevraagde rol telt hier dus niet.
+   */
+  async ensureUser(email: string, name: string, _role: User['role'] = 'member') {
+    const u = await dbm.upsertUser(this.db, email, name);
     return { id: u.id, email: u.email, name: u.name, role: u.role, blocked: !!u.blockedAt };
   }
   async createSession(userId: string, ua: string) {
@@ -293,6 +297,7 @@ export class DbStore implements AppStore {
   private toWeekdoel(r: typeof dbm.weekdoelen.$inferSelect): Weekdoel {
     return {
       id: r.id,
+      ...(r.legacyId ? { legacyId: r.legacyId } : {}),
       wat: r.wat,
       soort: r.soort,
       week: r.week ?? undefined,

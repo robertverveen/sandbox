@@ -280,22 +280,35 @@ describe('rij-beveiliging: A ziet nooit rijen van B', () => {
 });
 
 describe('contextindex: gedeeld lezen, schrijven alleen door de indexer', () => {
-  it('schrijven zonder purpose=index faalt, met purpose lukt, iedereen leest', async () => {
-    await expectRlsDenied(
+  it('hz_app schrijft niet, ook niet met purpose=index (0009); de indexer via de functie wel; iedereen leest', async () => {
+    const denied = async (p: Promise<unknown>) => {
+      const err = await p.then(
+        () => null,
+        (e: { code?: string; cause?: { code?: string } }) => e,
+      );
+      expect(err, 'schrijven had geweigerd moeten worden').not.toBeNull();
+      expect(err!.cause?.code ?? err!.code).toBe('42501');
+    };
+    await denied(
       withUser(db, A, (tx) =>
         tx.insert(contextIndex).values({ id: 'x', kind: 'partner', path: 'partners/x/brief.md', title: 'X' }),
       ),
     );
-    await withPurpose(db, 'index', (tx) =>
-      tx.insert(contextIndex).values({
+    await denied(
+      withPurpose(db, 'index', (tx) =>
+        tx.insert(contextIndex).values({ id: 'x', kind: 'partner', path: 'partners/x/brief.md', title: 'X' }),
+      ),
+    );
+    await upsertContextIndex(db, [
+      {
         id: 'zonnig',
         kind: 'partner',
         slug: 'zonnig',
         path: 'partners/zonnig/brief.md',
         title: 'Zonnig Installatie',
         body: 'warmtepompen en thuisbatterijen',
-      }),
-    );
+      },
+    ]);
     const hits = await withUser(db, A, (tx) =>
       tx
         .select({ id: contextIndex.id })
