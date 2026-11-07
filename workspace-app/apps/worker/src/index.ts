@@ -14,3 +14,8 @@ const stop = async () => {
 };
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
+
+// Beheer (HZW-007): foutregistratie, JSON-logs zonder persoonsgegevens en een hartslag voor de Docker-healthcheck.
+const { installOps, startHeartbeat } = await import('@hz/ops');
+installOps({ service: 'worker' });
+startHeartbeat(process.env.HZ_WORKER_HEARTBEAT);

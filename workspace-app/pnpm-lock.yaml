@@ -59,6 +59,9 @@ importers:
       '@hz/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@hz/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@hz/providers':
         specifier: workspace:*
         version: link:../../packages/providers
@@ -151,6 +154,9 @@ importers:
       '@hz/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@hz/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@hz/providers':
         specifier: workspace:*
         version: link:../../packages/providers
@@ -214,6 +220,15 @@ importers:
       tsx:
         specifier: 4.20.6
         version: 4.20.6
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.19.1)(jsdom@26.1.0)(tsx@4.20.6)
+
+  packages/ops:
+    devDependencies:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
