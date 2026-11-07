@@ -1,0 +1,173 @@
+# Uitrol van de HomeZero Workspace (HZW-004).
+#   push naar main          -> images bouwen (ghcr.io/<org>/hz-{api,worker,web}:sha-<commit>) -> uitrol naar test
+#   release gepubliceerd     -> dezelfde images (al getest op test) krijgen de releasetag -> uitrol naar productie,
+#                               pas na goedkeuring in de omgeving 'production' (één klik: Review deployments, Approve)
+#   handmatig (dispatch)     -> een bestaande tag opnieuw uitrollen naar test of productie (ook: terugzetten)
+# De server krijgt alleen "deploy <omgeving> <tag>" via SSH (forced command hz-ssh-dispatch); het registry-token
+# is de GITHUB_TOKEN van deze run (alleen lezen) en verloopt na de job.
+name: workspace-deploy
+on:
+  push:
+    branches: [main]
+    paths: ['workspace-app/**', '.github/workflows/workspace-deploy.yml']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Omgeving
+        type: choice
+        options: [test, production]
+        default: test
+      tag:
+        description: Bestaande image-tag (sha-... of v...); leeg = deze commit bouwen
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-deploy-${{ github.event_name == 'release' && 'production' || inputs.environment || 'test' }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: workspace-app
+
+jobs:
+  meta:
+    runs-on: ubuntu-24.04
+    outputs:
+      registry: ${{ steps.m.outputs.registry }}
+      sha_tag: ${{ steps.m.outputs.sha_tag }}
+      tag: ${{ steps.m.outputs.tag }}
+      environment: ${{ steps.m.outputs.environment }}
+      build: ${{ steps.m.outputs.build }}
+    steps:
+      - id: m
+        env:
+          OWNER: ${{ github.repository_owner }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_ENV: ${{ inputs.environment }}
+          INPUT_TAG: ${{ inputs.tag }}
+        working-directory: .
+        run: |
+          sha_tag="sha-${GITHUB_SHA::12}"
+          echo "registry=ghcr.io/${OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=$sha_tag" >> "$GITHUB_OUTPUT"
+          case "$EVENT" in
+            release)
+              [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::releasetag moet vX.Y.Z zijn"; exit 1; }
+              echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"; echo "environment=production" >> "$GITHUB_OUTPUT"; echo "build=false" >> "$GITHUB_OUTPUT" ;;
+            workflow_dispatch)
+              tag="${INPUT_TAG:-$sha_tag}"
+              [[ "$tag" =~ ^(sha-[0-9a-f]{7,40}|v[0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::ongeldige tag"; exit 1; }
+              echo "tag=$tag" >> "$GITHUB_OUTPUT"; echo "environment=$INPUT_ENV" >> "$GITHUB_OUTPUT"
+              if [[ -z "$INPUT_TAG" ]]; then echo "build=true" >> "$GITHUB_OUTPUT"; else echo "build=false" >> "$GITHUB_OUTPUT"; fi ;;
+            *)
+              echo "tag=$sha_tag" >> "$GITHUB_OUTPUT"; echo "environment=test" >> "$GITHUB_OUTPUT"; echo "build=true" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  build:
+    needs: meta
+    if: needs.meta.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [api, worker, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: workspace-app
+          file: workspace-app/infra/docker/${{ matrix.image }}.Dockerfile
+          push: true
+          tags: ${{ needs.meta.outputs.registry }}/hz-${{ matrix.image }}:${{ needs.meta.outputs.sha_tag }}
+          build-args: HZ_RELEASE=${{ needs.meta.outputs.sha_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=hz-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=hz-${{ matrix.image }}
+
+  # Release: geen nieuwe build. De images van deze commit (getest op test) krijgen de releasetag.
+  retag:
+    needs: meta
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Releasetag op de geteste images
+        working-directory: .
+        env:
+          REG: ${{ needs.meta.outputs.registry }}
+          SRC: ${{ needs.meta.outputs.sha_tag }}
+          DST: ${{ needs.meta.outputs.tag }}
+        run: |
+          for i in api worker web; do
+            docker buildx imagetools inspect "$REG/hz-$i:$SRC" >/dev/null || { echo "::error::hz-$i:$SRC bestaat niet; is deze commit via main gebouwd en op test geweest?"; exit 1; }
+            docker buildx imagetools create -t "$REG/hz-$i:$DST" "$REG/hz-$i:$SRC"
+          done
+
+  deploy:
+    needs: [meta, build, retag]
+    if: ${{ !cancelled() && needs.meta.result == 'success' && needs.build.result != 'failure' && needs.retag.result != 'failure' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: ${{ needs.meta.outputs.environment }}
+      url: ${{ needs.meta.outputs.environment == 'production' && format('https://{0}', vars.HZ_DOMAIN) || format('https://{0}', vars.HZ_TEST_DOMAIN) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH-sleutel van de uitrol
+        working-directory: .
+        env:
+          KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Uitrol op de server (met health-check en rollback)
+        working-directory: .
+        env:
+          HOST: ${{ vars.HZ_DEPLOY_HOST }}
+          ENVIRONMENT: ${{ needs.meta.outputs.environment }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          target="test"; [[ "$ENVIRONMENT" == production ]] && target="prod"
+          printf '%s\n' "$GH_TOKEN" | ssh -i ~/.ssh/hz_deploy -o BatchMode=yes "deploy@$HOST" "deploy $target $TAG"
+      - name: Health-check en TLS van buitenaf
+        env:
+          DOMAIN: ${{ needs.meta.outputs.environment == 'production' && vars.HZ_DOMAIN || vars.HZ_TEST_DOMAIN }}
+        run: |
+          for i in $(seq 1 20); do
+            if body="$(curl -fsS -m 10 "https://$DOMAIN/api/health")" && grep -q '"ok":true' <<<"$body" && ! grep -q '"db":"error"' <<<"$body"; then
+              echo "health groen: $body"; break
+            fi
+            [[ "$i" == 20 ]] && { echo "::error::health-check https://$DOMAIN/api/health rood"; exit 1; }
+            sleep 3
+          done
+          bash infra/scripts/tls-check.sh "$DOMAIN" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,62 @@
+# Servercontrole (HZW-002, HZW-003): wekelijks en op verzoek. Van binnen (ssh: hz-ssh-dispatch check -> poorten,
+# SSH-instellingen, firewall, updates, Docker) en van buiten (open poorten, TLS en doorsturen). De uitkomst komt in
+# de job-samenvatting en in het issue met het label 'servercontrole' (aangemaakt als het er nog niet is).
+name: workspace-server-check
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+defaults:
+  run:
+    working-directory: workspace-app
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH-sleutel van de uitrol
+        working-directory: .
+        env:
+          KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Controles
+        id: c
+        env:
+          HOST: ${{ vars.HZ_DEPLOY_HOST }}
+          DOMAINS: ${{ vars.HZ_DOMAIN }} ${{ vars.HZ_TEST_DOMAIN }}
+        run: |
+          rc=0
+          {
+            echo "## Servercontrole $(date -u +%Y-%m-%d)"
+            echo; echo "### Van binnen"; echo
+            ssh -i ~/.ssh/hz_deploy -o BatchMode=yes "deploy@$HOST" check </dev/null || rc=1
+            echo; echo "### Van buiten (poorten)"; echo
+            bash infra/scripts/server-check.sh --extern "$HOST" --markdown || rc=1
+            echo; echo "### TLS en doorsturen"; echo; echo '```'
+            # shellcheck disable=SC2086 # twee domeinen
+            bash infra/scripts/tls-check.sh $DOMAINS || rc=1
+            echo '```'
+          } > report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+      - name: Uitkomst in het issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RC: ${{ steps.c.outputs.rc }}
+        run: |
+          gh label create servercontrole --repo "$GITHUB_REPOSITORY" --color 0022c4 --description "HZW-002 servercontrole" 2>/dev/null || true
+          nr="$(gh issue list --repo "$GITHUB_REPOSITORY" --label servercontrole --state all --limit 1 --json number --jq '.[0].number // empty')"
+          [[ -n "$nr" ]] || nr="$(gh issue create --repo "$GITHUB_REPOSITORY" --label servercontrole --title "Servercontrole (HZW-002)" --body "Uitkomsten van de wekelijkse servercontrole." | sed 's#.*/##')"
+          gh issue comment "$nr" --repo "$GITHUB_REPOSITORY" --body-file report.md
+          if [[ "$RC" == 0 ]]; then gh issue close "$nr" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true; else gh issue reopen "$nr" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true; exit 1; fi

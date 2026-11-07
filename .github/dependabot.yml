@@ -1,0 +1,11 @@
+# Updates voor de basisimages en GitHub Actions van de Workspace (HZW-002: onderhoud van de server zit in de images).
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /workspace-app/infra/docker
+    schedule: { interval: weekly }
+    labels: [infra]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    labels: [infra]
