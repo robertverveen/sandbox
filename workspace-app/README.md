@@ -83,7 +83,9 @@ Rollen (HZW-020):
   `hz_worker` en `hz_auth` aan en maakt de migratierol er lid van. Migratie `0004_app_role.sql` weigert te draaien
   zonder `hz_app`, `0009` zonder `hz_indexer`, `0010` zonder `hz_worker`, `0011` zonder `hz_auth`. **Na deze ronde:**
   op een bestaande server `bootstrap-roles.sql` opnieuw draaien vóór `pnpm db:migrate`, en `sql/auth-login.sql` voor
-  de api (`HZ_AUTH_DATABASE_URL`).
+  de api (`HZ_AUTH_DATABASE_URL`). Migratie 0013 (geen tijdelijke tabellen) vraagt dat de migratierol eigenaar is van
+  de database; is hij dat niet, dan stopt 0013 en noemt de ene `REVOKE` die een beheerder moet draaien. Daarna de
+  login-scripts nog eens met `-v db=<app-database>` voor de TEMP-controle.
 - `packages/db/sql/auth-login.sql` (eenmalig, beheerder) maakt de auth-login (lid van alleen `hz_auth`). Lokaal en in
   CI met testwachtwoord `hz_auth_login`.
 - `packages/db/sql/worker-login.sql` (eenmalig, beheerder) maakt de login van de worker (lid van `hz_app` en
@@ -124,6 +126,29 @@ Rollen (HZW-020):
   auth-login kan voor iedereen een sessie maken en hoort alleen bij de sessie-middleware en de auth-adapter. Test:
   `auth.test.ts`, "aanvalspad: een request kan niemand nadoen" (als `hz_app_login`: geen id via e-mail of
   `auth_upsert_user`, `app.user_id` op B geeft geen rijen van B, geen sessie voor B).
+- **Een verbinding uit de pool erft niets van de vorige request (migratie 0013).** Willekeurige SQL in de request van
+  A kon tot 0013 op een gedeelde verbinding `CREATE TEMP TABLE weekdoelen` doen: drizzle noemt tabellen zonder schema
+  en `pg_temp` stond vooraan in het zoekpad, dus de volgende request (van B) schreef en las in de tabel van A. Nu drie
+  sloten: (1) 0013 doet `REVOKE TEMPORARY ON DATABASE <db> FROM PUBLIC` (en van `hz_app`, `hz_worker`, `hz_auth`,
+  `hz_indexer`); de migratie stopt met uitleg als de migratierol geen eigenaar van de database is en het dus niet lukt.
+  (2) Elke verbinding van `createDb()` en de andere pools start met `-c search_path=public,pg_temp` (`SEARCH_PATH`,
+  `connectionOptions()`), dus `pg_temp` komt altijd na `public`. (3) Elke transactie van `withUser`, `withSession`,
+  `withPurpose`, `withAuth`, `withIndexer` en `withWorker` begint met `RESET ALL`: een gewone `SET` (zoekpad,
+  `app.session`, `app.user_id`) die A op sessieniveau achterliet, telt in de volgende request niet. In productie
+  weigert `assertAppLogin()` ook een login die TEMP heeft (`checkAppLogin().temp`), en `sql/*-login.sql` met
+  `-v db=<app-database>` controleert hetzelfde. Test: `app-login.test.ts`, "temp-tabel kan een collega niet nadoen"
+  (pool met één verbinding: `CREATE TEMP TABLE weekdoelen` geeft 42501, de insert van B landt in `public.weekdoelen`,
+  A ziet die rij daarna niet, een request zonder sessie erft `app.session` van A niet).
+- **Uitloggen blijft uitloggen (0013).** `hz_app` heeft geen UPDATE meer op `sessions` (ook niet op `revoked_at`):
+  `UPDATE sessions SET revoked_at = NULL` binnen de eigen sessie maakte een uitgelogd token weer geldig. Een eigen
+  sessie intrekken (uitloggen op een ander apparaat) gaat via `auth_revoke_own_session(sessie_id)` (SECURITY DEFINER,
+  `EXECUTE` alleen voor `hz_app`; TS: `revokeOwnSession(db, userId, sessieId)` binnen `runWithSession`): alleen een
+  eigen, nog geldige sessie. De trigger `sessions_guard` houdt voor iedereen vast (ook de functies en de
+  migratierol) dat een ingetrokken sessie ingetrokken blijft en dat `token_hash`, `user_id` en `created_at` niet
+  veranderen. Test: `auth.test.ts`, "uitloggen blijft uitloggen".
+- **Auditlog alleen toevoegen (0013).** `hz_app` heeft geen UPDATE, DELETE of TRUNCATE op `audit_log` en geen DELETE
+  of TRUNCATE op `import_keys`; dat hing eerst alleen aan een ontbrekende RLS-regel. Toevoegen voor zichzelf en
+  eigen regels lezen kan nog.
 - RLS-regels schrijven `(SELECT app_user_id())`: Postgres rekent de sessie dan één keer per query uit, niet per rij
   (0011 herschreef alle bestaande regels zo). Nieuwe regels in latere migraties: zelfde vorm.
 - `app.purpose` is een GUC die elke transactie zelf kan zetten. Daarom opent hij niets meer op `users`, `sessions` en
@@ -172,7 +197,8 @@ Geen eigen takenlijst (keuze 10): `tracker_items` bewaart alleen wat al in het p
 ### Inloggen en de auth-bibliotheek
 
 De app-rol heeft geen open SELECT op `users` of `sessions`, mag van zijn eigen gebruikersrij alleen `name` wijzigen
-(geen rol, e-mail of blokkade) en van zijn eigen sessies alleen `revoked_at` (geen nieuwe sessie, geen verloopdatum).
+(geen rol, e-mail of blokkade) en zijn eigen sessies alleen lezen, wissen en via `auth_revoke_own_session(id)` intrekken
+(0013; geen nieuwe sessie, geen verloopdatum, nooit terug naar geldig).
 Een auth-bibliotheek (Better Auth of Auth.js, stuk E1) gebruikt in zijn adapter deze SECURITY DEFINER-functies
 (eigenaar: de migratierol; vast `search_path`; `EXECUTE` sinds 0011 **alleen voor `hz_auth`**, niet meer voor
 `hz_app`). Aanroepen via de verbinding van `createAuthDb(HZ_AUTH_DATABASE_URL)` in een transactie als `hz_auth`
@@ -186,6 +212,7 @@ Een auth-bibliotheek (Better Auth of Auth.js, stuk E1) gebruikt in zijn adapter 
 | `auth_session_by_token(token_hash)` | de geldige sessie bij precies één hash (niet ingetrokken, niet verlopen, gebruiker niet geblokkeerd, domein nog toegestaan) | `findSession` |
 | `auth_touch_session(token_hash, expires_at?)` | laatst gezien bijwerken, desgewenst verlengen (glijdende sessie, hoogstens 30 dagen na nu; verleden = fout) | `touchSession` |
 | `auth_revoke_session(token_hash)` | uitloggen; auditregel | `revokeSession` |
+| `auth_revoke_own_session(sessie_id)` | **voor `hz_app`** (0013), vanuit een request: een eigen, nog geldige sessie intrekken (uitloggen op een ander apparaat); auditregel. Een ingetrokken sessie wordt nooit weer geldig (trigger `sessions_guard`) | `revokeOwnSession` (binnen `runWithSession`) |
 | `system_active_user_ids()` | worker: alleen de id's van actieve collega's; per id daarna `withUser`. **Alleen `hz_worker`** (0010). Een id kennen is sinds 0011 niet genoeg om iemand na te doen: voor de api-login telt `app.user_id` niet, alleen een geldige sessie | `activeUserIds` (als `hz_worker`, `withWorker`) |
 
 `auth_create_session` kapt de verloopdatum ook op 30 dagen. Een bibliotheek met een langere standaardduur (Better
@@ -197,7 +224,9 @@ packages/db/sql/set-role.sql` (auditregel `user.role`). Een domein toevoegen: al
 
 Voor een adapter (stuk E1): `findOne(session, token)` wordt `auth_session_by_token(sha256(token))`, `create(session)`
 wordt `auth_create_session`, `update(session)` wordt `auth_touch_session`, `delete(session)` wordt
-`auth_revoke_session`, `findOne(user, email)` en `create(user)` worden `auth_user_by_email` en `auth_upsert_user`. De
+`auth_revoke_session` (een sessie verwijderen of terugzetten kan de adapter niet: ingetrokken blijft ingetrokken, 0013;
+"andere apparaten uitloggen" vanuit de app is `auth_revoke_own_session`), `findOne(user, email)` en `create(user)`
+worden `auth_user_by_email` en `auth_upsert_user`. De
 adapter krijgt de verbinding van `createAuthDb()` (`hz_auth_login`), nooit die van de requests. De
 sessie-middleware moet na het opzoeken van de sessie de rest van de request in `runWithSession(hashToken(token), …)`
 draaien (in de api: `store.asSession(token, next)`); anders ziet de api-login niemand. Gebruikt de bibliotheek een
@@ -223,8 +252,9 @@ api-login stopt het script met uitleg (exitcode 2) en maakt het niets aan. De co
    collectie een submap met `<id>.json` (zoals de contextexport). Nooit in Git.
 2. **Proefdraai:** `DATABASE_URL=<worker-login> HZ_AUTH_DATABASE_URL=<auth-login> HZ_INDEX_DATABASE_URL=<indexer-login>
    pnpm --filter @hz/db import:prototype -- --export <pad> --email robert@homezero.nl --proef` rekent alles door,
-   controleert de aantallen en draait terug. De collega wordt alleen opgezocht, nooit aangemaakt (geen gebruiker, geen
-   auditregel). Bestaat hij nog niet, dan is alles voor hem nieuw: zijn tabellen worden uit de export berekend (het
+   controleert de aantallen en draait terug. `<pad>` mag absoluut zijn of relatief aan de map waar je het commando
+   typt (het script leest `INIT_CWD` van pnpm, want pnpm start het in `packages/db`). De collega wordt alleen
+   opgezocht, nooit aangemaakt (geen gebruiker, geen auditregel). Bestaat hij nog niet, dan is alles voor hem nieuw: zijn tabellen worden uit de export berekend (het
    verslag zegt dat), de contextindex wordt echt doorgerekend en teruggedraaid.
 3. **Echt:** zonder `--proef`. Exitcode 0 = aantallen kloppen, 1 = kloppen niet, 2 = fout in de invoer. `--json` geeft
    het verslag als JSON; `--zonder-context` slaat de contextindex over.

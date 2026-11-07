@@ -6,6 +6,7 @@
  *     pnpm --filter @hz/db import:prototype -- --export /pad/buiten/de/repo/export.json --email robert@homezero.nl \
  *       [--naam Robert] [--proef] [--zonder-context] [--opruimen-forceren] [--json]
  *
+ * Een relatief --export-pad geldt vanaf de map waar je het commando typt (INIT_CWD van pnpm), niet vanaf packages/db.
  * De export maakt een mens (README, "Import uit het prototype"); hij staat nooit in Git. Draait als hz_app met RLS,
  * namens deze ene collega (app.user_id): daarvoor moet de login van DATABASE_URL lid zijn van hz_worker (de
  * worker-login, lokaal de migratierol; de api-login kan het sinds 0011 niet). De collega opzoeken of aanmaken gaat als
@@ -18,8 +19,18 @@
  * helft verdwijnen, dan niet: controleer de export en draai met --opruimen-forceren).
  * Exitcode 0 = aantallen kloppen; 1 = aantallen kloppen niet; 2 = fout in de invoer.
  */
+import { isAbsolute, resolve } from 'node:path';
 import { canIndex, createAuthDb, createDb, createIndexerDb, DEFAULT_DATABASE_URL, type Db } from './client';
 import { formatReport, importPrototype } from './import';
+
+/**
+ * Een relatief --export-pad geldt vanaf de map waar de mens het commando typte. pnpm (--filter) start het script in
+ * packages/db, maar zet de oorspronkelijke map in INIT_CWD.
+ */
+function resolveExportPath(p: string, env: Record<string, string | undefined> = process.env, cwd = process.cwd()) {
+  if (isAbsolute(p)) return p;
+  return resolve(env.INIT_CWD || cwd, p);
+}
 
 function args(argv: string[]) {
   const out: Record<string, string | boolean> = {};
@@ -68,7 +79,7 @@ try {
   const r = await importPrototype(db, {
     email: a.email,
     name: typeof a.naam === 'string' ? a.naam : '',
-    exportPath: a.export,
+    exportPath: resolveExportPath(a.export),
     dryRun: a.proef === true || a['dry-run'] === true,
     context,
     indexDb,

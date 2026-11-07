@@ -849,6 +849,43 @@ describe('opdrachtregel (import:prototype)', () => {
     }
   }, 30_000);
 
+  it('relatief --export-pad geldt vanaf de map waar je het commando typt (INIT_CWD), niet vanaf packages/db', () => {
+    const appRoot = join(here, '../../..');
+    const rel = 'packages/db/test/fixtures/prototype-export.json';
+    const r = run(['--export', rel, '--email', 'dirk@homezero.nl', '--proef'], { INIT_CWD: appRoot });
+    expect(r.stderr).toBe('');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/Aantallen kloppen/);
+    // vanaf packages/db zelf (zonder INIT_CWD): relatief aan de werkmap
+    const r2 = run(['--export', 'test/fixtures/prototype-export.json', '--email', 'dirk@homezero.nl', '--proef'], {
+      INIT_CWD: '',
+    });
+    expect(r2.status).toBe(0);
+  }, 30_000);
+
+  it('precies het commando uit de README: pnpm --filter @hz/db import:prototype -- --export <relatief pad> (vanaf de app-map)', () => {
+    const appRoot = join(here, '../../..');
+    const r = spawnSync(
+      'pnpm',
+      [
+        '--silent',
+        '--filter',
+        '@hz/db',
+        'import:prototype',
+        '--',
+        '--export',
+        'packages/db/test/fixtures/prototype-export.json',
+        '--email',
+        'dirk@homezero.nl',
+        '--proef',
+      ],
+      { cwd: appRoot, env: { ...process.env, DATABASE_URL: URL_, INIT_CWD: '' }, encoding: 'utf8' },
+    );
+    expect(r.stderr).not.toMatch(/niet gevonden/);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/Aantallen kloppen/);
+  }, 60_000);
+
   it('zonder export of e-mail: exitcode 2 met uitleg; een onbekend pad ook', () => {
     const a = run(['--email', 'dirk@homezero.nl']);
     expect(a.status).toBe(2);
