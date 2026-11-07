@@ -17,6 +17,9 @@
  * context_index. Inloggen en sessies alleen als hz_auth (createAuthDb/withAuth, 0011; repo.ts: findSession,
  * upsertUser, …); schrijven in de contextindex alleen als hz_indexer (createIndexerDb/withIndexer, 0009); de id's
  * van alle collega's alleen als hz_worker (withWorker, 0010; alleen de worker-login is daar lid van).
+ *
+ * Een verbinding uit de pool erft niets van de vorige request (0013): geen rol van de app mag tijdelijke tabellen maken,
+ * elke verbinding start met search_path=public,pg_temp, en elke transactie van de hulpfuncties begint met RESET ALL.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
@@ -34,12 +37,25 @@ export const APP_ROLE = 'hz_app';
 
 type PoolHook = (client: pg.PoolClient) => Promise<void>;
 
+/**
+ * Zoekpad van elke verbinding: pg_temp expliciet achteraan. Standaard zoekt Postgres eerst in pg_temp; een tijdelijke
+ * tabel met de naam van een app-tabel zou dan de echte tabel overschaduwen voor elke latere request op die verbinding
+ * (drizzle noemt tabellen zonder schema). Sinds 0013 mag geen rol van de app nog tijdelijke tabellen maken; dit is de
+ * tweede slot op de deur.
+ */
+export const SEARCH_PATH = 'public,pg_temp';
+
+/** De opstartopties (libpq `options`) van een verbinding met deze rol. */
+export function connectionOptions(role: string | null) {
+  return [role ? `-c role=${role}` : '', `-c search_path=${SEARCH_PATH}`].filter(Boolean).join(' ');
+}
+
 function pool(url: string, max: number, role: string | null, onConnect?: PoolHook) {
   // onConnect (pg-pool >= 3.10): async controle op elke nieuwe verbinding; faalt hij, dan faalt de query.
   const cfg = {
     connectionString: url,
     max,
-    ...(role ? { options: `-c role=${role}` } : {}),
+    options: connectionOptions(role),
     ...(onConnect ? { onConnect } : {}),
   };
   const p = new pg.Pool(cfg as pg.PoolConfig);
@@ -57,6 +73,8 @@ export interface AppLoginCheck {
   ownedRelations: number;
   /** Bijzondere rollen waar de login lid van is (hz_worker, hz_indexer, hz_auth); de api-login hoort bij geen ervan. */
   memberOf: string[];
+  /** Mag de login (of een rol waar hij lid van is) tijdelijke tabellen maken in deze database? Hoort false (0013). */
+  temp: boolean;
 }
 
 /** Rollen met een eigen recht naast hz_app; een login mag er alleen lid van zijn als dat zo bedoeld is. */
@@ -77,9 +95,13 @@ export async function checkAppLogin(
     rolbypassrls: boolean;
     owned: number;
     member_of: string[] | null;
+    temp: boolean;
   }>(
     `
     select session_user::text as login, r.rolsuper, r.rolbypassrls,
+      (has_database_privilege(session_user, current_database(), 'TEMPORARY')
+        or exists (select 1 from pg_roles g where pg_has_role(session_user, g.oid, 'MEMBER') and g.rolname <> session_user
+                   and has_database_privilege(g.oid, current_database(), 'TEMPORARY'))) as temp,
       array(select g.rolname::text from pg_roles g
              where g.rolname = any($2::text[]) and pg_has_role(session_user, g.oid, 'MEMBER')
              order by 1) as member_of,
@@ -99,6 +121,7 @@ export async function checkAppLogin(
     bypassRls: row.rolbypassrls,
     ownedRelations: row.owned,
     memberOf: row.member_of ?? [],
+    temp: row.temp,
   };
 }
 
@@ -109,6 +132,7 @@ export class UnsafeAppLoginError extends Error {
       c.bypassRls ? 'heeft BYPASSRLS' : '',
       c.ownedRelations ? `is eigenaar van ${c.ownedRelations} tabel(len) of views (direct of via een rol)` : '',
       forbidden.length ? `is lid van ${forbidden.join(', ')} (hoort bij een andere login)` : '',
+      c.temp ? 'mag tijdelijke tabellen maken (TEMP; draai de migraties, 0013)' : '',
     ].filter(Boolean);
     super(
       `DATABASE_URL: login "${c.login}" ${why.join(', ')}. In productie verbindt de app met een aparte login die alleen ` +
@@ -127,7 +151,7 @@ export class UnsafeAppLoginError extends Error {
 export async function assertAppLogin(client: Pick<pg.ClientBase, 'query'>, opts: { allowRoles?: string[] } = {}) {
   const c = await checkAppLogin(client);
   const forbidden = c.memberOf.filter((r) => !(opts.allowRoles ?? []).includes(r));
-  if (c.superuser || c.bypassRls || c.ownedRelations > 0 || forbidden.length)
+  if (c.superuser || c.bypassRls || c.ownedRelations > 0 || forbidden.length || c.temp)
     throw new UnsafeAppLoginError(c, forbidden);
   return c;
 }
@@ -232,7 +256,13 @@ export async function canIndex(db: Db): Promise<boolean> {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const setAppRole = sql.raw(`SET LOCAL ROLE ${APP_ROLE}`);
+/**
+ * Begin van elke transactie van de hulpfuncties: eerst RESET ALL (wat een vorige request op deze verbinding met een
+ * gewone SET op sessieniveau achterliet, zoals search_path of app.session, telt niet), dan de rol voor deze transactie.
+ * RESET ALL laat de rol zelf staan; die zet SET LOCAL ROLE.
+ */
+const beginAs = (role: string) => sql.raw(`RESET ALL; SET LOCAL ROLE ${role}`);
+const setAppRole = beginAs(APP_ROLE);
 
 const HASH = /^[0-9a-f]{64}$/;
 const sessionContext = new AsyncLocalStorage<{ tokenHash: string }>();
@@ -315,7 +345,7 @@ export function createAuthDb(
  */
 export async function withAuth<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql.raw(`SET LOCAL ROLE ${AUTH_ROLE}`));
+    await tx.execute(beginAs(AUTH_ROLE));
     return fn(tx);
   });
 }
@@ -326,7 +356,7 @@ export async function withAuth<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T
  */
 export async function withIndexer<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql.raw(`SET LOCAL ROLE ${INDEX_ROLE}`));
+    await tx.execute(beginAs(INDEX_ROLE));
     return fn(tx);
   });
 }
@@ -340,7 +370,7 @@ export const WORKER_ROLE = 'hz_worker';
  */
 export async function withWorker<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql.raw(`SET LOCAL ROLE ${WORKER_ROLE}`));
+    await tx.execute(beginAs(WORKER_ROLE));
     return fn(tx);
   });
 }

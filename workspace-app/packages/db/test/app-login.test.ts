@@ -21,13 +21,16 @@ import {
   hashToken,
   runMigrations,
   runWithSession,
+  SEARCH_PATH,
   upsertUser,
   UnsafeAppLoginError,
   weekdoelen,
+  withPurpose,
   withSession,
   withUser,
   type Db,
 } from '../src';
+import { eq } from 'drizzle-orm';
 
 const OWNER_URL = process.env.HZ_TEST_DATABASE_URL_LOGIN ?? 'postgres://hz_dev:hz_dev@localhost:5432/hz_e2_test_login';
 const LOGIN = process.env.HZ_TEST_APP_LOGIN ?? 'hz_app_login:hz_app_login';
@@ -191,6 +194,125 @@ describe('SET ROLE NONE en RESET ROLE in een request: RLS blijft dicht', () => {
     expect(await withUser(db, B, (tx) => tx.select().from(weekdoelen))).toHaveLength(0);
     const none = await db.execute(sql`select * from weekdoelen`);
     expect(none.rows).toHaveLength(0);
+  });
+});
+
+describe('temp-tabel kan een collega niet nadoen (0013, criticus ronde 5)', () => {
+  // Aanval: willekeurige SQL in de request van A maakt op een verbinding uit de pool een tijdelijke tabel met de naam van
+  // een app-tabel (drizzle noemt tabellen zonder schema, pg_temp stond vooraan in het zoekpad). De volgende request op
+  // die verbinding (van B) zou dan in de tabel van A schrijven en lezen. Pool met max=1: A en B delen gegarandeerd
+  // dezelfde verbinding.
+  let one: ReturnType<typeof createDb>;
+  const pid = async (d: Db) => (await d.execute<{ p: number }>(sql`select pg_backend_pid() as p`)).rows[0]!.p;
+  const err = (p: Promise<unknown>) =>
+    p.then(
+      () => null,
+      (e: PgErr & { cause?: PgErr }) => e.cause ?? e,
+    );
+
+  beforeAll(() => {
+    one = createDb(loginUrl, 1);
+  });
+  afterAll(async () => {
+    await one?.close();
+  });
+
+  it('CREATE TEMP TABLE weekdoelen in de sessie van A: 42501; ook geen temp-view, -sequence of -functie', async () => {
+    const before = await pid(one.db);
+    for (const stmt of [
+      'create temp table weekdoelen (like public.weekdoelen)',
+      'create temporary table weekdoelen as select * from public.weekdoelen',
+      'create temp view weekdoelen as select * from public.weekdoelen',
+      'create temp sequence s1',
+      'create table pg_temp.weekdoelen (id uuid)',
+      'create function pg_temp.app_user_id() returns uuid language sql as $$ select null::uuid $$',
+    ]) {
+      const e = await err(withSession(one.db, hashA, (tx) => tx.execute(sql.raw(stmt))));
+      expect(e, stmt).not.toBeNull();
+      expect(e!.code, stmt).toBe('42501');
+      expect(e!.message ?? '', stmt).toMatch(/permission denied to create temporary tables/);
+    }
+    expect(await pid(one.db)).toBe(before); // nog steeds dezelfde verbinding
+  });
+
+  it('de rollen van de app hebben geen TEMP en geen CREATE (database en schema public); checkAppLogin ziet het', async () => {
+    const r = await seed.db.execute<{ who: string; temp: boolean; cdb: boolean; cschema: boolean }>(sql`
+      select who, has_database_privilege(who, current_database(), 'TEMPORARY') as temp,
+        has_database_privilege(who, current_database(), 'CREATE') as cdb,
+        has_schema_privilege(who, 'public', 'CREATE') as cschema
+      from unnest(array[${loginName}, 'hz_app', 'hz_worker', 'hz_auth', 'hz_indexer']::text[]) as who`);
+    for (const x of r.rows) expect(x, x.who).toEqual({ who: x.who, temp: false, cdb: false, cschema: false });
+    const c = await one.pool.connect();
+    try {
+      expect((await checkAppLogin(c)).temp).toBe(false);
+      expect((await c.query('show search_path')).rows[0].search_path).toBe(SEARCH_PATH);
+    } finally {
+      c.release();
+    }
+  });
+
+  it('B schrijft na A in public.weekdoelen, en A ziet de rij van B in de volgende request niet', async () => {
+    const p0 = await pid(one.db);
+    // Request van A: probeert te overschaduwen (mislukt) en laat sessie-instellingen achter met een gewone SET
+    // (geen SET LOCAL): een ander zoekpad en zijn eigen sessie op sessieniveau.
+    await err(
+      withSession(one.db, hashA, (tx) => tx.execute(sql`create temp table weekdoelen (like public.weekdoelen)`)),
+    );
+    await withSession(one.db, hashA, async (tx) => {
+      await tx.execute(sql.raw('SET search_path = pg_temp, public'));
+      await tx.execute(sql`select set_config('app.session', ${hashA}, false)`);
+      await tx.execute(sql`select set_config('app.user_id', ${A}, false)`);
+    });
+    // Request van B op dezelfde verbinding
+    expect(await pid(one.db)).toBe(p0);
+    const ins = await withSession(one.db, hashB, async (tx) => {
+      const path = (await tx.execute<{ p: string }>(sql`select current_setting('search_path') as p`)).rows[0]!.p;
+      const rows = await tx
+        .insert(weekdoelen)
+        .values({ userId: B, wat: 'GEHEIM VAN B', week: '2026-W45' })
+        .returning({ id: weekdoelen.id });
+      const where = (
+        await tx.execute<{ n: string }>(
+          sql`select tableoid::regclass::text as n from weekdoelen where wat = 'GEHEIM VAN B'`,
+        )
+      ).rows[0]!.n;
+      return { path, id: rows[0]!.id, where };
+    });
+    expect(ins.path).toBe(SEARCH_PATH); // RESET ALL aan het begin van de transactie
+    expect(ins.where).toBe('weekdoelen'); // public.weekdoelen, geen pg_temp_N.weekdoelen
+    // De rij staat echt in public.weekdoelen (gecontroleerd buiten deze verbinding, namens B als de migratierol)
+    const echt = await withUser(seed.db, B, (tx) => tx.select().from(weekdoelen));
+    expect(echt.map((r) => r.wat).sort()).toEqual(['GEHEIM VAN B', 'doel-b']);
+    // Volgende request van A op dezelfde verbinding: alleen eigen rijen
+    expect(await pid(one.db)).toBe(p0);
+    const a = await withSession(one.db, hashA, (tx) => tx.select().from(weekdoelen));
+    expect(a.map((r) => r.wat)).toEqual(['doel-a']);
+    // Een request zonder sessie erft de app.session van A niet (RESET ALL): niemand
+    expect(await withUser(one.db, B, (tx) => tx.select().from(weekdoelen))).toHaveLength(0);
+    const anon = await withPurpose(one.db, 'system', (tx) => tx.select().from(weekdoelen));
+    expect(anon).toHaveLength(0);
+    await withUser(seed.db, B, (tx) => tx.delete(weekdoelen).where(eq(weekdoelen.id, ins.id)));
+  });
+
+  it('assertAppLogin weigert een login die toch TEMP heeft (bijv. een database van vóór 0013)', async () => {
+    // De eigenaar van de testdatabase (de migratierol) verleent het even los aan hz_app.
+    const owner = new pg.Client({ connectionString: OWNER_URL });
+    await owner.connect();
+    const db_ = new URL(OWNER_URL).pathname.slice(1);
+    try {
+      await owner.query(`GRANT TEMPORARY ON DATABASE ${db_} TO hz_app`);
+      const bad = createDb(loginUrl, 1, { env: { NODE_ENV: 'production' } });
+      try {
+        const e = await err(bad.db.execute(sql`select 1`));
+        expect(e).not.toBeNull();
+        expect(e!.message ?? '').toMatch(/tijdelijke tabellen/);
+      } finally {
+        await bad.close();
+      }
+    } finally {
+      await owner.query(`REVOKE TEMPORARY ON DATABASE ${db_} FROM hz_app`);
+      await owner.end();
+    }
   });
 });
 

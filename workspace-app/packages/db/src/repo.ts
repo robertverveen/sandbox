@@ -127,6 +127,18 @@ export async function revokeSession(db: Db, token: string) {
 }
 
 /**
+ * Een eigen sessie intrekken vanuit een request (uitloggen op een ander apparaat), als hz_app binnen de sessie van de
+ * gebruiker (runWithSession). Alleen een eigen, nog niet ingetrokken sessie; false als dat niet zo is. Sinds 0013 heeft
+ * hz_app geen UPDATE-recht meer op sessions: een ingetrokken sessie kan een request niet terughalen.
+ */
+export async function revokeOwnSession(db: Db, userId: string, sessionId: string) {
+  return withUser(db, userId, async (tx) => {
+    const r = await tx.execute<{ ok: boolean }>(sql`select auth_revoke_own_session(${sessionId}::uuid) as ok`);
+    return r.rows[0]?.ok === true;
+  });
+}
+
+/**
  * Worker: id's van actieve collega's (geen e-mail of naam). Per id daarna withUser. Alleen als hz_worker (0010): de
  * worker-login (sql/worker-login.sql) kan dit, de api-login niet (42501).
  */

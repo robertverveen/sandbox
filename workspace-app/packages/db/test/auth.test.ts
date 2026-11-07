@@ -28,6 +28,7 @@ import {
   findSession,
   findUserByEmail,
   hashToken,
+  revokeOwnSession,
   revokeSession,
   runMigrations,
   runWithSession,
@@ -636,12 +637,15 @@ describe('aanvalspad: een request kan niemand nadoen (0011, criticus ronde 3)', 
     expect(await runWithSession(hashA, () => withUser(app.db, B, (tx) => tx.select().from(trackerItems)))).toHaveLength(
       0,
     );
-    // eigen sessie intrekken mag (uitloggen op een ander apparaat), de verloopdatum verschuiven niet
-    const other = (await createSession(db, A, 'ander apparaat')).token;
-    await request((tx) =>
-      tx.execute(sql`update sessions set revoked_at = now() where token_hash = ${hashToken(other)}`),
-    );
-    expect(await findSession(db, other)).toBeNull();
+    // eigen sessie intrekken mag (uitloggen op een ander apparaat, via auth_revoke_own_session; 0013), de verloopdatum
+    // verschuiven niet
+    const other = await createSession(db, A, 'ander apparaat');
+    const otherId = (await findSession(db, other.token))!.session.id;
+    expect(
+      (await request((tx) => tx.execute<{ ok: boolean }>(sql`select auth_revoke_own_session(${otherId}::uuid) as ok`)))
+        .rows[0]!.ok,
+    ).toBe(true);
+    expect(await findSession(db, other.token)).toBeNull();
     const e = await errOf(request((tx) => tx.execute(sql`update sessions set expires_at = now() + interval '1 year'`)));
     expect(codeOf(e)).toBe('42501');
   });
@@ -751,3 +755,140 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
     for (const p of r.rows) expect(`${p.q} ${p.c}`, p.polname).not.toMatch(/app_purpose/);
   });
 });
+
+describe('uitloggen blijft uitloggen; auditlog en import_keys alleen toevoegen (0013, criticus ronde 5)', () => {
+  // De api verbindt als hz_app_login. Willekeurige SQL in de request van A mag een ingetrokken sessie (van A zelf of van
+  // een ander) nooit weer geldig maken, en het auditlog niet wijzigen of wissen.
+  let app: ReturnType<typeof createDb>;
+  let hashA: string;
+  const request = <T>(fn: (tx: Parameters<Parameters<typeof withSession>[2]>[0]) => Promise<T>) =>
+    withSession(app.db, hashA, fn);
+  const validByToken = async (hash: string) =>
+    (
+      await withAuth(db, (tx) =>
+        tx.execute<{ n: number }>(sql`select count(*)::int as n from auth_session_by_token(${hash})`),
+      )
+    ).rows[0]!.n;
+
+  beforeAll(async () => {
+    app = createDb(asLogin('hz_app_login'), 2);
+    hashA = hashToken(tokenA);
+  });
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it('een eigen uitgelogde sessie terughalen met UPDATE revoked_at = NULL: geweigerd, de sessie blijft ongeldig', async () => {
+    const old = await createSession(db, A, 'oud apparaat');
+    const h = hashToken(old.token);
+    expect(await revokeSession(db, old.token)).toBe(true);
+    expect(await validByToken(h)).toBe(0);
+    for (const q of [
+      sql`update sessions set revoked_at = null where token_hash = ${h}`,
+      sql`update sessions set revoked_at = null`,
+      sql`update sessions set revoked_at = now() where token_hash = ${h}`,
+    ]) {
+      const e = await errOf(request((tx) => tx.execute(q)));
+      expect(codeOf(e)).toBe('42501');
+      expect(`${e?.cause?.message ?? e?.message}`).toMatch(/permission denied for table sessions/);
+    }
+    expect(await validByToken(h)).toBe(0);
+    expect(await findSession(db, old.token)).toBeNull();
+  });
+
+  it('ook de sessie van een ander (B, ingetrokken) terughalen: geweigerd', async () => {
+    const t = (await createSession(db, B, 'b-oud')).token;
+    await revokeSession(db, t);
+    const e = await errOf(
+      request((tx) => tx.execute(sql`update sessions set revoked_at = null where token_hash = ${hashToken(t)}`)),
+    );
+    expect(codeOf(e)).toBe('42501');
+    expect(await validByToken(hashToken(t))).toBe(0);
+  });
+
+  it('auth_revoke_own_session: alleen een eigen, nog geldige sessie; niet die van B, niet zonder sessie', async () => {
+    const b = await createSession(db, B, 'b-telefoon');
+    const bId = (await findSession(db, b.token))!.session.id;
+    const call = (id: string) =>
+      request((tx) => tx.execute<{ ok: boolean }>(sql`select auth_revoke_own_session(${id}::uuid) as ok`));
+    expect((await call(bId)).rows[0]!.ok).toBe(false);
+    expect(await findSession(db, b.token)).not.toBeNull(); // B is niet uitgelogd
+    // zonder geldige sessie (app.user_id = B zonder sessie, de api-login): niemand, dus niets
+    const none = await app.db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${B}, true)`);
+      return tx.execute<{ ok: boolean }>(sql`select auth_revoke_own_session(${bId}::uuid) as ok`);
+    });
+    expect(none.rows[0]!.ok).toBe(false);
+    expect(await findSession(db, b.token)).not.toBeNull();
+    // eigen sessie: één keer intrekken lukt, een tweede keer niet (al ingetrokken)
+    const a2 = await createSession(db, A, 'a-tablet');
+    const a2Id = (await findSession(db, a2.token))!.session.id;
+    expect(await runWithSession(hashA, () => revokeOwnSession(app.db, A, a2Id))).toBe(true);
+    expect(await runWithSession(hashA, () => revokeOwnSession(app.db, A, a2Id))).toBe(false);
+    expect(await findSession(db, a2.token)).toBeNull();
+  });
+
+  it('auth_revoke_own_session: SECURITY DEFINER van de migratierol, vast zoekpad, alleen hz_app mag hem uitvoeren', async () => {
+    const r = await owner.db.execute<{ sec: boolean; own: string; cfg: string[]; me: string; g: string }>(sql`
+      select p.prosecdef as sec, pg_get_userbyid(p.proowner) as own, p.proconfig as cfg, current_user::text as me,
+        (select string_agg(coalesce(nullif(pg_get_userbyid(a.grantee), '-'), 'PUBLIC'), ',') from aclexplode(p.proacl) a
+               where a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner) as g
+      from pg_proc p where p.proname = 'auth_revoke_own_session'`);
+    const f = r.rows[0]!;
+    expect(f.sec).toBe(true);
+    expect(f.own).toBe(f.me);
+    expect(f.cfg.join(',')).toMatch(/search_path=pg_catalog, public, pg_temp/);
+    expect(f.g).toBe('hz_app');
+  });
+
+  it('de trigger houdt het voor iedereen vast, ook voor de migratierol: ingetrokken blijft ingetrokken', async () => {
+    const t = (await createSession(db, A, 'trigger')).token;
+    await revokeSession(db, t);
+    // de eigenaar valt onder FORCE RLS en heeft de definer-regel; de trigger weigert toch
+    const e = await errOf(
+      owner.db.execute(sql`update sessions set revoked_at = null where token_hash = ${hashToken(t)}`),
+    );
+    expect(codeOf(e)).toBe('42501');
+    expect(`${e?.cause?.message ?? e?.message}`).toMatch(/ingetrokken sessie blijft ingetrokken/);
+    const e2 = await errOf(
+      owner.db.execute(
+        sql`update sessions set token_hash = ${hashToken('ander')} where token_hash = ${hashToken(tokenB)}`,
+      ),
+    );
+    expect(codeOf(e2)).toBe('42501');
+    expect(await validByToken(hashToken(t))).toBe(0);
+    expect(await findSession(db, tokenB)).not.toBeNull();
+  });
+
+  it('hz_app heeft geen UPDATE of DELETE op audit_log en geen DELETE op import_keys (het recht zelf, niet alleen RLS)', async () => {
+    const priv = await owner.db.execute<{ t: string; p: string; ok: boolean }>(sql`
+      select t, p, has_table_privilege('hz_app', t, p) as ok
+      from unnest(array['audit_log','audit_log','audit_log','import_keys','import_keys','sessions','sessions'],
+                  array['UPDATE','DELETE','TRUNCATE','DELETE','TRUNCATE','UPDATE','INSERT']) as x(t, p)`);
+    for (const r of priv.rows) expect(r.ok, `${r.p} op ${r.t}`).toBe(false);
+    expect(
+      (
+        await owner.db.execute<{ ok: boolean }>(
+          sql`select has_column_privilege('hz_app', 'sessions', 'revoked_at', 'UPDATE') as ok`,
+        )
+      ).rows[0]!.ok,
+    ).toBe(false);
+    // toevoegen mag nog (voor zichzelf), lezen ook
+    expect(
+      has(
+        await owner.db.execute<{ ok: boolean }>(sql`select has_table_privilege('hz_app', 'audit_log', 'INSERT') as ok`),
+      ),
+    ).toBe(true);
+    for (const q of [
+      sql`update audit_log set action = 'gewist'`,
+      sql`delete from audit_log`,
+      sql`delete from import_keys`,
+    ]) {
+      const e = await errOf(request((tx) => tx.execute(q)));
+      expect(codeOf(e)).toBe('42501');
+      expect(`${e?.cause?.message ?? e?.message}`).toMatch(/permission denied for table/);
+    }
+  });
+});
+
+const has = (r: { rows: Array<{ ok: boolean }> }) => r.rows[0]!.ok;
