@@ -62,7 +62,11 @@ export function patchConsole(svc: string, write: Write, onError?: (err: Error) =
 type FetchHandler<A extends unknown[]> = (req: Request, ...rest: A) => Response | Promise<Response>;
 
 /** Access-log rond een fetch-handler (Hono): methode, gemaskeerd pad, status en duur. Geen IP of user-agent. */
-export function withAccessLog<A extends unknown[]>(svc: string, handler: FetchHandler<A>, write: Write): FetchHandler<A> {
+export function withAccessLog<A extends unknown[]>(
+  svc: string,
+  handler: FetchHandler<A>,
+  write: Write,
+): FetchHandler<A> {
   return async (req, ...rest) => {
     const t0 = performance.now();
     const path = maskPath(new URL(req.url).pathname);
@@ -78,7 +82,14 @@ export function withAccessLog<A extends unknown[]>(svc: string, handler: FetchHa
       );
       return res;
     } catch (e) {
-      write(formatLine(svc, 'error', ['request'], { method: req.method, path, status: 500, ms: Math.round(performance.now() - t0) }));
+      write(
+        formatLine(svc, 'error', ['request'], {
+          method: req.method,
+          path,
+          status: 500,
+          ms: Math.round(performance.now() - t0),
+        }),
+      );
       throw e;
     }
   };

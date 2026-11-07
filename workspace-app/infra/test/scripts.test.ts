@@ -16,7 +16,11 @@ const mode = (p: string) => (statSync(p).mode & 0o777).toString(8);
 
 describe('scripts: syntaxis en shellcheck', () => {
   const dirs = ['scripts', 'postgres', 'docker'].map((d) => join(INFRA, d));
-  const files = dirs.flatMap((d) => readdirSync(d).filter((f) => f.endsWith('.sh')).map((f) => join(d, f)));
+  const files = dirs.flatMap((d) =>
+    readdirSync(d)
+      .filter((f) => f.endsWith('.sh'))
+      .map((f) => join(d, f)),
+  );
 
   it('bash -n op elk script', async () => {
     expect(files.length).toBeGreaterThanOrEqual(17);
@@ -25,7 +29,10 @@ describe('scripts: syntaxis en shellcheck', () => {
 
   it('shellcheck zonder bevindingen', async () => {
     expect(has('shellcheck'), 'shellcheck moet geïnstalleerd zijn (CI: apt-get install shellcheck)').toBe(true);
-    const r = await run('sh', ['-c', `cd ${join(INFRA, 'scripts')} && shellcheck -x *.sh && shellcheck -x ../postgres/*.sh ../docker/*.sh`]);
+    const r = await run('sh', [
+      '-c',
+      `cd ${join(INFRA, 'scripts')} && shellcheck -x *.sh && shellcheck -x ../postgres/*.sh ../docker/*.sh`,
+    ]);
     expect(r.all).toBe('');
     expect(r.code).toBe(0);
   });
@@ -41,9 +48,11 @@ async function serverFixture(opts: { missing?: string[] } = {}) {
     join(etc, 'hz.env'),
     'HZ_DOMAIN=hz.example.nl\nHZ_TEST_DOMAIN=test.hz.example.nl\nHZ_ERRORS_DOMAIN=fouten.hz.example.nl\nHZ_ACME_EMAIL=ops@example.nl\nHZ_REGISTRY=ghcr.io/homezerotech\n',
   );
-  for (const d of ['scripts', 'compose', 'caddy', 'postgres']) cpSync(join(INFRA, d), join(bundle, 'infra', d), { recursive: true });
+  for (const d of ['scripts', 'compose', 'caddy', 'postgres'])
+    cpSync(join(INFRA, d), join(bundle, 'infra', d), { recursive: true });
   mkdirSync(join(bundle, 'infra/secrets'), { recursive: true });
-  for (const f of ['prod.keys', 'test.keys', 'server.keys']) cpSync(join(INFRA, 'secrets', f), join(bundle, 'infra/secrets', f));
+  for (const f of ['prod.keys', 'test.keys', 'server.keys'])
+    cpSync(join(INFRA, 'secrets', f), join(bundle, 'infra/secrets', f));
   const keys = ageKeys(join(root, 'age'));
   const env = {
     HZ_ROOT: join(root, 'opt'),
@@ -58,7 +67,8 @@ async function serverFixture(opts: { missing?: string[] } = {}) {
   for (const scope of ['test', 'prod']) {
     expect((await run(script('secrets.sh'), ['gen', scope], env)).code).toBe(0);
     for (const k of ['HZ_GOOGLE_CLIENT_ID', 'HZ_GOOGLE_CLIENT_SECRET'])
-      if (!opts.missing?.includes(k)) expect((await run(script('secrets.sh'), ['set', scope, k], env, `waarde-${k}\n`)).code).toBe(0);
+      if (!opts.missing?.includes(k))
+        expect((await run(script('secrets.sh'), ['set', scope, k], env, `waarde-${k}\n`)).code).toBe(0);
   }
   return { root, bundle, env, keys };
 }
@@ -68,7 +78,9 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
   let healthy = true;
   beforeAll(async () => {
     health = await httpServer(() =>
-      healthy ? { status: 200, body: '{"ok":true,"version":"0.1.0","mode":"live","db":"ok"}' } : { status: 200, body: '{"ok":true,"db":"error"}' },
+      healthy
+        ? { status: 200, body: '{"ok":true,"version":"0.1.0","mode":"live","db":"ok"}' }
+        : { status: 200, body: '{"ok":true,"db":"error"}' },
     );
   });
   afterAll(() => health.close());
@@ -79,7 +91,13 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
   async function setup(opts: { missing?: string[] } = {}) {
     const s = await serverFixture(opts);
     const docker = fakeDocker(join(s.root, 'bin'));
-    const env = { ...s.env, HZ_DOCKER: docker.bin, HZ_HEALTH_URL: `${health.url}/api/health`, HZ_HEALTH_TRIES: '2', HZ_HEALTH_SLEEP: '0' };
+    const env = {
+      ...s.env,
+      HZ_DOCKER: docker.bin,
+      HZ_HEALTH_URL: `${health.url}/api/health`,
+      HZ_HEALTH_TRIES: '2',
+      HZ_HEALTH_SLEEP: '0',
+    };
     const deploy = (e: string, tag: string, extra: Record<string, string> = {}) =>
       run(join(s.bundle, 'infra/scripts/deploy.sh'), [e, tag], { ...env, ...extra });
     const state = (e: string, f: string) => {
@@ -112,7 +130,9 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     expect(appEnv).toMatch(/^HZ_TOKEN_KEY=/m);
     expect(appEnv).not.toMatch(/HZ_PG_/);
     expect(mode(join(t.env.HZ_RUN, 'test.env'))).toBe('600');
-    expect(readFileSync(join(t.env.HZ_ROOT, 'edge/Caddyfile'), 'utf8')).toBe(readFileSync(join(INFRA, 'caddy/Caddyfile'), 'utf8'));
+    expect(readFileSync(join(t.env.HZ_ROOT, 'edge/Caddyfile'), 'utf8')).toBe(
+      readFileSync(join(INFRA, 'caddy/Caddyfile'), 'utf8'),
+    );
     expect(readFileSync(join(t.env.HZ_LOG_DIR, 'deploys.log'), 'utf8')).toMatch(/ test sha-aaaaaaa - ok\n$/);
   });
 
@@ -124,7 +144,12 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     expect(r.code, r.all).toBe(0);
     expect(t.state('test', 'current')).toBe('sha-bbbbbbb');
     expect(t.state('test', 'previous')).toBe('sha-aaaaaaa');
-    expect(t.docker.calls().slice(before).some((c) => c.includes('caddy reload'))).toBe(false);
+    expect(
+      t.docker
+        .calls()
+        .slice(before)
+        .some((c) => c.includes('caddy reload')),
+    ).toBe(false);
   });
 
   it('containers worden niet gezond: terug naar de vorige versie, uitrol rood', async () => {
@@ -136,7 +161,9 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     const ups = t.docker.calls().filter((c) => /compose -p hz-test .* up -d/.test(c));
     expect(ups.slice(-2).map((c) => /tag=(\S+)/.exec(c)![1])).toEqual(['sha-ccccccc', 'sha-bbbbbbb']);
     expect(t.state('test', 'current')).toBe('sha-bbbbbbb');
-    expect(readFileSync(join(t.env.HZ_LOG_DIR, 'deploys.log'), 'utf8')).toMatch(/sha-ccccccc sha-bbbbbbb mislukt\n.*sha-bbbbbbb sha-ccccccc teruggezet\n$/);
+    expect(readFileSync(join(t.env.HZ_LOG_DIR, 'deploys.log'), 'utf8')).toMatch(
+      /sha-ccccccc sha-bbbbbbb mislukt\n.*sha-bbbbbbb sha-ccccccc teruggezet\n$/,
+    );
   });
 
   it('health-check via https rood: ook terug, en zonder vorige versie geen stille groen', async () => {
@@ -164,7 +191,12 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     const r = await t.deploy('prod', 'v1.1.0'); // geen HZ_BACKUP_TARGET in server.env: back-up faalt
     expect(r.code).toBe(1);
     expect(r.err).toContain('back-up vóór uitrol mislukt; uitrol gestopt');
-    expect(t.docker.calls().slice(before).some((c) => /compose -p hz-prod .* (run|up)/.test(c))).toBe(false);
+    expect(
+      t.docker
+        .calls()
+        .slice(before)
+        .some((c) => /compose -p hz-prod .* (run|up)/.test(c)),
+    ).toBe(false);
     expect(t.state('prod', 'current')).toBe('v1.0.0');
   });
 
@@ -194,11 +226,18 @@ describe('preview per pull request (preview.sh, HZW-005)', () => {
     expect(r.out.trim()).toBe('https://pr-12.test.hz.example.nl');
     expect(mode(join(t.dir(12), '.env'))).toBe('600');
     const env = readFileSync(join(t.dir(12), '.env'), 'utf8');
-    for (const k of ['HZ_PG_SUPERUSER_PASSWORD', 'HZ_PG_MIGRATOR_PASSWORD', 'HZ_PG_APP_PASSWORD', 'HZ_PG_BACKUP_PASSWORD'])
+    for (const k of [
+      'HZ_PG_SUPERUSER_PASSWORD',
+      'HZ_PG_MIGRATOR_PASSWORD',
+      'HZ_PG_APP_PASSWORD',
+      'HZ_PG_BACKUP_PASSWORD',
+    ])
       expect(env).toMatch(new RegExp(`^${k}=[0-9a-f]{48}$`, 'm'));
     expect(readFileSync(join(t.dir(12), 'app.env'), 'utf8')).toMatch(/^HZ_TOKEN_KEY=.{44}$/m);
     const up = t.docker.calls().find((c) => /compose -p hz-pr-12 .* up -d/.test(c))!;
-    expect(up).toContain('tag=pr-12-abcdef123456 instance=hz-pr-12 env=preview url=https://pr-12.test.hz.example.nl node_env=development devlogin=1');
+    expect(up).toContain(
+      'tag=pr-12-abcdef123456 instance=hz-pr-12 env=preview url=https://pr-12.test.hz.example.nl node_env=development devlogin=1',
+    );
     expect(t.docker.calls().some((c) => /compose -p hz-pr-12 .* exec -T web wget .*\/api\/health/.test(c))).toBe(true);
     expect(existsSync(t.allow(12))).toBe(true);
     expect(readFileSync(join(t.dir(12), 'tag'), 'utf8').trim()).toBe('pr-12-abcdef123456');
@@ -260,10 +299,15 @@ describe('forced command voor GitHub Actions (hz-ssh-dispatch)', () => {
     const bundle = join(root, 'bundle');
     mkdirSync(join(bundle, 'infra/scripts'), { recursive: true });
     for (const s of ['deploy.sh', 'preview.sh'])
-      writeFileSync(join(bundle, 'infra/scripts', s), `#!/usr/bin/env bash\necho "${s} $* cfg=\${DOCKER_CONFIG:-}" >> "${root}/called"\n`, { mode: 0o755 });
+      writeFileSync(
+        join(bundle, 'infra/scripts', s),
+        `#!/usr/bin/env bash\necho "${s} $* cfg=\${DOCKER_CONFIG:-}" >> "${root}/called"\n`,
+        { mode: 0o755 },
+      );
     const docker = fakeDocker(join(root, 'bin'));
     const env = { HZ_ROOT: join(root, 'opt'), HZ_ETC: etc, HZ_DOCKER: docker.bin, FAKE_DOCKER_BUNDLE: bundle };
-    const ssh = (cmd: string, stdin = '') => run(script('hz-ssh-dispatch.sh'), [], { ...env, SSH_ORIGINAL_COMMAND: cmd }, stdin);
+    const ssh = (cmd: string, stdin = '') =>
+      run(script('hz-ssh-dispatch.sh'), [], { ...env, SSH_ORIGINAL_COMMAND: cmd }, stdin);
     const called = () => (existsSync(join(root, 'called')) ? readFileSync(join(root, 'called'), 'utf8') : '');
     return { root, env, docker, ssh, called };
   }
@@ -275,7 +319,9 @@ describe('forced command voor GitHub Actions (hz-ssh-dispatch)', () => {
     const login = t.docker.calls().find((c) => c.startsWith('login ghcr.io -u hz-deploy --password-stdin'))!;
     const cfg = /cfg=(\S+)/.exec(login)![1]!;
     expect(existsSync(cfg)).toBe(false); // na afloop weg
-    expect(t.docker.calls().some((c) => c.startsWith('pull --quiet ghcr.io/homezerotech/hz-api:sha-abcdef1'))).toBe(true);
+    expect(t.docker.calls().some((c) => c.startsWith('pull --quiet ghcr.io/homezerotech/hz-api:sha-abcdef1'))).toBe(
+      true,
+    );
     expect(existsSync(join(t.env.HZ_ROOT, 'releases/sha-abcdef1/.compleet'))).toBe(true);
     expect(t.called()).toMatch(/^deploy\.sh test sha-abcdef1 cfg=\S+\n$/);
   });
@@ -308,7 +354,13 @@ describe('forced command voor GitHub Actions (hz-ssh-dispatch)', () => {
     writeFileSync(join(t.env.HZ_ROOT, 'previews/pr-12/tag'), 'pr-12-abcdef123456\n');
     const r = await t.ssh('preview down 12');
     expect(r.code, r.all).toBe(0);
-    expect(t.called().split('\n').filter(Boolean).map((l) => l.replace(/ cfg=.*/, ''))).toEqual(['preview.sh up 12 pr-12-abcdef123456', 'preview.sh down 12']);
+    expect(
+      t
+        .called()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => l.replace(/ cfg=.*/, '')),
+    ).toEqual(['preview.sh up 12 pr-12-abcdef123456', 'preview.sh down 12']);
   });
 
   it('rollback naar de vorige versie die nog op de server staat', async () => {
@@ -327,9 +379,15 @@ describe('secrets met age (secrets.sh, HZW-006)', () => {
     const root = tmp('hz-e0-sec-');
     const keys = ageKeys(join(root, 'age'));
     mkdirSync(join(root, 'secrets'));
-    for (const f of ['prod.keys', 'test.keys', 'server.keys']) cpSync(join(INFRA, 'secrets', f), join(root, 'secrets', f));
-    const env = { HZ_SECRETS_DIR: join(root, 'secrets'), HZ_AGE_RECIPIENTS_FILE: keys.recipients, HZ_AGE_IDENTITY: keys.key };
-    const sec = (args: string[], input?: string, extra: Record<string, string> = {}) => run(script('secrets.sh'), args, { ...env, ...extra }, input);
+    for (const f of ['prod.keys', 'test.keys', 'server.keys'])
+      cpSync(join(INFRA, 'secrets', f), join(root, 'secrets', f));
+    const env = {
+      HZ_SECRETS_DIR: join(root, 'secrets'),
+      HZ_AGE_RECIPIENTS_FILE: keys.recipients,
+      HZ_AGE_IDENTITY: keys.key,
+    };
+    const sec = (args: string[], input?: string, extra: Record<string, string> = {}) =>
+      run(script('secrets.sh'), args, { ...env, ...extra }, input);
     return { root, keys, env, sec };
   }
 
@@ -397,7 +455,8 @@ describe('secrets met age (secrets.sh, HZW-006)', () => {
 });
 
 describe('servercontrole (server-check.sh, HZW-002)', () => {
-  const sshdGood = 'port 22\npasswordauthentication no\nkbdinteractiveauthentication no\npermitrootlogin no\npubkeyauthentication yes\npermitemptypasswords no\n';
+  const sshdGood =
+    'port 22\npasswordauthentication no\nkbdinteractiveauthentication no\npermitrootlogin no\npubkeyauthentication yes\npermitemptypasswords no\n';
   const ssGood = [
     'tcp   LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*',
     'tcp   LISTEN 0 4096 0.0.0.0:80 0.0.0.0:*',
@@ -410,12 +469,18 @@ describe('servercontrole (server-check.sh, HZW-002)', () => {
   const ufwGood =
     'Status: active\nLogging: on (low)\nDefault: deny (incoming), allow (outgoing), disabled (routed)\n\nTo Action From\n-- ------ ----\n22/tcp ALLOW IN Anywhere\n80/tcp ALLOW IN Anywhere\n443/tcp ALLOW IN Anywhere\n443/udp ALLOW IN Anywhere\n';
 
-  function check(over: { sshd?: string; ss?: string; ufw?: string; docker?: boolean; auto?: boolean }, args: string[] = []) {
+  function check(
+    over: { sshd?: string; ss?: string; ufw?: string; docker?: boolean; auto?: boolean },
+    args: string[] = [],
+  ) {
     const root = tmp('hz-e0-chk-');
     const w = (f: string, t: string) => (writeFileSync(join(root, f), t), join(root, f));
     mkdirSync(join(root, 'etc/apt/apt.conf.d'), { recursive: true });
     if (over.auto !== false) {
-      w('etc/apt/apt.conf.d/20auto-upgrades', 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n');
+      w(
+        'etc/apt/apt.conf.d/20auto-upgrades',
+        'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n',
+      );
       w('etc/apt/apt.conf.d/52unattended-upgrades-hz', 'Unattended-Upgrade::Automatic-Reboot "true";\n');
     }
     return run(script('server-check.sh'), args, {
@@ -438,7 +503,9 @@ describe('servercontrole (server-check.sh, HZW-002)', () => {
 
   it('wachtwoordlogin, root-login, open databasepoort, firewall uit, geen updates, Docker plat: allemaal rood', async () => {
     const r = await check({
-      sshd: sshdGood.replace('passwordauthentication no', 'passwordauthentication yes').replace('permitrootlogin no', 'permitrootlogin prohibit-password'),
+      sshd: sshdGood
+        .replace('passwordauthentication no', 'passwordauthentication yes')
+        .replace('permitrootlogin no', 'permitrootlogin prohibit-password'),
       ss: `${ssGood}\ntcp LISTEN 0 244 0.0.0.0:5432 0.0.0.0:*\ntcp LISTEN 0 511 [::]:8700 [::]:*`,
       ufw: 'Status: inactive\n',
       docker: false,
@@ -446,7 +513,14 @@ describe('servercontrole (server-check.sh, HZW-002)', () => {
     });
     expect(r.code).toBe(1);
     const fout = r.out.split('\n').filter((l) => l.startsWith('FOUT'));
-    expect(fout.map((l) => l.split(/\s{2,}/)[1])).toEqual(['ssh passwordauthentication', 'ssh permitrootlogin', 'poorten', 'firewall', 'updates', 'docker']);
+    expect(fout.map((l) => l.split(/\s{2,}/)[1])).toEqual([
+      'ssh passwordauthentication',
+      'ssh permitrootlogin',
+      'poorten',
+      'firewall',
+      'updates',
+      'docker',
+    ]);
     expect(r.out).toMatch(/luistert publiek op: tcp\/5432 tcp\/8700/);
   });
 
@@ -469,22 +543,33 @@ describe('TLS en doorsturen (tls-check.sh, HZW-003)', () => {
   const domain = 'hz.test.example';
   const sh = (c: string) => execFileSync('sh', ['-c', c], { cwd: dir, stdio: 'pipe' });
   beforeAll(() => {
-    sh('openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout ca.key -out ca.crt -days 30 -subj /CN=HZ-test-CA 2>/dev/null');
+    sh(
+      'openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout ca.key -out ca.crt -days 30 -subj /CN=HZ-test-CA 2>/dev/null',
+    );
     for (const [name, days, cn] of [
       ['goed', 60, domain],
       ['kort', 5, domain],
       ['anders', 60, 'ander.example'],
     ] as const) {
-      sh(`openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout ${name}.key -out ${name}.csr -subj /CN=${cn} 2>/dev/null`);
+      sh(
+        `openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout ${name}.key -out ${name}.csr -subj /CN=${cn} 2>/dev/null`,
+      );
       writeFileSync(join(dir, `${name}.ext`), `subjectAltName=DNS:${cn}\n`);
-      sh(`openssl x509 -req -in ${name}.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out ${name}.crt -days ${days} -extfile ${name}.ext 2>/dev/null`);
+      sh(
+        `openssl x509 -req -in ${name}.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out ${name}.crt -days ${days} -extfile ${name}.ext 2>/dev/null`,
+      );
     }
   });
 
   async function servers(o: { cert: string; hsts?: boolean; redirect?: boolean; status?: number }) {
-    const https = createHttps({ key: readFileSync(join(dir, `${o.cert}.key`)), cert: readFileSync(join(dir, `${o.cert}.crt`)) }, (_req, res) => {
-      res.writeHead(o.status ?? 200, o.hsts === false ? {} : { 'strict-transport-security': 'max-age=31536000' }).end('{"ok":true}');
-    });
+    const https = createHttps(
+      { key: readFileSync(join(dir, `${o.cert}.key`)), cert: readFileSync(join(dir, `${o.cert}.crt`)) },
+      (_req, res) => {
+        res
+          .writeHead(o.status ?? 200, o.hsts === false ? {} : { 'strict-transport-security': 'max-age=31536000' })
+          .end('{"ok":true}');
+      },
+    );
     await new Promise<void>((ok) => https.listen(0, '127.0.0.1', ok));
     const sp = (https.address() as { port: number }).port;
     const http = createHttp((_req, res) => {
@@ -493,7 +578,12 @@ describe('TLS en doorsturen (tls-check.sh, HZW-003)', () => {
     });
     await new Promise<void>((ok) => http.listen(0, '127.0.0.1', ok));
     const hp = (http.address() as { port: number }).port;
-    const env = { HZ_TLS_CONNECT: '127.0.0.1', HZ_TLS_HTTPS_PORT: String(sp), HZ_TLS_HTTP_PORT: String(hp), HZ_TLS_CAFILE: join(dir, 'ca.crt') };
+    const env = {
+      HZ_TLS_CONNECT: '127.0.0.1',
+      HZ_TLS_HTTPS_PORT: String(sp),
+      HZ_TLS_HTTP_PORT: String(hp),
+      HZ_TLS_CAFILE: join(dir, 'ca.crt'),
+    };
     return {
       check: (args: string[] = [domain]) => run(script('tls-check.sh'), args, env),
       close: async () => {
@@ -628,12 +718,32 @@ describe('server aanmaken bij Hetzner (hetzner-create.sh --dry-run, HZW-002)', (
         deployKey: sshPublicKey('deploy'),
       }),
     );
-    const r = await run(script('hetzner-create.sh'), ['--user-data', join(d, 'ud.yaml'), '--ssh-key', join(d, 'k.pub'), '--dry-run']);
+    const r = await run(script('hetzner-create.sh'), [
+      '--user-data',
+      join(d, 'ud.yaml'),
+      '--ssh-key',
+      join(d, 'k.pub'),
+      '--dry-run',
+    ]);
     expect(r.code, r.all).toBe(0);
     const lines = r.out.split('\n').filter((l) => l.startsWith('+ '));
-    expect(lines).toContain(`+ hcloud server create --name hz-workspace --type cx32 --image ubuntu-24.04 --location nbg1 --ssh-key hz-workspace-beheer --firewall hz-web --user-data-from-file ${join(d, 'ud.yaml')} --label app=hz-workspace`);
+    expect(lines).toContain(
+      `+ hcloud server create --name hz-workspace --type cx32 --image ubuntu-24.04 --location nbg1 --ssh-key hz-workspace-beheer --firewall hz-web --user-data-from-file ${join(d, 'ud.yaml')} --label app=hz-workspace`,
+    );
     for (const p of ['tcp --port 22', 'tcp --port 80', 'tcp --port 443', 'udp --port 443'])
       expect(lines.some((l) => l.includes(`add-rule hz-web --direction in --protocol ${p} `))).toBe(true);
-    expect((await run(script('hetzner-create.sh'), ['--location', 'ash', '--user-data', join(d, 'ud.yaml'), '--ssh-key', join(d, 'k.pub'), '--dry-run'])).code).toBe(1);
+    expect(
+      (
+        await run(script('hetzner-create.sh'), [
+          '--location',
+          'ash',
+          '--user-data',
+          join(d, 'ud.yaml'),
+          '--ssh-key',
+          join(d, 'k.pub'),
+          '--dry-run',
+        ])
+      ).code,
+    ).toBe(1);
   });
 });

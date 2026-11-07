@@ -12,7 +12,7 @@ import { createReporter, type Reporter } from './errors';
 import { patchConsole, withAccessLog, type Write } from './log';
 
 export { scrub, maskPath } from './scrub';
-export { createReporter, parseDsn, toEvent, type Reporter } from './errors';
+export { createReporter, parseDsn, toEvent, type ErrorEvent, type Reporter } from './errors';
 export { formatLine, patchConsole, withAccessLog } from './log';
 export { startHeartbeat, heartbeatFresh } from './heartbeat';
 

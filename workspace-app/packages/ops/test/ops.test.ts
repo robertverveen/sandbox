@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  type ErrorEvent,
   createReporter,
   formatLine,
   heartbeatFresh,
@@ -63,7 +64,10 @@ function fakeGlitchTip() {
 describe('scrub: geen persoonsgegevens of geheimen', () => {
   it.each([
     ['mail van robert@homezero.nl mislukt', 'mail van [e-mail] mislukt'],
-    ['verbinding postgres://hz_app_login:Sup3rGeheim@db:5432/hz faalt', 'verbinding postgres://[geheim]@db:5432/hz faalt'],
+    [
+      'verbinding postgres://hz_app_login:Sup3rGeheim@db:5432/hz faalt',
+      'verbinding postgres://[geheim]@db:5432/hz faalt',
+    ],
     ['Authorization: Bearer abc.def-ghi', 'Authorization: Bearer [token]'],
     ['slack xoxp-1234-5678-abcdef', 'slack [slack-token]'],
     ['google ya29.a0AfH6SMBx-y_z', 'google [google-token]'],
@@ -87,14 +91,20 @@ describe('scrub: geen persoonsgegevens of geheimen', () => {
 
 describe('gestructureerde logs', () => {
   it('JSON-regel met tijd, niveau, dienst en geschoonde boodschap', () => {
-    const line = JSON.parse(formatLine('api', 'error', ['inloggen mislukt voor', 'lisanne@homezero.nl', new Error('x')]));
+    const line = JSON.parse(
+      formatLine('api', 'error', ['inloggen mislukt voor', 'lisanne@homezero.nl', new Error('x')]),
+    );
     expect(line).toMatchObject({ level: 'error', svc: 'api', msg: 'inloggen mislukt voor [e-mail] Error: x' });
     expect(Date.parse(line.ts)).not.toBeNaN();
   });
 
   it('access-log: methode, gemaskeerd pad, status, duur; geen IP, user-agent of query', async () => {
     const lines: string[] = [];
-    const h = withAccessLog('api', async () => new Response('ok', { status: 201 }), (l) => lines.push(l));
+    const h = withAccessLog(
+      'api',
+      async () => new Response('ok', { status: 201 }),
+      (l) => lines.push(l),
+    );
     await h(
       new Request('http://x/api/itemstate/robert@homezero.nl?token=abc', {
         headers: { 'user-agent': 'Mozilla/5.0', 'x-forwarded-for': '10.1.2.3', cookie: 'hz_session=geheim' },
@@ -139,13 +149,13 @@ describe('foutregistratie (GlitchTip/Sentry-protocol)', () => {
     const env = gt.got[0]!;
     expect(env.url).toBe('/api/3/envelope/');
     expect(env.auth).toContain('sentry_key=pubkey');
-    const [head, item, ev] = env.lines as [Record<string, unknown>, Record<string, unknown>, Record<string, any>];
+    const [head, item, ev] = env.lines as [Record<string, unknown>, Record<string, unknown>, ErrorEvent];
     expect(head.event_id).toMatch(/^[0-9a-f]{32}$/);
     expect(item).toEqual({ type: 'event' });
     expect(ev).toMatchObject({ level: 'error', environment: 'test', release: 'sha-abc1234', tags: { service: 'api' } });
-    expect(ev.exception.values[0].type).toBe('Error');
-    expect(ev.exception.values[0].value).toBe('Kunstmatige fout voor [e-mail] met token=[geheim]');
-    expect(ev.exception.values[0].stacktrace.frames.length).toBeGreaterThan(0);
+    expect(ev.exception.values[0]!.type).toBe('Error');
+    expect(ev.exception.values[0]!.value).toBe('Kunstmatige fout voor [e-mail] met token=[geheim]');
+    expect(ev.exception.values[0]!.stacktrace.frames.length).toBeGreaterThan(0);
     expect(env.raw).not.toMatch(/homezero\.nl|geheim123/);
   });
 

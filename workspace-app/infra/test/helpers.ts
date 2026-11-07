@@ -7,6 +7,7 @@ import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +44,12 @@ function cleanEnv(env: Record<string, string | undefined>): Record<string, strin
  * Draai een script met een schone, voorspelbare omgeving (PATH en HOME blijven). Asynchroon: de nep-servers in dit
  * proces (health, uptime-dienst, TLS) moeten kunnen antwoorden terwijl het script loopt.
  */
-export function run(cmd: string, args: string[], env: Record<string, string | undefined> = {}, input?: string): Promise<Run> {
+export function run(
+  cmd: string,
+  args: string[],
+  env: Record<string, string | undefined> = {},
+  input?: string,
+): Promise<Run> {
   return new Promise((resolveRun, reject) => {
     const p = spawn(cmd, args, { env: cleanEnv(env) });
     let out = '';
@@ -56,13 +62,26 @@ export function run(cmd: string, args: string[], env: Record<string, string | un
       clearTimeout(timer);
       resolveRun({ code: code ?? -1, out, err, all: out + err });
     });
+    // Een script dat stdin niet leest en snel stopt, geeft EPIPE: dat is geen fout.
+    p.stdin.on('error', () => {});
     p.stdin.end(input ?? '');
   });
 }
 
 /** Synchrone variant voor scripts die niet met servers in dit proces praten. */
-export function runSync(cmd: string, args: string[], env: Record<string, string | undefined> = {}, input?: string): Run {
-  const r: SpawnSyncReturns<string> = spawnSync(cmd, args, { env: cleanEnv(env), encoding: 'utf8', input: input ?? '', timeout: 180_000, maxBuffer: 64 * 1024 * 1024 });
+export function runSync(
+  cmd: string,
+  args: string[],
+  env: Record<string, string | undefined> = {},
+  input?: string,
+): Run {
+  const r: SpawnSyncReturns<string> = spawnSync(cmd, args, {
+    env: cleanEnv(env),
+    encoding: 'utf8',
+    input: input ?? '',
+    timeout: 180_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
   if (r.error) throw r.error;
   return { code: r.status ?? -1, out: r.stdout, err: r.stderr, all: r.stdout + r.stderr };
 }
@@ -70,7 +89,9 @@ export function runSync(cmd: string, args: string[], env: Record<string, string 
 export const script = (name: string) => join(SCRIPTS, name);
 
 export function has(bin: string): boolean {
-  return spawnSync('sh', ['-c', `command -v ${bin}`], { env: { PATH: `${process.env.PATH}:/root/go/bin` } }).status === 0;
+  return (
+    spawnSync('sh', ['-c', `command -v ${bin}`], { env: { PATH: `${process.env.PATH}:/root/go/bin` } }).status === 0
+  );
 }
 
 /** age-sleutelpaar in een map: { key, pub, recipients } */
@@ -165,7 +186,12 @@ export async function httpServer(
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   const a = server.address();
   const port = typeof a === 'object' && a ? a.port : 0;
-  return { port, url: `http://127.0.0.1:${port}`, hits, close: () => new Promise<void>((ok) => server.close(() => ok())) };
+  return {
+    port,
+    url: `http://127.0.0.1:${port}`,
+    hits,
+    close: () => new Promise<void>((ok) => server.close(() => ok())),
+  };
 }
 
 /* ------------------------------------------------------------------ Postgres ------------------------------------- */
@@ -201,10 +227,14 @@ export async function adminUrl(): Promise<string> {
   if (process.getuid?.() === 0) {
     const sql =
       "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='hz_e0_admin') THEN CREATE ROLE hz_e0_admin LOGIN SUPERUSER PASSWORD 'hz_e0_admin'; END IF; END $$";
-    const r = spawnSync('su', ['postgres', '-s', '/bin/sh', '-c', `psql -X -q -c "${sql.replace(/\$/g, '\\$')}"`], { encoding: 'utf8' });
+    const r = spawnSync('su', ['postgres', '-s', '/bin/sh', '-c', `psql -X -q -c "${sql.replace(/\$/g, '\\$')}"`], {
+      encoding: 'utf8',
+    });
     if (r.status === 0 && (await isSuper(local))) return local;
   }
-  throw new Error('Geen Postgres-superuser voor de infra-tests: zet HZ_PG_ADMIN_URL=postgres://<superuser>:...@localhost:5432/postgres');
+  throw new Error(
+    'Geen Postgres-superuser voor de infra-tests: zet HZ_PG_ADMIN_URL=postgres://<superuser>:...@localhost:5432/postgres',
+  );
 }
 
 export function dbUrl(base: string, db: string, user?: string, password?: string): string {
@@ -215,7 +245,11 @@ export function dbUrl(base: string, db: string, user?: string, password?: string
   return u.toString();
 }
 
-export async function sql<T extends pg.QueryResultRow = pg.QueryResultRow>(url: string, text: string, params: unknown[] = []) {
+export async function sql<T extends pg.QueryResultRow = pg.QueryResultRow>(
+  url: string,
+  text: string,
+  params: unknown[] = [],
+) {
   const c = new pg.Client({ connectionString: url });
   await c.connect();
   try {
@@ -243,4 +277,17 @@ export function startProcess(cmd: string, args: string[], env: Record<string, st
   p.stderr.on('data', (d) => (out += d));
   const exited = new Promise<number>((ok) => p.on('exit', (c) => ok(c ?? -1)));
   return { p, output: () => out, exited, stop: () => (p.kill('SIGTERM'), exited) };
+}
+
+/** Een vrije poort van het besturingssysteem (botst niet met de vaste poorten van de stukken). */
+export function freePort(): Promise<number> {
+  return new Promise((ok, fail) => {
+    const s = createNetServer();
+    s.once('error', fail);
+    s.listen(0, '127.0.0.1', () => {
+      const a = s.address();
+      const port = typeof a === 'object' && a ? a.port : 0;
+      s.close(() => ok(port));
+    });
+  });
 }

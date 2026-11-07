@@ -22,7 +22,8 @@ const infra = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(infra, p), 'utf8');
 
 const DOMAIN = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-const SSH_KEY = /^(ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ssh-rsa|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/=]+( [^\n]*)?$/;
+const SSH_KEY =
+  /^(ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ssh-rsa|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/=]+( [^\n]*)?$/;
 
 /** Docker-repository (officieel), sleutel op vingerafdruk zodat apt hem zelf controleert. */
 const DOCKER_KEY_FINGERPRINT = '9DC858229FC7DD38854AE2D88D81803C0EBFCD88';
@@ -31,10 +32,12 @@ export function renderCloudInit(o) {
   for (const [k, v] of Object.entries({ domain: o.domain, testDomain: o.testDomain, errorsDomain: o.errorsDomain }))
     if (!DOMAIN.test(v ?? '')) throw new Error(`ongeldig domein voor ${k}: ${v}`);
   if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(o.acmeEmail ?? '')) throw new Error('ongeldig e-mailadres voor ACME');
-  if (!/^[a-z0-9.-]+(\/[a-z0-9._-]+)+$/.test(o.registry ?? '')) throw new Error('ongeldige registry (bv. ghcr.io/homezerotech)');
+  if (!/^[a-z0-9.-]+(\/[a-z0-9._-]+)+$/.test(o.registry ?? ''))
+    throw new Error('ongeldige registry (bv. ghcr.io/homezerotech)');
   const adminKeys = (o.adminKeys ?? []).map((k) => k.trim()).filter(Boolean);
   if (!adminKeys.length) throw new Error('minstens één SSH-sleutel van een beheerder nodig');
-  for (const k of [...adminKeys, o.deployKey ?? '']) if (!SSH_KEY.test(k.trim())) throw new Error(`geen geldige publieke SSH-sleutel: ${k.slice(0, 30)}…`);
+  for (const k of [...adminKeys, o.deployKey ?? ''])
+    if (!SSH_KEY.test(k.trim())) throw new Error(`geen geldige publieke SSH-sleutel: ${k.slice(0, 30)}…`);
 
   const hzEnv = [
     '# Niet-geheime instellingen van deze server (cloud-init). Geheimen staan versleuteld in de repo (infra/secrets).',
@@ -150,7 +153,12 @@ export function renderCloudInit(o) {
       file(
         '/etc/docker/daemon.json',
         JSON.stringify(
-          { 'log-driver': 'local', 'log-opts': { 'max-size': '10m', 'max-file': '5' }, 'live-restore': true, 'no-new-privileges': true },
+          {
+            'log-driver': 'local',
+            'log-opts': { 'max-size': '10m', 'max-file': '5' },
+            'live-restore': true,
+            'no-new-privileges': true,
+          },
           null,
           2,
         ) + '\n',

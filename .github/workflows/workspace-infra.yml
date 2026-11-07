@@ -53,6 +53,9 @@ jobs:
         run: bash infra/scripts/validate.sh
         env:
           HZ_VALIDATE_STRICT: '1'
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Web-container (Caddy + CSP) in een echte browser
+        run: node infra/scripts/web-smoke.mjs
 
   images:
     runs-on: ubuntu-24.04

@@ -78,7 +78,10 @@ export interface ReporterOptions {
   timeoutMs?: number;
 }
 
-export function toEvent(err: unknown, o: { service: string; environment: string; release: string; level: 'error' | 'fatal' }): ErrorEvent {
+export function toEvent(
+  err: unknown,
+  o: { service: string; environment: string; release: string; level: 'error' | 'fatal' },
+): ErrorEvent {
   const e = err instanceof Error ? err : new Error(typeof err === 'string' ? err : JSON.stringify(err));
   return {
     event_id: randomBytes(16).toString('hex'),
@@ -89,7 +92,9 @@ export function toEvent(err: unknown, o: { service: string; environment: string;
     environment: o.environment,
     release: o.release,
     tags: { service: o.service },
-    exception: { values: [{ type: e.name || 'Error', value: scrub(e.message), stacktrace: { frames: frames(e.stack) } }] },
+    exception: {
+      values: [{ type: e.name || 'Error', value: scrub(e.message), stacktrace: { frames: frames(e.stack) } }],
+    },
   };
 }
 

@@ -1,1 +1,5 @@
-{ "extends": "../tsconfig.base.json", "compilerOptions": { "allowJs": true, "checkJs": false }, "include": ["test", "vitest.config.ts", "docker/tsup.extra.config.ts"] }
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "allowJs": true, "checkJs": false },
+  "include": ["test", "vitest.config.ts", "docker/tsup.extra.config.ts"]
+}

@@ -60,7 +60,7 @@ services:
   api:
     <<: *app
     image: ${HZ_REGISTRY}/hz-api:${HZ_TAG}
-    env_file: [ '${HZ_APP_ENV_FILE:?HZ_APP_ENV_FILE ontbreekt}' ]
+    env_file: ['${HZ_APP_ENV_FILE:?HZ_APP_ENV_FILE ontbreekt}']
     environment:
       NODE_ENV: ${HZ_NODE_ENV:-production}
       HZ_ENVIRONMENT: ${HZ_ENVIRONMENT:?}
@@ -89,7 +89,7 @@ services:
   worker:
     <<: *app
     image: ${HZ_REGISTRY}/hz-worker:${HZ_TAG}
-    env_file: [ '${HZ_APP_ENV_FILE}' ]
+    env_file: ['${HZ_APP_ENV_FILE}']
     environment:
       NODE_ENV: ${HZ_NODE_ENV:-production}
       HZ_ENVIRONMENT: ${HZ_ENVIRONMENT}
