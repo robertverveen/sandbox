@@ -10,6 +10,7 @@ import { dayLabel, hashColor, initialsOf, avTone, pd, short } from '@hz/shared/l
 import { Icon, type IconName } from '../lib/icons';
 import { searchEntries, type Entry as SearchEntry } from '../lib/palette';
 import { useAddPin, useConversations, useDagstart } from '../lib/queries';
+import { logout } from '../lib/e1';
 import { toggleTheme, useUi } from '../lib/ui';
 import { itemSub, relTime, SRC, SrcLabel } from './Row';
 
@@ -60,6 +61,16 @@ export function Palette() {
         run: () => ui.toast('De plansessie komt in een volgend stuk'),
       },
       { label: 'Wissel licht/donker', hint: 'thema', icon: 'sun', run: () => toggleTheme() },
+      { label: 'Koppelingen (instellingen)', hint: 'g i', icon: 'gear', run: () => nav('/instellingen/koppelingen') },
+      { label: 'Inrichten (onboarding)', hint: 'g w', icon: 'spark', run: () => nav('/welkom') },
+      {
+        label: 'Apparaten en overal uitloggen',
+        hint: 'sessies',
+        icon: 'users',
+        run: () => nav('/instellingen/apparaten'),
+      },
+      { label: 'Team en uitnodigingen', hint: 'beheer', icon: 'users', run: () => nav('/instellingen/team') },
+      { label: 'Uitloggen', hint: 'sessie', icon: 'out', run: () => void logout(false) },
     ],
     [nav, ui],
   );

@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/prototype.css';
 import './styles/app.css';
+import './styles/e1.css';
 import { App } from './App';
 import { createQueryClient } from './lib/queries';
 

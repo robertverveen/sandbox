@@ -1,8 +1,8 @@
 /**
  * API-client op het contract uit @hz/shared: één functie `api(name, input)`, getypt per route.
  * Antwoorden worden met het zod-schema gecontroleerd, zodat contractafwijkingen direct opvallen.
- * Bij 401 logt de client in ontwikkeling automatisch in als testgebruiker (dev-login-stub);
- * werkt dat niet, dan gooit hij AuthRequiredError en toont de app het inlogscherm.
+ * Bij 401 logt de client in ontwikkeling automatisch in als testgebruiker (dev-login-stub), maar alleen zonder
+ * Google-inloggen; anders gooit hij AuthRequiredError en toont de app het inlogscherm.
  */
 import { pathFor, routes, type RouteDef, type RouteName, type Routes } from '@hz/shared';
 import type { z } from 'zod';
@@ -34,14 +34,30 @@ export type Out<N extends RouteName> = z.infer<Routes[N]['response']>;
 
 let loginInFlight: Promise<boolean> | null = null;
 
+/**
+ * Automatisch als testgebruiker inloggen mag alleen als de server dat aanbiedt en Google-inloggen er niet is
+ * (stuk E1), en niet op het inlogscherm zelf (na uitloggen of een weigering blijf je daar).
+ */
+async function devLoginAllowed(): Promise<boolean> {
+  if (typeof location !== 'undefined' && location.pathname === '/login') return false;
+  const cfg = (await fetch(routes.authConfig.path, { credentials: 'same-origin' })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null)) as { devLogin?: boolean; google?: boolean } | null;
+  return !!cfg?.devLogin && !cfg.google;
+}
+
 async function devLogin(): Promise<boolean> {
-  loginInFlight ??= fetch(routes.devLogin.path, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-    body: '{}',
-  })
-    .then((r) => r.ok)
+  loginInFlight ??= devLoginAllowed()
+    .then((ok) =>
+      ok
+        ? fetch(routes.devLogin.path, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: '{}',
+          }).then((r) => r.ok)
+        : false,
+    )
     .catch(() => false)
     .finally(() => {
       setTimeout(() => (loginInFlight = null), 0);

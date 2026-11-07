@@ -16,6 +16,8 @@ const GROUPS: Array<[string, Row[]]> = [
       ['g a', 'Agenda'],
       ['g t', 'Tracker'],
       ['g c', 'Chat'],
+      ['g i', 'Instellingen en koppelingen'],
+      ['g w', 'inrichten (onboarding)'],
       ['Esc', 'sluiten'],
     ],
   ],

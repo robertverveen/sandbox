@@ -1,15 +1,20 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { AuthRequiredError } from './lib/api';
 import { useServerEvents, useSession } from './lib/queries';
 import { UiProvider } from './lib/ui';
 import { Shell } from './components/Shell';
 import { Dagstart } from './views/Dagstart';
 import { Agenda, Chat, PartnerPage, Planning, Tracker, Zoeken } from './views/Placeholders';
+import { Login } from './views/Login';
+import { Onboarding } from './views/Onboarding';
+import { Settings } from './views/Settings';
 
 function Gate() {
   const s = useSession();
+  const loc = useLocation();
   useServerEvents(s.isSuccess);
+  if (loc.pathname === '/login') return s.isSuccess ? <Navigate to="/" replace /> : <Login />;
   if (s.error instanceof AuthRequiredError) return <Login />;
   return (
     <Shell>
@@ -22,29 +27,12 @@ function Gate() {
         <Route path="/chat" element={<Chat />} />
         <Route path="/zoeken" element={<Zoeken />} />
         <Route path="/o/:slug" element={<PartnerPage />} />
+        <Route path="/welkom" element={<Onboarding />} />
+        <Route path="/instellingen" element={<Settings />} />
+        <Route path="/instellingen/:tab" element={<Settings />} />
         <Route path="*" element={<Navigate to="/dagstart" replace />} />
       </Routes>
     </Shell>
-  );
-}
-
-/** Inlogscherm (tot het auth-stuk er is: alleen uitleg; Google-inloggen volgt in HZW-010). */
-function Login() {
-  return (
-    <main className="login">
-      <div className="card login-card">
-        <div className="card-body">
-          <h1>HomeZero Workspace</h1>
-          <p className="sub">Log in met je @homezero.nl-account.</p>
-          <button type="button" className="btn primary big" disabled>
-            Inloggen met Google
-          </button>
-          <p className="hint">
-            Google-inloggen komt in het stuk Inloggen. Lokaal logt de app automatisch in als testgebruiker.
-          </p>
-        </div>
-      </div>
-    </main>
   );
 }
 

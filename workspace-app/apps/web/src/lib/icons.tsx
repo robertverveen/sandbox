@@ -31,6 +31,7 @@ export const ICONS = {
   refresh: '<path d="M13 3v3.5H9.5"/><path d="M13 6.5A5.5 5.5 0 1 0 13.5 9"/>',
   trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9"/>',
   inbox: '<path d="M2 9.5 3.8 3h8.4L14 9.5V13H2z"/><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14"/>',
+  gear: '<path d="M2.5 4.5h6M12 4.5h1.5M2.5 11.5h1.5M7.5 11.5h6"/><circle cx="10.2" cy="4.5" r="1.7"/><circle cx="5.8" cy="11.5" r="1.7"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

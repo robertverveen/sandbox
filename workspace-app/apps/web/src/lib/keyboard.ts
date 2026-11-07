@@ -10,6 +10,9 @@ export const GO_KEYS: Record<string, string> = {
   a: '/agenda',
   t: '/tracker',
   c: '/chat',
+  // Stuk E1: instellingen en koppelingen, en de onboarding-wizard (inrichten).
+  i: '/instellingen',
+  w: '/welkom',
 };
 
 export type KeyAction =
