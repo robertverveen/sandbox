@@ -140,6 +140,39 @@ e2e/          Playwright-tests (schil, Dagstart, toetsenbord, axe, 400 px)
 - **Huisstijl.** `apps/web/src/styles/prototype.css` is de CSS van het prototype (alleen lettertype en viltkorrel naar
   `src/assets`); aanvullingen (toegankelijkheid, links) staan in `app.css`.
 
+## Koppelingen en sync (stuk E3)
+
+Live-implementaties per bron in `packages/providers/src/live/`, aan met `HZ_LIVE_<BRON>=1` (zie `.env.example`).
+Zonder koppeling gooien ze `NotConnectedError`; tests draaien op opgenomen, synthetische antwoorden (msw), nooit op
+echte endpoints.
+
+| Bron | Bestand | Wat |
+|---|---|---|
+| Google Agenda | `google-calendar.ts` | alle agenda's (ook gedeelde privé en Lou), incrementele sync met `syncToken` (410 -> volledig), reageren, vrije tijden, afspraak maken (wandklok + `timeZone`), push via `events.watch` |
+| Google Taken | `google-tasks.ts` | meerdere lijsten, toevoegen, datum, afvinken, Backlog-lijst (`tasks.move`), pollen met `updatedMin` |
+| Gmail | `gmail.ts` | threads, volledige thread (datum uit de Date-header), gelezen/ongelezen (terug te draaien), antwoord als **concept** in Gmail (nooit versturen), `history.list` en Pub/Sub |
+| Slack | `slack.ts` | kanalen, DM's, threads, zoeken, echte gelezen-status (`last_read`, `conversations.mark`, `*_marked`-events), reacties, eigen emoji |
+| Jira | `jira.ts` | lopende sprint van HOM, storypoints, Tester; contextlaag eerst (`product/jira/`), daarna alleen `updated >= vorige sync`; per issue `source` laag/live |
+| Wispr | `wispr.ts` | meetings uit de laag plus live (MCP) alleen na de laatste nachtrun (`_systeem/routines/<voornaam>.md`) |
+| GitHub | `github.ts` | contextlaag en Persoonlijk-repo lezen via git trees/blobs, alleen gewijzigde bestanden, nooit `admin.md` |
+| Slack-to-do's | `slack-todos.ts` | spike HZW-037 achter `HZ_SLACK_TODOS=1`, zie `docs/spike-slack-todos.md` |
+
+- **Tokens**: `live/tokens.ts` laadt het token van de collega (`withUserScope`), ververst het op de server en slaat
+  het versleuteld op (`dbTokenStore` in `@hz/db`). Ontkoppelen trekt het in (`live/revoke.ts`) en wist token en sync-data.
+- **Versturen alleen na een klik**: `postMessage`, `react`, `createEvent` en `respond` werken alleen binnen een
+  POST/PUT/PATCH/DELETE van een ingelogde collega (`withHumanAction`, gezet door de API). De worker en Claude kunnen
+  dat niet. Gmail maakt alleen concepten.
+- **Sync-motor** (`apps/worker/src/sync.ts`, `sync-db.ts`): planner elke minuut (pg-boss), één run per collega en
+  bron (`singletonKey`), terugval bij rate limits (`Retry-After`) en fouten, `needs_reauth` bij een afgewezen token.
+  Webhooks (`/api/hooks/slack`, `/api/hooks/google/calendar`, `/api/hooks/google/gmail`) worden gecontroleerd,
+  ontdubbeld (`sync_events`) en zetten een run klaar (`NOTIFY hz_sync`). Nieuwe data: `NOTIFY hz_events` -> SSE
+  `invalidate`. Stand per bron: `GET /api/sync/status`, nu bijwerken: `POST /api/sync/:provider`.
+- **Database**: `drizzle/0005_e3_sync.sql` (`sync_state`, `sync_jobs`, `sync_events`, alle drie onder RLS).
+- **Starten met live bronnen** (na de mens-stappen in `HUMAN_INPUT.md`):
+  `HZ_STORE=db HZ_TOKEN_KEY=… HZ_LIVE_TASKS=1 … pnpm dev -- --worker`.
+- **Tests met eigen databases**: `HZ_TEST_DATABASE_URL_SYNC` (standaard `hz_e3_test_sync`) en
+  `HZ_TEST_DATABASE_URL_HOOKS` (standaard `hz_e3_test_hooks`).
+
 ## Status van dit stuk
 
 Gebouwd en getest: zie de tests per pakket en `e2e/`. Bewust nog niet: echte OAuth en Google-inloggen, echte
