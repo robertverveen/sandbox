@@ -3,7 +3,8 @@
  *
  * Waarom Auth.js en niet Better Auth (open vraag S3): de adapter-interface van Auth.js is klein en expliciet, zodat
  * de sessies op de bestaande tabellen van het fundament blijven (users, sessions met alleen een sha256 van het
- * token, RLS met purpose 'auth') en stuk E2 het opzoeken van sessies kan verbouwen zonder deze code te raken.
+ * token) blijven. De adapter roept via AuthStore de SECURITY DEFINER-functies van stuk E2 aan (auth_session_by_token
+ * en verder; packages/db/src/auth.ts), geen open SELECT op users of sessions.
  * Auth.js doet het protocol: discovery, state, PKCE en nonce, ID-token-validatie (issuer, audience, verloop) en
  * CSRF op het inlogformulier. De server beslist daarna zelf (signIn-callback): e-mail in het domein, hd-claim,
  * email_verified en de uitnodigingslijst; anders een nette weigerpagina (/login?fout=…).

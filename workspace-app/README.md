@@ -144,21 +144,32 @@ e2e/          Playwright-tests (schil, Dagstart, toetsenbord, axe, 400 px)
 
 - **Inloggen** met Google (OIDC) via Auth.js (`@auth/core`, `apps/api/src/auth/authjs.ts`) met een eigen adapter op
   `users`/`sessions` (alleen een sha256 van het token). Alleen naam en e-mail; de server eist e-mail in het domein,
-  `hd`, `email_verified` en de uitnodigingslijst (tabel `allowlist`, `HZ_ALLOWLIST`, vaste beheerders
-  `HZ_ADMIN_EMAILS`). Anders `/login?fout=…` met een nette weigerpagina. Eerste login: profiel en `/welkom`.
+  `hd`, `email_verified` en de uitnodigingslijst (tabel `allowlist`, `HZ_ALLOWLIST`). Beheerder ben je via de
+  uitnodigingslijst met rol `admin` (`robert@homezero.nl` staat er vast op; meer via Instellingen → Team of
+  `packages/db/sql/e1-beheerder.sql` als de migratierol). `HZ_ADMIN_EMAILS` geldt alleen voor de geheugenopslag:
+  met Postgres kan geen request zichzelf beheerder maken. Anders `/login?fout=…` met een nette weigerpagina. Eerste login: profiel en `/welkom`.
   Keuze Auth.js boven Better Auth (open vraag S3): de kleine adapter houdt de sessies op de fundamenttabellen.
 - **Sessies**: cookie `hz_session` HttpOnly, SameSite=Lax, Secure in productie; 30 dagen, hooguit eens per dag
   verlengd; een cookie in een andere browser of op een ander systeem (user-agent zonder versienummers) trekt de
   sessie meteen in. Uitloggen per apparaat of overal (Instellingen → Apparaten). Verzoeken die iets wijzigen
   moeten van de eigen site komen (Origin-controle). De dev-login-stub alleen buiten productie.
 - **Koppelingen** per bron met eigen toestemming (`apps/api/src/auth/oauth.ts`): state en PKCE in `connect_flows`,
-  tokens envelope-versleuteld in `connections`, nooit naar de browser. Intrekken trekt het token in bij Google,
-  Slack of GitHub (Atlassian heeft geen intrek-API) en wist de eigen data van die bron (itemstate, agenda-instellingen).
+  tokens envelope-versleuteld in `connections`, nooit naar de browser. Een bron met een OAuth-flow levert alleen data
+  als hij gekoppeld is (`sourceReadable` in `apps/api/src/services.ts`): een nieuwe collega ziet niets tot hij
+  koppelt. Intrekken trekt het token in bij Google, Slack of GitHub (Atlassian heeft geen intrek-API) en wist de
+  eigen data van die bron (itemstate, agenda-instellingen; bij GitHub ook de Persoonlijk-data in Dagstart en Tracker).
+  Google trekt per app (client) en gebruiker in: Taken, Agenda en Gmail delen de client, dus het intrek-endpoint
+  wordt pas bij de laatste Google-bron aangeroepen; daarvoor wordt alleen het token gewist (`keptFor` in het antwoord).
 - **Lokaal en in tests** tegen de nep-autorisatieserver `packages/fake-oauth` (Google-uitgever met testaccounts,
   Slack, Atlassian, GitHub). E2e start die vanzelf met een tweede API (zie `e2e/e1-env.ts`).
 - Schermen: `/login`, `/welkom` (wizard, `g w`), `/instellingen/{koppelingen,apparaten,team}` (`g i`), ook via ⌘K.
-- Migratie `0005_e1_auth.sql`: `allowlist`, `auth_accounts`, `connect_flows`, `onboarding` met RLS, plus purpose
-  `admin` (alleen via `withAdmin()`, na controle van de rol in dezelfde transactie).
+- Migratie `0005_e1_auth.sql`: `allowlist`, `auth_accounts`, `connect_flows`, `onboarding` met RLS, zonder
+  GUC-doelen. Inloggen en beheer via SECURITY DEFINER-functies: `auth_allowlist_role`, `auth_apply_allowlist_role`,
+  `auth_account_lookup`, `auth_link_account`, `auth_audit_refusal` en `admin_members_list`, `admin_allowlist_list`,
+  `admin_set_user_blocked`, `admin_allowlist_add/remove` (die controleren zelf of `app.user_id` een niet-geblokkeerde
+  beheerder is, anders 42501). Users en sessies via de functies van stuk E2 (`auth_session_by_token` enz.);
+  `0006_e1_auth_compat.sql` maakt die in deze tak aan en slaat alles over als E2's migraties er al zijn (bij
+  samenvoegen: E2 eerst). Getest met E2's migraties ervoor: zelfde 39 tests groen.
 
 ## Status van dit stuk
 

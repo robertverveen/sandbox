@@ -105,7 +105,7 @@ export class NotAdminError extends Error {
 }
 
 const hash = (t: string) => createHash('sha256').update(t).digest('hex');
-const toUser = (u: dbm.UserRow): User => ({
+const toUser = (u: dbm.AuthUserRow): User => ({
   id: u.id,
   email: u.email,
   name: u.name,
@@ -432,12 +432,16 @@ export class DbAuthStore implements AuthStore {
     const u = await dbm.getUserByEmail(this.db, email);
     return u ? toUser(u) : null;
   }
-  async createUser(email: string, name: string, role: User['role'], opts: { onboarding: boolean }) {
-    if (opts.onboarding) return toUser(await dbm.createUserWithOnboarding(this.db, email, name, role));
-    return toUser(await dbm.upsertUser(this.db, email, name, role));
+  /**
+   * In Postgres bepaalt de database de rol: altijd 'member', of de rol van de uitnodigingslijst (die alleen
+   * beheerders vullen; robert@homezero.nl staat er vast op als admin). De gevraagde rol telt hier niet, zodat
+   * geen request zichzelf beheerder kan maken.
+   */
+  async createUser(email: string, name: string, _role: User['role'], opts: { onboarding: boolean }) {
+    return toUser(await dbm.createUser(this.db, email, name, opts));
   }
-  async setRole(userId: string, role: User['role']) {
-    await dbm.setUserRoleOnLogin(this.db, userId, role);
+  async setRole(userId: string, _role: User['role']) {
+    await dbm.applyAllowlistRole(this.db, userId);
   }
   async userByAccount(provider: string, sub: string) {
     const u = await dbm.getUserByAccount(this.db, provider, sub);
@@ -453,27 +457,17 @@ export class DbAuthStore implements AuthStore {
   async createSession(userId: string, token: string, userAgent: string, expiresAt: Date, via: string) {
     await dbm.createSessionWithToken(this.db, userId, token, userAgent, expiresAt, via);
   }
+  /** Alleen geldige sessies (functie auth_session_by_token): verlopen, ingetrokken of geblokkeerd geeft null. */
   async sessionByToken(token: string) {
     const r = await dbm.sessionByToken(this.db, token);
-    return r ? this.toSession(r.session, r.user) : null;
-  }
-  private toSession(s: dbm.SessionDbRow, u: dbm.UserRow): StoredSession {
-    return {
-      id: s.id,
-      userId: s.userId,
-      userAgent: s.userAgent,
-      createdAt: s.createdAt,
-      lastSeenAt: s.lastSeenAt,
-      expiresAt: s.expiresAt,
-      revokedAt: s.revokedAt,
-      user: toUser(u),
-    };
+    return r ? { ...r, revokedAt: null, user: toUser(r.user) } : null;
   }
   async touchSession(token: string, patch: { lastSeenAt: Date; expiresAt?: Date }) {
     await dbm.touchSession(this.db, token, patch);
   }
   async revokeSessionByToken(token: string, reason: string) {
-    await dbm.revokeSessionByToken(this.db, token, reason);
+    const s = await dbm.sessionByToken(this.db, token);
+    if ((await dbm.revokeSessionByToken(this.db, token)) && s) await this.audit(s.userId, 'session.revoked', reason);
   }
   async activeSessions(userId: string, now: Date) {
     const user = await this.userById(userId);
@@ -504,8 +498,8 @@ export class DbAuthStore implements AuthStore {
       throw e;
     }
   }
-  async members(adminId: string, now: Date) {
-    const r = await this.admin(() => dbm.listMembers(this.db, adminId, now));
+  async members(adminId: string, _now: Date) {
+    const r = await this.admin(() => dbm.listMembers(this.db, adminId));
     return {
       members: r.members.map((m) => ({
         ...toUser(m.user),
@@ -581,7 +575,8 @@ export class DbAuthStore implements AuthStore {
   }
   async audit(userId: string | null, action: string, target?: string) {
     if (userId) await dbm.auditAs(this.db, userId, action, target);
-    else await dbm.auditAnonymous(this.db, action, target);
+    else if (action === 'login.refused' && target) await dbm.auditLoginRefused(this.db, target);
+    else throw new Error(`audit zonder gebruiker kan alleen login.refused (${action})`);
   }
 }
 

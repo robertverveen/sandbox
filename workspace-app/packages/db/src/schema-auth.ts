@@ -2,8 +2,9 @@
  * Tabellen van stuk E1 (inloggen en onboarding, HZW-010 t/m 014). Apart van schema.ts zodat de auth-migratie
  * (drizzle/0005_e1_auth.sql) los staat van het fundament. Gebruikt users, sessions en connections uit het fundament.
  *
- * RLS: zie 0005_e1_auth.sql. allowlist alleen voor purpose 'auth' (inloggen) en 'admin' (beheer);
- * auth_accounts voor de eigen gebruiker en purpose 'auth'; connect_flows en onboarding per gebruiker.
+ * RLS: zie 0005_e1_auth.sql. allowlist is voor de app dicht (alleen SECURITY DEFINER-functies: opzoeken bij
+ * inloggen, beheer met een rolcontrole op app.user_id); auth_accounts alleen de eigen rij lezen; connect_flows en
+ * onboarding per gebruiker. Geen GUC-doelen (app.purpose).
  */
 import { index, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { users } from './schema';

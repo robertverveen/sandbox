@@ -2,106 +2,147 @@
  * Datatoegang van stuk E1: inloggen (Auth.js-adapter), sessies, teamleden, uitnodigingslijst, onboarding,
  * OAuth-koppelingen per bron en het wissen van eigen data. Bouwt op users/sessions/connections uit het fundament.
  *
- * Doelen (app.purpose):
- *  - 'auth'  inloggen: gebruiker, Google-account en uitnodigingslijst opzoeken, sessie maken of verlengen;
- *  - 'admin' beheer: alleen via withAdmin(), dat eerst in dezelfde transactie controleert dat app.user_id een
- *            niet-geblokkeerde beheerder is. De rest (eigen sessies, onboarding, koppelingen) loopt via withUser.
+ * Geen GUC-doelen (app.purpose): die kan elke transactie zelf zetten. Wat niet als de eigen gebruiker (withUser,
+ * RLS per rij) kan, loopt via SECURITY DEFINER-functies die precies één sleutel opzoeken of zelf de rol van
+ * app.user_id controleren:
+ *  - users en sessions: de functies van stuk E2 (auth_user_by_email, auth_upsert_user, auth_create_session,
+ *    auth_session_by_token, auth_touch_session, auth_revoke_session; in deze tak uit 0006_e1_auth_compat.sql);
+ *  - uitnodigingslijst, Google-account en beheer: 0005_e1_auth.sql (auth_allowlist_role,
+ *    auth_apply_allowlist_role, auth_account_lookup, auth_link_account, auth_audit_refusal, admin_*).
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, gt, inArray, isNull, like, or, sql } from 'drizzle-orm';
-import { withPurpose, withUser, type Db, type Tx } from './client';
+import { APP_ROLE, withUser, type Db, type Tx } from './client';
 import { openToken, sealToken } from './crypto';
 import { hashToken } from './repo';
-import { allowlist, authAccounts, connectFlows, onboarding } from './schema-auth';
+import { connectFlows, onboarding } from './schema-auth';
 import { auditLog, connections, itemState, preferences, sessions, users } from './schema';
 
-export type UserRow = typeof users.$inferSelect;
-export type SessionDbRow = typeof sessions.$inferSelect;
 export type OnboardingRow = typeof onboarding.$inferSelect;
+
+/** Gebruiker zoals de functies hem teruggeven (geen tokens, geen sessies). */
+export interface AuthUserRow {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'member';
+  blockedAt: Date | null;
+  createdAt: Date;
+}
+/** Een geldige sessie (niet verlopen, niet ingetrokken, gebruiker niet geblokkeerd) met zijn gebruiker. */
+export interface ValidSessionRow {
+  id: string;
+  userId: string;
+  userAgent: string;
+  createdAt: Date;
+  lastSeenAt: Date;
+  expiresAt: Date;
+  user: AuthUserRow;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
-/* ---------- Gebruikers en Google-accounts (purpose 'auth') ---------- */
-
-export async function getUserById(db: Db, id: string) {
-  if (!UUID.test(id)) return null;
-  return withPurpose(db, 'auth', async (tx) => (await tx.select().from(users).where(eq(users.id, id)))[0] ?? null);
+/** Transactie als hz_app zonder gebruiker en zonder doel: alleen de SECURITY DEFINER-functies werken dan. */
+async function asApp<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql.raw(`SET LOCAL ROLE ${APP_ROLE}`));
+    return fn(tx);
+  });
 }
 
-export async function getUserByEmail(db: Db, email: string) {
-  return withPurpose(
-    db,
-    'auth',
-    async (tx) =>
-      (
-        await tx
-          .select()
-          .from(users)
-          .where(sql`lower(${users.email}) = lower(${email})`)
-      )[0] ?? null,
+type Raw = Record<string, unknown>;
+/** Tijdstip uit een ruwe query (drizzle geeft timestamptz als tekst terug, bv. "2026-11-07 16:20:00.12+00"). */
+const ts = (v: unknown): Date | null => {
+  if (v == null) return null;
+  if (v instanceof Date) return v;
+  return new Date(
+    String(v)
+      .replace(' ', 'T')
+      .replace(/([+-]\d\d)$/, '$1:00'),
   );
+};
+const tsx = (v: unknown) => ts(v) ?? new Date(0);
+const rows = async (tx: Tx, q: ReturnType<typeof sql>) => (await tx.execute(q)).rows as Raw[];
+const toUserRow = (r: Raw): AuthUserRow => ({
+  id: String(r.id),
+  email: String(r.email),
+  name: String(r.name ?? ''),
+  role: r.role === 'admin' ? 'admin' : 'member',
+  blockedAt: ts(r.blocked_at),
+  createdAt: tsx(r.created_at),
+});
+
+/* ---------- Gebruikers en Google-accounts ---------- */
+
+/** Eigen rij, als die gebruiker zelf (RLS per rij). */
+export async function getUserById(db: Db, id: string): Promise<AuthUserRow | null> {
+  if (!UUID.test(id)) return null;
+  return withUser(db, id, async (tx) => {
+    const [u] = await tx.select().from(users).where(eq(users.id, id));
+    return u
+      ? { id: u.id, email: u.email, name: u.name, role: u.role, blockedAt: u.blockedAt, createdAt: u.createdAt }
+      : null;
+  });
 }
 
-/** Nieuwe gebruiker bij de eerste login, met de rol uit de uitnodigingslijst; maakt ook de onboarding-rij. */
-export async function createUserWithOnboarding(db: Db, email: string, name: string, role: 'admin' | 'member') {
-  return withPurpose(db, 'auth', async (tx) => {
-    const [u] = await tx
-      .insert(users)
-      .values({ email: email.toLowerCase(), name, role })
-      .onConflictDoNothing()
-      .returning();
-    const user =
-      u ??
-      (
-        await tx
-          .select()
-          .from(users)
-          .where(sql`lower(${users.email}) = lower(${email})`)
-      )[0]!;
-    await tx.insert(auditLog).values({ userId: user.id, action: 'user.created', target: 'users' });
-    // De onboarding-rij valt onder RLS per gebruiker: even als die gebruiker schrijven.
-    await tx.execute(sql`select set_config('app.user_id', ${user.id}, true)`);
-    await tx.insert(onboarding).values({ userId: user.id, status: 'new' }).onConflictDoNothing();
-    await tx.execute(sql`select set_config('app.user_id', '', true)`);
+export async function getUserByEmail(db: Db, email: string): Promise<AuthUserRow | null> {
+  return asApp(db, async (tx) => {
+    const [r] = await rows(tx, sql`select * from auth_user_by_email(${email})`);
+    return r ? toUserRow(r) : null;
+  });
+}
+
+/**
+ * Gebruiker bij de eerste login (altijd 'member', domein gecontroleerd in de database), daarna de rol van de
+ * uitnodigingslijst overnemen; desgewenst de onboarding-rij (als die gebruiker zelf, RLS).
+ */
+export async function createUser(db: Db, email: string, name: string, opts: { onboarding: boolean }) {
+  return asApp(db, async (tx) => {
+    const [r] = await rows(tx, sql`select * from auth_upsert_user(${email}, ${name})`);
+    const user = toUserRow(r!);
+    const [role] = await rows(tx, sql`select auth_apply_allowlist_role(${user.id}::uuid) as role`);
+    user.role = role?.role === 'admin' ? 'admin' : 'member';
+    if (opts.onboarding) {
+      await tx.execute(sql`select set_config('app.user_id', ${user.id}, true)`);
+      await tx.insert(onboarding).values({ userId: user.id, status: 'new' }).onConflictDoNothing();
+      await tx.execute(sql`select set_config('app.user_id', '', true)`);
+    }
     return user;
   });
 }
 
-/** Rol bijwerken bij inloggen (bv. vaste beheerder uit HZ_ADMIN_EMAILS). */
-export async function setUserRoleOnLogin(db: Db, userId: string, role: 'admin' | 'member') {
-  return withPurpose(db, 'auth', async (tx) => {
-    const [u] = await tx.update(users).set({ role }).where(eq(users.id, userId)).returning();
-    return u ?? null;
+/** Rol overnemen van de uitnodigingslijst (die alleen beheerders vullen). Geeft de rol terug. */
+export async function applyAllowlistRole(db: Db, userId: string): Promise<'admin' | 'member' | null> {
+  if (!UUID.test(userId)) return null;
+  return asApp(db, async (tx) => {
+    const [r] = await rows(tx, sql`select auth_apply_allowlist_role(${userId}::uuid) as role`);
+    return r?.role === 'admin' ? 'admin' : r?.role === 'member' ? 'member' : null;
   });
 }
 
 export async function getUserByAccount(db: Db, provider: string, providerAccountId: string) {
-  return withPurpose(db, 'auth', async (tx) => {
-    const r = await tx
-      .select({ user: users })
-      .from(authAccounts)
-      .innerJoin(users, eq(users.id, authAccounts.userId))
-      .where(and(eq(authAccounts.provider, provider), eq(authAccounts.providerAccountId, providerAccountId)));
-    return r[0]?.user ?? null;
+  return asApp(db, async (tx) => {
+    const [r] = await rows(tx, sql`select * from auth_account_lookup(${provider}, ${providerAccountId})`);
+    return r ? toUserRow(r) : null;
   });
 }
 
 export async function linkAccount(db: Db, userId: string, provider: string, providerAccountId: string) {
-  await withPurpose(db, 'auth', async (tx) => {
-    await tx.insert(authAccounts).values({ userId, provider, providerAccountId }).onConflictDoNothing();
-    await tx.insert(auditLog).values({ userId, action: 'account.linked', target: provider });
+  if (!UUID.test(userId)) return false;
+  return asApp(db, async (tx) => {
+    const [r] = await rows(tx, sql`select auth_link_account(${userId}::uuid, ${provider}, ${providerAccountId}) as ok`);
+    return r?.ok === true;
   });
 }
 
 /* ---------- Uitnodigingslijst ---------- */
 
-export async function allowlistLookup(db: Db, email: string) {
-  return withPurpose(
-    db,
-    'auth',
-    async (tx) => (await tx.select().from(allowlist).where(eq(allowlist.email, email.toLowerCase())))[0] ?? null,
-  );
+export async function allowlistLookup(db: Db, email: string): Promise<{ role: 'admin' | 'member' } | null> {
+  return asApp(db, async (tx) => {
+    const [r] = await rows(tx, sql`select auth_allowlist_role(${email}) as role`);
+    return r?.role === 'admin' || r?.role === 'member' ? { role: r.role } : null;
+  });
 }
 
 /* ---------- Sessies ---------- */
@@ -115,43 +156,49 @@ export async function createSessionWithToken(
   expiresAt: Date,
   via: string,
 ) {
-  await withPurpose(db, 'auth', async (tx) => {
-    await tx.insert(sessions).values({ userId, tokenHash: hashToken(token), userAgent, expiresAt });
-    await tx.insert(auditLog).values({ userId, action: 'session.created', target: via });
-  });
+  await asApp(db, (tx) =>
+    tx.execute(sql`select auth_create_session(${userId}::uuid, ${hashToken(token)}, ${userAgent}, ${expiresAt})`),
+  );
+  // Hoe er is ingelogd (google, dev-login): als die gebruiker zelf (eigen auditregel).
+  await withUser(db, userId, (tx) => tx.insert(auditLog).values({ userId, action: 'session.via', target: via }));
   return { token, expiresAt };
 }
 
-/** Sessie bij een token, ook verlopen of ingetrokken (de aanroeper beslist), met de gebruiker. */
-export async function sessionByToken(db: Db, token: string) {
-  return withPurpose(db, 'auth', async (tx) => {
-    const r = await tx
-      .select({ session: sessions, user: users })
-      .from(sessions)
-      .innerJoin(users, eq(users.id, sessions.userId))
-      .where(eq(sessions.tokenHash, hashToken(token)));
-    return r[0] ?? null;
+/** De geldige sessie bij een token (verlopen, ingetrokken of geblokkeerd = null), met de gebruiker. */
+export async function sessionByToken(db: Db, token: string): Promise<ValidSessionRow | null> {
+  return asApp(db, async (tx) => {
+    const [r] = await rows(tx, sql`select * from auth_session_by_token(${hashToken(token)})`);
+    if (!r) return null;
+    return {
+      id: String(r.session_id),
+      userId: String(r.user_id),
+      userAgent: String(r.user_agent ?? ''),
+      createdAt: tsx(r.created_at),
+      lastSeenAt: tsx(r.last_seen_at),
+      expiresAt: tsx(r.expires_at),
+      user: {
+        id: String(r.user_id),
+        email: String(r.email),
+        name: String(r.name ?? ''),
+        role: r.role === 'admin' ? 'admin' : 'member',
+        blockedAt: null,
+        createdAt: tsx(r.created_at),
+      },
+    };
   });
 }
 
-/** Verlengen (glijdend venster) en laatste activiteit bijwerken. */
-export async function touchSession(db: Db, token: string, patch: { lastSeenAt: Date; expiresAt?: Date }) {
-  await withPurpose(db, 'auth', (tx) =>
-    tx
-      .update(sessions)
-      .set(patch)
-      .where(and(eq(sessions.tokenHash, hashToken(token)), isNull(sessions.revokedAt))),
+/** Laatst gezien bijwerken en desgewenst verlengen (glijdend venster). Alleen een geldige sessie. */
+export async function touchSession(db: Db, token: string, patch: { expiresAt?: Date }) {
+  await asApp(db, (tx) =>
+    tx.execute(sql`select auth_touch_session(${hashToken(token)}, ${patch.expiresAt ?? null}::timestamptz)`),
   );
 }
 
-export async function revokeSessionByToken(db: Db, token: string, reason: string) {
-  await withPurpose(db, 'auth', async (tx) => {
-    const [s] = await tx
-      .update(sessions)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(sessions.tokenHash, hashToken(token)), isNull(sessions.revokedAt)))
-      .returning({ userId: sessions.userId });
-    if (s) await tx.insert(auditLog).values({ userId: s.userId, action: 'session.revoked', target: reason });
+export async function revokeSessionByToken(db: Db, token: string) {
+  return asApp(db, async (tx) => {
+    const [r] = await rows(tx, sql`select auth_revoke_session(${hashToken(token)}) as ok`);
+    return r?.ok === true;
   });
 }
 
@@ -191,7 +238,7 @@ export async function revokeAllOwnSessions(db: Db, userId: string) {
   });
 }
 
-/* ---------- Beheer (purpose 'admin') ---------- */
+/* ---------- Beheer (SECURITY DEFINER-functies die zelf de rol van app.user_id controleren) ---------- */
 
 export class NotAdminError extends Error {
   constructor() {
@@ -200,81 +247,58 @@ export class NotAdminError extends Error {
   }
 }
 
-/** Transactie als beheerder: eerst controleren (eigen rij, RLS), dan pas purpose 'admin'. */
-export async function withAdmin<T>(db: Db, adminId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
-  return withUser(db, adminId, async (tx) => {
-    const [me] = await tx.select().from(users).where(eq(users.id, adminId));
-    if (!me || me.role !== 'admin' || me.blockedAt) throw new NotAdminError();
-    await tx.execute(sql`select set_config('app.purpose', 'admin', true)`);
-    return fn(tx);
+/** Als die beheerder (app.user_id); de functie in de database weigert met 42501 als hij geen beheerder is. */
+async function asAdmin<T>(db: Db, adminId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  try {
+    return await withUser(db, adminId, fn);
+  } catch (e) {
+    const code =
+      (e as { code?: string; cause?: { code?: string } }).code ?? (e as { cause?: { code?: string } }).cause?.code;
+    if (code === '42501') throw new NotAdminError();
+    throw e;
+  }
+}
+
+export async function listMembers(db: Db, adminId: string) {
+  return asAdmin(db, adminId, async (tx) => {
+    const members = (await rows(tx, sql`select * from admin_members_list()`)).map((r) => ({
+      user: toUserRow(r),
+      lastSeenAt: ts(r.last_seen_at),
+      activeSessions: Number(r.active_sessions ?? 0),
+    }));
+    const allowlist = (await rows(tx, sql`select * from admin_allowlist_list()`)).map((r) => ({
+      email: String(r.email),
+      role: (r.role === 'admin' ? 'admin' : 'member') as 'admin' | 'member',
+      createdAt: tsx(r.created_at),
+    }));
+    return { members, allowlist };
   });
 }
 
-export async function listMembers(db: Db, adminId: string, now = new Date()) {
-  return withAdmin(db, adminId, async (tx) => {
-    const rows = await tx.select().from(users).orderBy(users.createdAt);
-    const sess = await tx
-      .select({
-        userId: sessions.userId,
-        last: sql<Date | null>`max(${sessions.lastSeenAt})`,
-        active: sql<number>`count(*) filter (where ${sessions.revokedAt} is null and ${sessions.expiresAt} > ${now})::int`,
-      })
-      .from(sessions)
-      .groupBy(sessions.userId);
-    const by = new Map(sess.map((s) => [s.userId, s]));
-    const list = await tx.select().from(allowlist).orderBy(allowlist.email);
-    return {
-      members: rows.map((u) => ({
-        user: u,
-        lastSeenAt: by.get(u.id)?.last ? new Date(by.get(u.id)!.last!) : null,
-        activeSessions: by.get(u.id)?.active ?? 0,
-      })),
-      allowlist: list,
-    };
-  });
-}
-
-/** Blokkeren trekt meteen alle sessies van die collega in. */
+/** Blokkeren trekt meteen alle sessies van die collega in (in de functie). */
 export async function setUserBlocked(db: Db, adminId: string, userId: string, blocked: boolean) {
   if (!UUID.test(userId)) return null;
-  return withAdmin(db, adminId, async (tx) => {
-    const [u] = await tx
-      .update(users)
-      .set({ blockedAt: blocked ? new Date() : null })
-      .where(eq(users.id, userId))
-      .returning();
-    if (!u) return null;
-    if (blocked)
-      await tx
-        .update(sessions)
-        .set({ revokedAt: new Date() })
-        .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
-    await tx
-      .insert(auditLog)
-      .values({ userId: adminId, action: blocked ? 'admin.blocked' : 'admin.unblocked', target: userId });
-    return u;
+  return asAdmin(db, adminId, async (tx) => {
+    const [r] = await rows(tx, sql`select * from admin_set_user_blocked(${userId}::uuid, ${blocked})`);
+    return r ? toUserRow(r) : null;
   });
 }
 
 export async function addToAllowlist(db: Db, adminId: string, email: string, role: 'admin' | 'member') {
-  return withAdmin(db, adminId, async (tx) => {
-    const [r] = await tx
-      .insert(allowlist)
-      .values({ email: email.toLowerCase(), role, addedBy: adminId })
-      .onConflictDoUpdate({ target: allowlist.email, set: { role } })
-      .returning();
-    await tx.insert(auditLog).values({ userId: adminId, action: 'admin.allowlist.add', target: email.toLowerCase() });
-    return r!;
+  return asAdmin(db, adminId, async (tx) => {
+    const [r] = await rows(tx, sql`select * from admin_allowlist_add(${email}, ${role})`);
+    return {
+      email: String(r!.email),
+      role: (r!.role === 'admin' ? 'admin' : 'member') as 'admin' | 'member',
+      createdAt: tsx(r!.created_at),
+    };
   });
 }
 
 export async function removeFromAllowlist(db: Db, adminId: string, email: string) {
-  return withAdmin(db, adminId, async (tx) => {
-    const r = await tx.delete(allowlist).where(eq(allowlist.email, email.toLowerCase())).returning();
-    await tx
-      .insert(auditLog)
-      .values({ userId: adminId, action: 'admin.allowlist.remove', target: email.toLowerCase() });
-    return r.length > 0;
+  return asAdmin(db, adminId, async (tx) => {
+    const [r] = await rows(tx, sql`select admin_allowlist_remove(${email}) as ok`);
+    return r?.ok === true;
   });
 }
 
@@ -462,7 +486,7 @@ export async function auditAs(db: Db, userId: string, action: string, target?: s
   await withUser(db, userId, (tx) => tx.insert(auditLog).values({ userId, action, target }));
 }
 
-/** Auditregel zonder gebruiker (geweigerde login); alleen het soort reden, geen e-mailadres. */
-export async function auditAnonymous(db: Db, action: string, target?: string) {
-  await withPurpose(db, 'auth', (tx) => tx.insert(auditLog).values({ userId: null, action, target }));
+/** Geweigerde login zonder gebruiker; alleen het soort reden, geen e-mailadres (functie auth_audit_refusal). */
+export async function auditLoginRefused(db: Db, reason: string) {
+  await asApp(db, (tx) => tx.execute(sql`select auth_audit_refusal(${reason})`));
 }

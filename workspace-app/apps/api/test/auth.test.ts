@@ -3,6 +3,7 @@
  * koppelingen (HZW-014). Alles tegen de nep-autorisatieserver (packages/fake-oauth), nooit echte Google/Slack.
  * Een deel draait ook tegen Postgres met RLS (database hz_e1_test_auth).
  */
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { routes, type ConnectionDetail } from '@hz/shared';
 import { createProviders } from '@hz/providers';
@@ -874,8 +875,7 @@ describe('Postgres (RLS): sessies, rollen en koppelingen', () => {
     expect(location).toContain('/welkom');
     const owner = dbm.createOwnerDb(DB_URL);
     try {
-      // Ook de eigenaar valt onder FORCE ROW LEVEL SECURITY: kijken met purpose 'auth'.
-      await owner.pool.query("select set_config('app.purpose', 'auth', false)");
+      // De eigenaar (migratierol) ziet alles via de regels voor de SECURITY DEFINER-functies.
       const rows = await owner.pool.query('select token_hash, user_agent from sessions');
       expect(rows.rows.some((r: { token_hash: string }) => r.token_hash === dbm.hashToken(b.session!))).toBe(true);
       expect(JSON.stringify(rows.rows)).not.toContain(b.session!);
@@ -914,16 +914,75 @@ describe('Postgres (RLS): sessies, rollen en koppelingen', () => {
     const l = ctx.browser(SAFARI_IOS);
     await googleLogin(l, 'lisanne');
     const lid = routes.session.response.parse(await (await l.req('GET', '/api/session')).json()).user.id;
+    const rid = routes.session.response.parse(await (await r.req('GET', '/api/session')).json()).user.id;
     expect((await l.req('GET', '/api/admin/members')).status).toBe(403);
+    // De beheerfuncties controleren zelf de rol van app.user_id (niet een GUC of de aanroeper).
     await expect(dbm.listMembers(store.db, lid)).rejects.toBeInstanceOf(dbm.NotAdminError);
-    // Zonder purpose 'admin' ziet een collega alleen zijn eigen rij in users.
-    const seen = await dbm.withUser(store.db, lid, (tx) => tx.select().from(dbm.users));
-    expect(seen.map((u) => u.email)).toEqual(['lisanne@homezero.nl']);
+    await expect(dbm.setUserBlocked(store.db, lid, rid, true)).rejects.toBeInstanceOf(dbm.NotAdminError);
+    await expect(dbm.addToAllowlist(store.db, lid, 'lisanne@homezero.nl', 'admin')).rejects.toBeInstanceOf(
+      dbm.NotAdminError,
+    );
+    // De rol overnemen van de uitnodigingslijst maakt niemand beheerder die daar niet als beheerder staat.
+    expect(await dbm.applyAllowlistRole(store.db, lid)).toBe('member');
+    // Een collega ziet alleen zijn eigen rij in users, ook als de transactie zelf app.purpose 'admin' zet.
+    for (const purpose of ['', 'admin'])
+      expect(
+        await dbm.withUser(store.db, lid, async (tx) => {
+          await tx.execute(sql`select set_config('app.purpose', ${purpose}, true)`);
+          return (await tx.select().from(dbm.users)).map((u) => u.email);
+        }),
+      ).toEqual(['lisanne@homezero.nl']);
+    // Het gat uit ronde 1: met app.purpose 'admin' (zonder eigen gebruiker) users of sessies zien of wijzigen kan niet.
+    const owner = dbm.createOwnerDb(DB_URL);
+    try {
+      const c = await owner.pool.connect();
+      try {
+        await c.query('begin');
+        await c.query('set local role hz_app');
+        await c.query("select set_config('app.purpose', 'admin', true)");
+        expect((await c.query('select id from users')).rowCount).toBe(0);
+        expect((await c.query('select id from sessions')).rowCount).toBe(0);
+        await c.query('savepoint a');
+        // 0 rijen (RLS), of na stuk E2 (0008) al geweigerd op kolomrecht: in beide gevallen geen admin.
+        const upd = await c.query("update users set role = 'admin' where email = 'lisanne@homezero.nl'").then(
+          (x) => x.rowCount,
+          (e: Error) => (/permission denied/.test(e.message) ? 0 : Promise.reject(e)),
+        );
+        expect(upd).toBe(0);
+        await c.query('rollback to savepoint a');
+        await expect(c.query('select email from allowlist')).rejects.toThrow(/permission denied/);
+        await c.query('rollback to savepoint a');
+        await c.query("select set_config('app.purpose', 'auth', true)");
+        await expect(c.query('select email from allowlist')).rejects.toThrow(/permission denied/);
+        await c.query('rollback to savepoint a');
+        expect((await c.query('select user_id from auth_accounts')).rowCount).toBe(0);
+        await expect(c.query("insert into auth_accounts values ('google', 'x', $1)", [lid])).rejects.toThrow(
+          /permission denied/,
+        );
+        await c.query('rollback');
+      } finally {
+        c.release();
+      }
+      const role = await owner.pool.query('select role from users where id = $1', [lid]);
+      expect(role.rows[0].role).toBe('member');
+    } finally {
+      await owner.close();
+    }
     const list = routes.members.response.parse(await (await r.req('GET', '/api/admin/members')).json());
     expect(list.members.map((m) => m.email)).toEqual(['robert@homezero.nl', 'lisanne@homezero.nl']);
+    expect(list.members[0]).toMatchObject({ role: 'admin', blocked: false });
+    expect(list.members[0]!.activeSessions).toBeGreaterThanOrEqual(1);
+    expect(list.allowlist.map((a) => a.email)).toContain('robert@homezero.nl');
+    expect((await r.req('POST', `/api/admin/members/${rid}/block`, { blocked: true })).status).toBe(400);
     await r.req('POST', `/api/admin/members/${lid}/block`, { blocked: true });
     expect((await l.req('GET', '/api/session')).status).toBe(401);
+    const relog = ctx.browser(SAFARI_IOS);
+    expect((await googleLogin(relog, 'lisanne')).location).toBe('/login?fout=geblokkeerd');
     await r.req('POST', `/api/admin/members/${lid}/block`, { blocked: false });
+    // Uitnodigingslijst via de functies: toevoegen als beheerder, alleen het eigen domein, weghalen.
+    expect((await r.req('POST', '/api/admin/allowlist', { email: 'nieuw.lid@homezero.nl' })).status).toBe(200);
+    await expect(dbm.addToAllowlist(store.db, rid, 'iemand@example.com', 'member')).rejects.toThrow();
+    expect((await r.req('DELETE', '/api/admin/allowlist/nieuw.lid@homezero.nl')).status).toBe(200);
   });
 
   it('koppelen en intrekken met Postgres: token versleuteld in connections, na intrekken leeg; A ziet de flow van B niet', async () => {
@@ -969,8 +1028,8 @@ describe('Postgres (RLS): sessies, rollen en koppelingen', () => {
     const lid = routes.session.response.parse(await (await l.req('GET', '/api/session')).json()).user.id;
     const flows = await dbm.withUser(store.db, lid, (tx) => tx.select().from(dbm.connectFlows));
     expect(flows).toEqual([]);
-    const allow = await dbm.withUser(store.db, lid, (tx) => tx.select().from(dbm.allowlist));
-    expect(allow).toEqual([]);
+    // De uitnodigingslijst is voor de app helemaal dicht (alleen de functies).
+    await expect(dbm.withUser(store.db, lid, (tx) => tx.select().from(dbm.allowlist))).rejects.toThrow();
   });
 });
 
