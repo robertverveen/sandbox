@@ -62,7 +62,7 @@ export async function checkAppLogin(client: Pick<pg.ClientBase, 'query'>): Promi
       (select count(*)::int from pg_class c
         where c.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
           and c.relnamespace not in ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
-          and c.relnamespace::regnamespace::text not like 'pg\_toast%'
+          and c.relnamespace::regnamespace::text not like 'pg\\_toast%'
           and pg_has_role(session_user, c.relowner, 'MEMBER')) as owned
     from pg_roles r where r.rolname = session_user`);
   const row = r.rows[0]!;

@@ -1,0 +1,557 @@
+{
+  "exportedAt": "2026-10-30T07:30:00+01:00",
+  "source": "synthetisch (afgeleid van de demodata van het prototype)",
+  "collections": {
+    "commitments": {
+      "dc3": {
+        "wat": "Rekenvoorbeeld thuisbatterij naar Feenstra sturen",
+        "stroom": "mijn",
+        "aan": "Marie-José",
+        "org": "Feenstra",
+        "deadline": "2026-10-29",
+        "status": "open",
+        "plan": null,
+        "backlog": false,
+        "week": null,
+        "health": null,
+        "reminder": null,
+        "gtask": null,
+        "src": "sl_CFE_1761650000.000100",
+        "closedAt": null,
+        "naar": null,
+        "overgezet": false,
+        "bron": {
+          "label": "Meeting · Feenstra check-in"
+        },
+        "bewijsregel": {
+          "type": "geen"
+        },
+        "citaat": "Ik stuur je het rekenvoorbeeld",
+        "created": "2026-10-27",
+        "createdAt": 1793088720000
+      },
+      "dc4": {
+        "wat": "Isolatierekenmodel helemaal nalopen",
+        "stroom": "voornemen",
+        "aan": "",
+        "org": "",
+        "deadline": null,
+        "status": "open",
+        "plan": "2026-11-02",
+        "backlog": false,
+        "moved": 1,
+        "bron": {
+          "label": "Eigen invoer"
+        },
+        "created": "2026-10-26",
+        "createdAt": 1793026800000
+      },
+      "q1": {
+        "wat": "Lisanne: oppikken morgen",
+        "stroom": "aan_mij",
+        "status": "open",
+        "aan": "Lisanne",
+        "created": "2026-10-29",
+        "reminder": "2026-11-03",
+        "naar": "wachten-op.md",
+        "bron": {
+          "label": "Slack · DM",
+          "url": "https://example.slack.com/archives/D1/p1"
+        }
+      },
+      "b1": {
+        "wat": "Peter vragen naar het rekenmodel",
+        "stroom": "bespreken",
+        "status": "open",
+        "aan": "Peter",
+        "org": "TonZon",
+        "naar": "wachten-op.md",
+        "bron": {
+          "label": "Eigen invoer"
+        },
+        "created": "2026-10-28"
+      },
+      "canvas-x": {
+        "wat": "Canvas-item",
+        "stroom": "bespreken",
+        "status": "open",
+        "bron": {
+          "label": "Canvas Wachten op"
+        }
+      },
+      "old-gt": {
+        "wat": "Al in Google",
+        "stroom": "mijn",
+        "status": "open",
+        "gtask": "gtask:abc",
+        "bron": {
+          "label": "Slack"
+        }
+      },
+      "ov1": {
+        "wat": "Emiel: sync-fix bevestigen",
+        "stroom": "aan_mij",
+        "status": "open",
+        "aan": "Emiel",
+        "overgezet": true,
+        "naar": "wachten-op.md",
+        "bron": {
+          "label": "Slack · #feenstra-hz"
+        }
+      },
+      "k1": {
+        "wat": "Release notes sprint 62 nalopen",
+        "stroom": "mijn",
+        "status": "klaar",
+        "closedAt": "2026-10-24",
+        "created": "2026-10-20",
+        "bron": {
+          "label": "Eigen invoer"
+        }
+      },
+      "zonder-stroom": {
+        "wat": "Oude belofte zonder stroom",
+        "status": "open",
+        "bron": {
+          "label": "Eigen invoer"
+        },
+        "created": "2026-10-21"
+      },
+      "dg1": {
+        "wat": "Isolatieflow TonZon live op acceptatie",
+        "stroom": "weekdoel",
+        "week": "2026-W44",
+        "deadline": "2026-10-30",
+        "status": "open",
+        "health": "groen",
+        "lastCheck": "2026-10-29",
+        "checks": [
+          {
+            "d": "2026-10-28",
+            "h": "groen"
+          },
+          {
+            "d": "2026-10-29",
+            "h": "groen"
+          }
+        ],
+        "bron": {
+          "label": "Weekdoelen 2026-W44"
+        },
+        "created": "2026-10-26"
+      },
+      "dg0": {
+        "wat": "Release notes sprint 63 naar alle partners",
+        "stroom": "weekdoel",
+        "week": "2026-W43",
+        "deadline": "2026-10-23",
+        "status": "open",
+        "health": "oranje",
+        "lastCheck": "2026-10-22",
+        "checks": [
+          {
+            "d": "2026-10-22",
+            "h": "oranje",
+            "note": "Wacht op input Lisanne"
+          }
+        ]
+      },
+      "dg00": {
+        "wat": "Feenstra ZSB-flow op acceptatie",
+        "stroom": "weekdoel",
+        "week": "2026-W43",
+        "deadline": "2026-10-23",
+        "status": "klaar",
+        "outcome": "gehaald",
+        "outcomeNote": "Live op 23 okt",
+        "health": "af",
+        "checks": [],
+        "closedAt": "2026-10-23"
+      },
+      "dg2": {
+        "wat": "Qvantum: voorstel communicatietriggers installateursopvolging klaar",
+        "stroom": "weekdoel",
+        "week": "2026-W44",
+        "deadline": "2026-10-30",
+        "status": "open",
+        "health": "oranje",
+        "checks": [
+          {
+            "d": "2026-10-29",
+            "h": "oranje"
+          },
+          {
+            "d": "2026-10-29",
+            "h": "paars"
+          }
+        ]
+      },
+      "dr1": {
+        "wat": "Rekenmodellen in Pico (thuisbatterij, warmtepomp, isolatie)",
+        "stroom": "roadmap",
+        "deadline": "2026-12-15",
+        "status": "open",
+        "health": "groen",
+        "checks": [
+          {
+            "d": "2026-10-20",
+            "h": "groen"
+          }
+        ],
+        "bron": {
+          "label": "Roadmap Q4"
+        }
+      },
+      "bad-stroom": {
+        "wat": "Iets met een rare stroom",
+        "stroom": "onzin",
+        "status": "open"
+      },
+      "bad-leeg": {
+        "wat": "  ",
+        "stroom": "mijn"
+      },
+      "bad-status": {
+        "wat": "Status die niet bestaat",
+        "stroom": "mijn",
+        "status": "misschien"
+      }
+    },
+    "itemstate": {
+      "sl_CFE_1761650000.000100": {
+        "read": true,
+        "at": 1793264400000
+      },
+      "tk:g1": {
+        "plan": "2026-11-02",
+        "backlog": false,
+        "moved": 1,
+        "at": 1793268000000
+      },
+      "wm:r1": {
+        "processed": true,
+        "at": 1793271600000
+      },
+      "ev_abc@google.com": {
+        "skipPrep": true,
+        "at": 1793273400000
+      },
+      "sl_CFE_1761660000.000200": {
+        "read": true,
+        "answeredBy": "Lisanne",
+        "at": 1793275200000
+      },
+      "_goals-2026-W45": {
+        "skip": true,
+        "at": 1793602800000
+      },
+      "_aang-2026-10-28-x": {
+        "keuze": "privé",
+        "datum": "2026-10-28",
+        "bron": "",
+        "tekst": "Voorbeeld aangehouden",
+        "overgezet": false,
+        "at": 1793214000000
+      },
+      "_pins": {
+        "list": [
+          {
+            "id": "p1",
+            "q": "feenstra, offerte",
+            "name": "Feenstra · offerte"
+          },
+          {
+            "id": "p2",
+            "q": "tonzon, tijdlijn",
+            "name": "TonZon · tijdlijn"
+          },
+          {
+            "id": "p3",
+            "q": "feenstra, offerte",
+            "name": "dubbel"
+          },
+          {
+            "id": "p4",
+            "q": ""
+          }
+        ],
+        "at": 1793278800000
+      }
+    },
+    "processed": {
+      "wm:r1": {
+        "at": 1793271600000
+      },
+      "wm:r2": {
+        "at": 1793343600000
+      }
+    },
+    "briefings": {
+      "b-2026-10-30": {
+        "date": "2026-10-30",
+        "title": "☀️ Briefing vr 30 okt — 3 acties, 3 meetings",
+        "createdAt": "2026-10-30T07:14:00+01:00",
+        "session": null,
+        "sections": [
+          {
+            "title": "🔴 Vandaag doen",
+            "items": [
+              {
+                "text": "Mike vraagt: Peter van TonZon nog een keer bellen (voor 15:00)"
+              },
+              {
+                "text": "Rens: 2 besluiten partnerovereenkomst 3.0 voor maandag"
+              }
+            ]
+          },
+          {
+            "title": "📅 Meetings vandaag",
+            "items": [
+              {
+                "text": "10:00 Feenstra Monthly · vorige keer: ZSB-flow"
+              },
+              {
+                "text": "15:00 TonZon x HomeZero · prep staat op vandaag",
+                "url": "https://calendar.google.com/x"
+              }
+            ]
+          },
+          {
+            "title": "🎯 Weekdoelen",
+            "items": [
+              {
+                "text": "🟢 Isolatieflow TonZon live op acceptatie"
+              }
+            ]
+          }
+        ]
+      },
+      "b-2026-10-29-oud": {
+        "date": "2026-10-29",
+        "title": "Briefing do 29 okt (eerste versie)",
+        "createdAt": "2026-10-29T06:50:00+01:00",
+        "sections": [
+          {
+            "title": "Vandaag",
+            "items": [
+              {
+                "text": "Eerste versie"
+              }
+            ]
+          }
+        ]
+      },
+      "b-2026-10-29": {
+        "date": "2026-10-29",
+        "title": "☀️ Briefing do 29 okt",
+        "createdAt": "2026-10-29T07:10:00+01:00",
+        "sections": [
+          {
+            "title": "Vandaag",
+            "items": [
+              {
+                "text": "Feenstra: sync-probleem leads nalopen"
+              }
+            ]
+          }
+        ]
+      },
+      "b-zonder-datum": {
+        "title": "Kapot",
+        "sections": []
+      }
+    },
+    "weekdoelen": {
+      "wk-extra": {
+        "wat": "Planning W45 delen in #02-intern",
+        "stroom": "weekdoel",
+        "week": "2026-W45",
+        "status": "open",
+        "created": "2026-11-02"
+      }
+    },
+    "context_partners": {
+      "feenstra": {
+        "slug": "feenstra",
+        "soort": "partner",
+        "naam": "Feenstra",
+        "aliassen": ["Fleur"],
+        "domeinen": ["feenstra.nl"],
+        "slack": "feenstra-hz",
+        "fase": "live",
+        "accountmanager": "Robert",
+        "geheim_voor": [],
+        "bijgewerkt": "2026-10-30 08:00",
+        "kern": "Installateur van warmtepompen en zonnepanelen (voorbeeld). Gebruikt Pico voor leadopvolging en offertes.",
+        "stand": ["2026-10-29 (Slack): leads van gisteravond stonden niet in de planning; sync opgelost."],
+        "contacten": ["Marie-José - Feenstra, widgets en flows"],
+        "meetings": [
+          {
+            "bestand": "2026-10-29-werksessie-zsb-flow-robert.md",
+            "datum": "2026-10-29",
+            "titel": "werksessie zsb flow",
+            "meeting_id": "r1",
+            "opgenomen_door": "Robert",
+            "bron": "",
+            "samenvatting": ["ZSB-flow: personen en warmwatervraag combineren"],
+            "besluiten": ["Beide vragen in één stap"],
+            "acties": ["Lisanne: flow aanpassen op acceptatie"]
+          }
+        ],
+        "log": [],
+        "open_acties": 3
+      },
+      "tonzon": {
+        "slug": "tonzon",
+        "soort": "partner",
+        "naam": "TonZon",
+        "aliassen": [],
+        "domeinen": ["tonzon.nl"],
+        "slack": "tonzon-hz",
+        "fase": "live",
+        "accountmanager": "Robert",
+        "geheim_voor": [],
+        "bijgewerkt": "2026-10-28 08:00",
+        "kern": "Partner voor zonnepanelen en isolatie (voorbeeld).",
+        "stand": [],
+        "contacten": [],
+        "meetings": [],
+        "log": [],
+        "open_acties": 1
+      },
+      "sunergy": {
+        "slug": "sunergy",
+        "soort": "partner",
+        "naam": "Sunergy",
+        "aliassen": [],
+        "domeinen": ["sunergy.nl"],
+        "slack": "sunergy-hz",
+        "fase": "live",
+        "accountmanager": "",
+        "geheim_voor": ["tonzon"],
+        "bijgewerkt": "2026-10-27 08:00",
+        "kern": "Partner met eigen flows voor thuisbatterijen (voorbeeld).",
+        "stand": [],
+        "contacten": [],
+        "meetings": [],
+        "log": [],
+        "open_acties": 0
+      },
+      "installateursnetwerk": {
+        "slug": "installateursnetwerk",
+        "soort": "project",
+        "naam": "Installateursnetwerk",
+        "geheim_voor": [],
+        "kern": "Programma voor het installateursnetwerk (voorbeeld)."
+      },
+      "kapot": {
+        "slug": "kapot",
+        "soort": "winkel"
+      }
+    },
+    "context_acties": {
+      "feenstra": {
+        "slug": "feenstra",
+        "naam": "Feenstra",
+        "geheim_voor": [],
+        "acties": [
+          {
+            "state": "open",
+            "tekst": "Rekenvoorbeeld thuisbatterij naar Feenstra sturen",
+            "voorstel": false,
+            "eigenaar": "Robert",
+            "datum": "2026-10-29",
+            "ligt": "bij-ons",
+            "sinds": "2026-10-22",
+            "bron": "",
+            "id": "feenstra-20261022-1"
+          },
+          {
+            "state": "open",
+            "tekst": "Keuze ZSB-flow bevestigen in de flow",
+            "voorstel": true,
+            "eigenaar": "Robert",
+            "datum": "2026-10-30",
+            "ligt": "bij-ons",
+            "sinds": "2026-10-29",
+            "bron": "",
+            "id": "feenstra-20261029-1"
+          },
+          {
+            "state": "open",
+            "tekst": "Capaciteit terugmelden",
+            "voorstel": true,
+            "eigenaar": "Marie-José",
+            "datum": "2026-11-06",
+            "ligt": "bij-hen",
+            "sinds": "2026-10-29",
+            "bron": "",
+            "id": "feenstra-20261029-2"
+          }
+        ]
+      },
+      "tonzon": {
+        "slug": "tonzon",
+        "naam": "TonZon",
+        "geheim_voor": [],
+        "acties": [
+          {
+            "state": "open",
+            "tekst": "Rekenmodel isolatie toelichten aan Peter",
+            "voorstel": false,
+            "eigenaar": "Robert",
+            "datum": "2026-11-04",
+            "ligt": "bij-ons",
+            "sinds": "2026-10-27",
+            "bron": ""
+          }
+        ]
+      },
+      "installateursnetwerk": {
+        "slug": "installateursnetwerk",
+        "naam": "Installateursnetwerk",
+        "acties": [
+          {
+            "state": "klaar",
+            "tekst": "Eerste ronde gesprekken plannen",
+            "eigenaar": "Robert",
+            "id": "installateursnetwerk-20261001-1"
+          }
+        ]
+      }
+    },
+    "context_persoonlijk": {
+      "taken": {
+        "open": [
+          {
+            "state": "open",
+            "tekst": "Voorbeeldtaak"
+          }
+        ]
+      },
+      "wachten-op": {
+        "open": [],
+        "bespreken": [],
+        "afgerond": []
+      },
+      "aangehouden": {
+        "open": []
+      }
+    },
+    "context_status": {
+      "laatste": {
+        "status": "2026-10-30 | groen | lek 0",
+        "nachtdienst": "2026-10-30 01:16 | groen",
+        "commit_context": "demo123",
+        "commit_prive": "demo456",
+        "geexporteerd": "2026-10-30T07:20:00+01:00",
+        "partners": 4
+      }
+    },
+    "iets_anders": {
+      "x": {
+        "y": 1
+      }
+    }
+  }
+}

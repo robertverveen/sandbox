@@ -4,6 +4,7 @@
  * Inloggen, sessies en de worker gaan via SECURITY DEFINER-functies die precies één sleutel opzoeken.
  * Eigen, verse database (hz_e2_test_auth) op localhost:5432.
  */
+import type pg from 'pg';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -29,6 +30,7 @@ import {
 const URL_ = process.env.HZ_TEST_DATABASE_URL_AUTH ?? 'postgres://hz_dev:hz_dev@localhost:5432/hz_e2_test_auth';
 let db: Db;
 let close: () => Promise<void>;
+let pool: pg.Pool;
 let owner: ReturnType<typeof createOwnerDb>;
 let A: string;
 let B: string;
@@ -38,7 +40,7 @@ let tokenB: string;
 beforeAll(async () => {
   await ensureDatabase(URL_, { recreate: true });
   await runMigrations(URL_);
-  ({ db, close } = createDb(URL_, 4));
+  ({ db, close, pool } = createDb(URL_, 4));
   owner = createOwnerDb(URL_, 1);
   A = (await upsertUser(db, 'anna@homezero.nl', 'Anna')).id;
   B = (await upsertUser(db, 'bram@homezero.nl', 'Bram')).id;
@@ -92,7 +94,7 @@ describe('app.purpose opent niets meer op users en sessions', () => {
   });
 
   it('zonder gebruiker maar met app.purpose=auth op sessieniveau: nog steeds niets', async () => {
-    const c = await (db.$client as import('pg').Pool).connect();
+    const c = await pool.connect();
     try {
       await c.query(`select set_config('app.purpose', 'auth', false)`);
       expect((await c.query('select * from users')).rows).toHaveLength(0);
