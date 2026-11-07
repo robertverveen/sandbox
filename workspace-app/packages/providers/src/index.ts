@@ -39,6 +39,8 @@ import {
   LiveTasks,
   LiveWispr,
   MemorySyncStore,
+  CombinedTasks,
+  SlackTodos,
   UserScopedGitHubContext,
   currentUserId,
   type LiveCredentials,
@@ -188,6 +190,19 @@ export function createProviders(
       () => new LiveAnthropic(env.ANTHROPIC_API_KEY ?? ''),
     ),
   };
+  // Spike HZW-037: Slack-to-do's (herinneringen en gekoppelde Lists) naast Google Taken, achter een vlag.
+  if (env.HZ_SLACK_TODOS === '1' && providers.slack instanceof LiveSlack) {
+    const lists = (env.HZ_SLACK_TODO_LISTS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => {
+        const [id, ...t] = s.split(':');
+        return { id: id!, title: t.join(':') || 'Slack-lijst' };
+      });
+    providers.tasks = new CombinedTasks(providers.tasks, new SlackTodos(providers.slack, lists));
+    liveOn.push('slack_todos');
+  }
   return {
     providers,
     dataset,
