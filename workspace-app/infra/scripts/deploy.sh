@@ -46,6 +46,13 @@ if [[ -f "$infra/secrets/server.env.age" ]]; then
 else
   : >"$server_env"
 fi
+# Server-secrets: de edge heeft het previewwachtwoord nodig; productie ook back-ups en de hartslag (server.keys).
+if [[ "$env" == prod ]]; then
+  miss="$(missing_keys "$server_env" "$infra/secrets/server.keys")"
+else
+  miss="$(printf 'HZ_PREVIEW_USER x\nHZ_PREVIEW_HASH x\n' | missing_keys "$server_env" /dev/stdin)"
+fi
+[[ -z "$miss" ]] || die "server-secrets ontbreken: $(tr '\n' ' ' <<<"$miss")(zie infra/secrets/server.keys en RUNBOOK.md §5)"
 
 export HZ_INSTANCE="$instance" HZ_TAG="$tag" HZ_APP_ENV_FILE="$appenv"
 if [[ "$env" == prod ]]; then

@@ -42,8 +42,11 @@ Afspraken: `<IP>` is het IPv4-adres van de server, `hz` de beheerdersgebruiker (
    `HZ_DEPLOY_KNOWN_HOSTS` = uitvoer van `ssh-keyscan -t ed25519 <IP>`; Environments `test`, `preview` en `production`
    (production: required reviewer). Packages `hz-api`, `hz-worker`, `hz-web`: Manage Actions access, deze repo, Read
    (na de eerste build).
-7. **Eerste uitrol**: Actions, `workspace-deploy`, Run workflow, omgeving `test`. Groen = health-check en TLS goed.
-8. **Controle**: Actions, `workspace-server-check`, Run workflow. Het issue `servercontrole` moet alles groen tonen.
+7. **Secrets vullen**: `secrets.sh gen prod`, `gen test`, `gen server`, dan de waarden van mensen met `set` (zie
+   `infra/secrets/*.keys`). Test heeft minstens het previewwachtwoord nodig (§4); productie ook de Storage Box (§6)
+   en de hartslag (§7). `deploy.sh` noemt precies wat er nog ontbreekt en verandert dan niets.
+8. **Eerste uitrol**: Actions, `workspace-deploy`, Run workflow, omgeving `test`. Groen = health-check en TLS goed.
+9. **Controle**: Actions, `workspace-server-check`, Run workflow. Het issue `servercontrole` moet alles groen tonen.
 
 ## 3. Uitrollen
 

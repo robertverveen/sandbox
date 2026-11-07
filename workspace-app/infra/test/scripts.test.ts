@@ -64,6 +64,17 @@ async function serverFixture(opts: { missing?: string[] } = {}) {
     HZ_AGE_RECIPIENTS_FILE: keys.recipients,
   };
   // Secrets voor test en prod via secrets.sh zelf: gen vult de machine-geheimen, set de rest.
+  // Server-secrets: previewwachtwoord (edge), Storage Box en hartslag (productie).
+  if (!opts.missing?.includes('server')) {
+    expect((await run(script('secrets.sh'), ['gen', 'server'], env)).code).toBe(0);
+    for (const [k, v] of [
+      ['HZ_PREVIEW_USER', 'hz'],
+      ['HZ_PREVIEW_HASH', '$2a$14$Zkx19XLiW6VYouLHR5NmfOFU0z2GTNmpkT/5qqR7hx4IjWJPDhjvG'],
+      ['HZ_BACKUP_TARGET', join(root, 'storagebox')],
+      ['HZ_HEARTBEAT_PING_URL', 'http://127.0.0.1:1/ping'],
+    ])
+      expect((await run(script('secrets.sh'), ['set', 'server', k!], env, `${v}\n`)).code).toBe(0);
+  }
   for (const scope of ['test', 'prod']) {
     expect((await run(script('secrets.sh'), ['gen', scope], env)).code).toBe(0);
     for (const k of ['HZ_GOOGLE_CLIENT_ID', 'HZ_GOOGLE_CLIENT_SECRET'])
@@ -205,12 +216,19 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
 
   it('productie start ook GlitchTip (hz-ops) zodra de server-secrets er zijn; test niet', async () => {
     const t = await setup();
-    expect((await run(script('secrets.sh'), ['gen', 'server'], t.env)).code).toBe(0);
     expect((await t.deploy('test', 'sha-aaaaaaa')).code).toBe(0);
     expect(t.docker.calls().some((c) => c.includes('compose -p hz-ops'))).toBe(false);
     const r = await t.deploy('prod', 'v1.0.0', { HZ_SKIP_PREDEPLOY_BACKUP: '1' });
     expect(r.code, r.all).toBe(0);
     expect(t.docker.calls().some((c) => /compose -p hz-ops .*compose\/ops\.yaml up -d/.test(c))).toBe(true);
+  });
+
+  it('weigert zonder server-secrets (previewwachtwoord voor de edge)', async () => {
+    const t = await setup({ missing: ['server'] });
+    const r = await t.deploy('test', 'sha-aaaaaaa');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('server-secrets ontbreken: HZ_PREVIEW_USER HZ_PREVIEW_HASH');
+    expect(t.docker.calls()).toEqual([]);
   });
 
   it('weigert onbekende omgevingen en tags', async () => {
