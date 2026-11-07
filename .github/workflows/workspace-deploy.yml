@@ -97,7 +97,7 @@ jobs:
     outputs:
       digests: ${{ steps.d.outputs.digests }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -197,7 +197,7 @@ jobs:
       name: ${{ needs.meta.outputs.environment }}
       url: ${{ needs.meta.outputs.environment == 'production' && format('https://{0}', vars.HZ_DOMAIN) || format('https://{0}', vars.HZ_TEST_DOMAIN) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
         uses: tailscale/github-action@v3
         with:

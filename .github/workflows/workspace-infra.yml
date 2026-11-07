@@ -34,7 +34,7 @@ jobs:
       # sha256 van caddy_2.10.2_linux_amd64.tar.gz (nagerekend tegen de sha512 in caddy_2.10.2_checksums.txt).
       CADDY_SHA256: 5c218bc34c9197369263da7e9317a83acdbd80ef45d94dca5eff76e727c67cdd
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: workspace-app/package.json
@@ -72,7 +72,7 @@ jobs:
       matrix:
         image: [api, worker, web]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - name: Bouw hz-${{ matrix.image }} (geen push)
         uses: docker/build-push-action@v6
