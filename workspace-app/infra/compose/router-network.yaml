@@ -1,0 +1,13 @@
+# De bestaande reverse proxy draait in Docker: alleen de router doet mee in het netwerk van die proxy
+# (HZ_PROXY_NETWORK in hz.env, gevonden door de voorcheck). De proxy vindt hem daar als hz-workspace-router:8080
+# (verkeer) en :8081 (toestemming voor on-demand TLS van previews). De app-containers zelf zitten er niet in.
+services:
+  router:
+    networks:
+      proxy:
+        aliases: [hz-workspace-router]
+
+networks:
+  proxy:
+    external: true
+    name: ${HZ_PROXY_NETWORK:?HZ_PROXY_NETWORK ontbreekt in hz.env}

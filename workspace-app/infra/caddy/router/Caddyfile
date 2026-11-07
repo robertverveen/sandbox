@@ -1,0 +1,123 @@
+# Router van de HomeZero Workspace (HZW-003, HZW-005), in de container hz-workspace-router (compose/router.yaml).
+# Geen TLS en geen publieke poort: de reverse proxy die al op de server draait doet TLS op 443 en stuurt alleen de
+# domeinen van de workspace hierheen (infra/scripts/proxy-snippet.sh). Hier: routering naar de instanties op het
+# netwerk hz-workspace-net, het previewwachtwoord, beveiligingsheaders en logs zonder persoonsgegevens.
+#
+#   productie   {$HZ_DOMAIN}                    -> hz-workspace-prod-web:8080
+#   test        {$HZ_TEST_DOMAIN}               -> hz-workspace-test-web:8080
+#   preview     pr-<nr>.{$HZ_TEST_DOMAIN}       -> hz-workspace-pr-<nr>-web:8080   (alleen met wachtwoord)
+#   fouten      {$HZ_ERRORS_DOMAIN}             -> GlitchTip (hz-workspace-ops)
+#
+# Domeinen staan alleen in hz.env: verhuizen naar een ander domein is geen codewijziging (HZW-082).
+{
+	auto_https off
+	admin localhost:2019
+	servers {
+		# Alleen de proxy voor ons (privé-adressen in Docker of 127.0.0.1) mag het client-IP doorgeven.
+		trusted_proxies static private_ranges
+	}
+}
+
+(beveiliging) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+		-X-Powered-By
+	}
+}
+
+# Toegangslog zonder persoonsgegevens: IP gemaskeerd, geen user-agent, geen cookies of autorisatie,
+# en OAuth-parameters (code, state) uit de URL.
+(log-zonder-pii) {
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>remote_ip ip_mask {
+					ipv4 16
+					ipv6 32
+				}
+				request>client_ip ip_mask {
+					ipv4 16
+					ipv6 32
+				}
+				request>headers delete
+				resp_headers delete
+				request>uri query {
+					replace code REDACTED
+					replace state REDACTED
+					replace token REDACTED
+				}
+			}
+		}
+	}
+}
+
+http://{$HZ_DOMAIN}:{$HZ_ROUTER_LISTEN:8080} {
+	import beveiliging
+	import log-zonder-pii
+	encode zstd gzip
+	reverse_proxy hz-workspace-prod-web:8080 {
+		health_uri /healthz
+		health_interval 30s
+	}
+}
+
+http://{$HZ_TEST_DOMAIN}:{$HZ_ROUTER_LISTEN:8080} {
+	import beveiliging
+	import log-zonder-pii
+	header X-Robots-Tag "noindex, nofollow"
+	encode zstd gzip
+	reverse_proxy hz-workspace-test-web:8080
+}
+
+# Preview per pull request: pr-<nr>.{$HZ_TEST_DOMAIN}. Draait op demodata (fixtures, nooit echte data) en is alleen
+# met het previewwachtwoord te openen (basic auth; bcrypt-hash in de server-secrets).
+http://*.{$HZ_TEST_DOMAIN}:{$HZ_ROUTER_LISTEN:8080} {
+	import beveiliging
+	import log-zonder-pii
+	header X-Robots-Tag "noindex, nofollow"
+	@preview header_regexp pr Host ^pr-([0-9]{1,6})\.
+	handle @preview {
+		basic_auth {
+			{$HZ_PREVIEW_USER} {$HZ_PREVIEW_HASH}
+		}
+		encode zstd gzip
+		reverse_proxy hz-workspace-pr-{re.pr.1}-web:8080
+	}
+	handle {
+		respond "Onbekende preview" 404
+	}
+}
+
+http://{$HZ_ERRORS_DOMAIN}:{$HZ_ROUTER_LISTEN:8080} {
+	import beveiliging
+	import log-zonder-pii
+	reverse_proxy hz-workspace-ops-glitchtip:8000
+}
+
+# Al het andere op :8080 (een onbekende naam): niets.
+http://:{$HZ_ROUTER_LISTEN:8080} {
+	respond 404
+}
+
+# Toestemming voor on-demand TLS van de proxy (Caddy: on_demand_tls ask): 200 alleen voor een preview die preview.sh
+# heeft aangemeld, of een vast domein. SanitizedPathJoin in de file-matcher houdt ../../etc/passwd buiten /srv/previews.
+# Plus de healthcheck van de router zelf.
+http://:{$HZ_ROUTER_ASK_LISTEN:8081} {
+	@vast query domain={$HZ_DOMAIN} domain={$HZ_TEST_DOMAIN} domain={$HZ_ERRORS_DOMAIN}
+	@bekend file {
+		root {$HZ_PREVIEWS_DIR:/srv/previews}
+		try_files {query.domain}
+	}
+	handle /ask {
+		respond @vast 200
+		respond @bekend 200
+		respond 404
+	}
+	respond /healthz "ok" 200
+	respond 404
+}

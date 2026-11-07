@@ -1,0 +1,11 @@
+# hz-workspace: eigen unit van de HomeZero Workspace (server-setup.sh); botst niet met andere projecten.
+[Unit]
+Description=HomeZero Workspace: hartslag elke 5 minuten (HZW-007)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

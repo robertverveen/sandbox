@@ -1,0 +1,12 @@
+# hz-workspace: eigen unit van de HomeZero Workspace (server-setup.sh); botst niet met andere projecten.
+[Unit]
+Description=HomeZero Workspace: uptime-hartslag naar de uptime-dienst (HZW-007)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hz-workspace
+Group=hz-workspace
+ExecStart=/srv/hz-workspace/bin/hz-run heartbeat.sh
+TimeoutStartSec=2min

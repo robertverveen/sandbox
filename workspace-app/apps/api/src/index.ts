@@ -1,6 +1,7 @@
 /** Start de API: `pnpm --filter @hz/api dev`. Poort HZ_API_PORT (standaard 8700). */
 import { serve } from '@hono/node-server';
 import { createDb, dbSyncStore, dbTokenStore, disconnectSource, parseMasterKey } from '@hz/db';
+import { installOps } from '@hz/ops';
 import {
   createProviders,
   createUserCredentials,
@@ -14,6 +15,9 @@ import { EventBus } from './events';
 import { listenSyncEvents } from './sync-hooks';
 import { ConfigError, loadConfig } from './config';
 import { DbStore, MemoryStore, type AppStore } from './store';
+
+// Foutregistratie en logs zonder persoonsgegevens (HZW-007); lokaal uit.
+const ops = installOps({ service: 'api' });
 
 let config;
 try {
@@ -61,9 +65,11 @@ const { app } = createApp({
 });
 const listener = syncDb ? await listenSyncEvents(config.DATABASE_URL!, bus).catch(() => null) : null;
 
-const server = serve({ fetch: app.fetch, port: config.HZ_API_PORT, hostname: '127.0.0.1' }, (info) => {
+// In een container luistert de API op alle interfaces (HZ_API_HOST=0.0.0.0); lokaal alleen op 127.0.0.1.
+const hostname = process.env.HZ_API_HOST ?? '127.0.0.1';
+const server = serve({ fetch: ops.wrapFetch(app.fetch), port: config.HZ_API_PORT, hostname }, (info) => {
   console.log(
-    `[api] http://127.0.0.1:${info.port} · fixtures=${bundle.info.fixtureSet} · context=${bundle.info.contextSource} · store=${store.kind}` +
+    `[api] http://${hostname}:${info.port} · fixtures=${bundle.info.fixtureSet} · context=${bundle.info.contextSource} · store=${store.kind}` +
       (bundle.info.live.length ? ` · live=${bundle.info.live.join(',')}` : ''),
   );
 });

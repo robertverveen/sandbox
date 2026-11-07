@@ -1,0 +1,179 @@
+# Preview per pull request (HZW-005): pr-<nr>.<HZ_TEST_DOMAIN>, op demodata, achter het previewwachtwoord.
+#   PR geopend of bijgewerkt -> images bouwen (tag pr-<nr>-<commit>) -> preview starten -> link als PR-commentaar
+#   PR gesloten of gemerged  -> preview weg (containers, database, certificaat-aanmelding) en de PR-images weg
+# PR's uit een fork krijgen geen preview (geen secrets naar code van buiten).
+# De runner komt als tijdelijke Tailscale-node (tag:ci) bij de server; SSH alleen op het tailnet-adres (ci-ssh.sh).
+# Secrets alleen in de environment 'preview': HZ_PREVIEW_SSH_KEY, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET. De preview-
+# sleutel hoort op de server bij de gebruiker hz-preview en mag alleen "preview up/down" (hz-ssh-dispatch preview):
+# geen uitrol naar test of productie, geen toegang tot de age-sleutel. De server start preview.sh uit de bundel van
+# test (code van main) en van deze PR alleen de images als containers; een PR die deze workflow aanpast kan met
+# deze sleutel dus niets anders dan een preview starten of opruimen.
+name: workspace-preview
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths: ['workspace-app/**', '.github/workflows/workspace-preview.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ github.event.action != 'closed' }}
+
+env:
+  PR: ${{ github.event.pull_request.number }}
+
+jobs:
+  meta:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    outputs:
+      registry: ${{ steps.m.outputs.registry }}
+      tag: ${{ steps.m.outputs.tag }}
+    steps:
+      - id: m
+        env:
+          OWNER: ${{ github.repository_owner }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "registry=ghcr.io/${OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "tag=pr-${PR}-${HEAD_SHA::12}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: meta
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [api, worker, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: workspace-app
+          file: workspace-app/infra/docker/${{ matrix.image }}.Dockerfile
+          push: true
+          tags: ${{ needs.meta.outputs.registry }}/hz-${{ matrix.image }}:${{ needs.meta.outputs.tag }}
+          build-args: HZ_RELEASE=${{ needs.meta.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=hz-${{ matrix.image }}
+
+  up:
+    needs: [meta, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+      pull-requests: write
+    environment:
+      name: preview
+      url: https://pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: workspace-app/infra/scripts
+      - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: SSH-sleutel voor previews (op de server alleen hz-ssh-dispatch preview, gebruiker hz-preview)
+        env:
+          KEY: ${{ secrets.HZ_PREVIEW_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          [[ -n "$KEY" ]] || { echo "::error::HZ_PREVIEW_SSH_KEY ontbreekt in de environment preview"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Preview starten via het tailnet
+        env:
+          HOST: ${{ vars.HZ_DEPLOY_HOST }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HZ_SSH_USER: hz-preview
+        run: printf '%s\n' "$GH_TOKEN" | bash workspace-app/infra/scripts/ci-ssh.sh "$HOST" preview up "$PR" "$TAG"
+      - name: Wachtwoord gevraagd en certificaat geldig
+        env:
+          DOMAIN: pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}
+        run: |
+          for _ in $(seq 1 20); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' -m 10 "https://$DOMAIN/" || true)"
+            [[ "$code" == 401 ]] && { echo "preview bereikbaar, vraagt wachtwoord"; exit 0; }
+            sleep 3
+          done
+          echo "::error::https://$DOMAIN geeft $code in plaats van 401"; exit 1
+      - name: Link in de pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          URL: https://pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          body="Preview: $URL (versie \`$TAG\`, demodata; wachtwoord in de teamkluis onder 'Workspace preview')."
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --edit-last --body "$body" 2>/dev/null ||
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$body"
+
+  down:
+    needs: meta
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    # Zelfde environment als 'up': de secrets staan alleen daar.
+    environment:
+      name: preview
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: workspace-app/infra/scripts
+      - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: SSH-sleutel voor previews (op de server alleen hz-ssh-dispatch preview, gebruiker hz-preview)
+        env:
+          KEY: ${{ secrets.HZ_PREVIEW_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          [[ -n "$KEY" ]] || { echo "::error::HZ_PREVIEW_SSH_KEY ontbreekt in de environment preview"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Preview opruimen via het tailnet
+        env:
+          HOST: ${{ vars.HZ_DEPLOY_HOST }}
+          HZ_SSH_USER: hz-preview
+        run: bash workspace-app/infra/scripts/ci-ssh.sh "$HOST" preview down "$PR" </dev/null
+      - name: Preview is weg
+        env:
+          DOMAIN: pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}
+        run: |
+          code="$(curl -s -o /dev/null -w '%{http_code}' -m 10 "https://$DOMAIN/" || true)"
+          # Zonder aanmelding krijgt de proxy geen certificaat (TLS-fout, 000) of antwoordt de router 404.
+          [[ "$code" == 000 || "$code" == 404 || "$code" == 502 ]] || { echo "::error::preview antwoordt nog ($code)"; exit 1; }
+      - name: PR-images weg uit de registry
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          for i in api worker web; do
+            gh api --paginate "/orgs/$OWNER/packages/container/hz-$i/versions" \
+              --jq ".[] | select(any(.metadata.container.tags[]?; startswith(\"pr-$PR-\"))) | .id" |
+              while read -r id; do gh api -X DELETE "/orgs/$OWNER/packages/container/hz-$i/versions/$id"; done
+          done

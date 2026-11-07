@@ -1,0 +1,98 @@
+# Infra van de HomeZero Workspace (HZW-001..008, 082): statische controles en de images echt bouwen (zonder push).
+# Lokaal hetzelfde: `bash workspace-app/infra/scripts/validate.sh`.
+name: workspace-infra
+on:
+  pull_request:
+    paths:
+      - 'workspace-app/infra/**'
+      - 'workspace-app/.dockerignore'
+      - 'workspace-app/apps/*/package.json'
+      - 'workspace-app/pnpm-lock.yaml'
+      - '.github/workflows/workspace-*.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'workspace-app/infra/**'
+      - 'workspace-app/.dockerignore'
+      - '.github/workflows/workspace-*.yml'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: workspace-app
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    env:
+      ACTIONLINT_VERSION: 1.7.7
+      # sha256 uit actionlint_1.7.7_checksums.txt van de release.
+      ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+      CADDY_VERSION: 2.10.2
+      # sha256 van caddy_2.10.2_linux_amd64.tar.gz (nagerekend tegen de sha512 in caddy_2.10.2_checksums.txt).
+      CADDY_SHA256: 5c218bc34c9197369263da7e9317a83acdbd80ef45d94dca5eff76e727c67cdd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: workspace-app/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: workspace-app/pnpm-lock.yaml
+      - name: Gereedschap (shellcheck, age, actionlint, caddy)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends shellcheck age
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tar.gz" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$HOME/bin" actionlint
+          curl -fsSL -o "$RUNNER_TEMP/caddy.tar.gz" "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
+          echo "${CADDY_SHA256}  $RUNNER_TEMP/caddy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/caddy.tar.gz" -C "$HOME/bin" caddy
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @hz/web build
+      - name: Alle infra-controles (strikt)
+        run: bash infra/scripts/validate.sh
+        env:
+          HZ_VALIDATE_STRICT: '1'
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Web-container (Caddy + CSP) in een echte browser
+        run: node infra/scripts/web-smoke.mjs
+
+  images:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, worker, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Bouw hz-${{ matrix.image }} (geen push)
+        uses: docker/build-push-action@v6
+        with:
+          context: workspace-app
+          file: workspace-app/infra/docker/${{ matrix.image }}.Dockerfile
+          push: false
+          load: true
+          tags: hz-${{ matrix.image }}:ci
+          cache-from: type=gha,scope=hz-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=hz-${{ matrix.image }}
+      - name: Image draait als niet-root en heeft een healthcheck
+        run: |
+          user="$(docker image inspect hz-${{ matrix.image }}:ci --format '{{.Config.User}}')"
+          test -n "$user" && test "$user" != root && test "$user" != 0
+          docker image inspect hz-${{ matrix.image }}:ci --format '{{json .Config.Healthcheck}}' | grep -q Test
+      - name: api weigert te starten zonder secrets (HZW-006)
+        if: matrix.image == 'api'
+        run: |
+          set +e
+          out="$(docker run --rm hz-api:ci 2>&1)"; rc=$?
+          echo "$out"
+          test "$rc" -eq 1 && grep -q 'HZ_TOKEN_KEY' <<<"$out"

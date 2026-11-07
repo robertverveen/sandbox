@@ -1,0 +1,167 @@
+# Eén instantie van de HomeZero Workspace (HZW-004/005): productie (hz-workspace-prod), test (hz-workspace-test) of
+# een preview per pull request (hz-workspace-pr-<nr>). deploy.sh en preview.sh starten dit bestand met:
+#
+#   docker compose -p <instantie> --env-file /srv/hz-workspace/etc/hz.env --env-file <secrets> -f compose/app.yaml up -d
+#
+# Variabelen (interpolatie): uit /srv/hz-workspace/etc/hz.env (niet geheim), de ontsleutelde secrets in
+# /run/hz-workspace (geheim) en wat deploy.sh zelf zet (HZ_INSTANCE, HZ_TAG, HZ_PUBLIC_URL, HZ_APP_ENV_FILE, en de
+# images HZ_IMAGE_API/_WORKER/_WEB: bij test en productie per digest, bij een preview per PR-tag). api en
+# worker krijgen alleen de app-secrets (HZ_APP_ENV_FILE, zonder databasewachtwoorden); de database alleen de zijne.
+#
+# Naast andere projecten op dezelfde server (HZW-002): een eigen projectnaam (hz-workspace-*), een eigen netwerk
+# (<instantie>-net), een eigen volume, het label nl.homezero.workspace=1 op alles (de voorcheck herkent zo wat van
+# ons is), geen gepubliceerde poort en limieten op geheugen en CPU per service (instelbaar in hz.env, previews
+# krijgen kleinere waarden van preview.sh). Alleen web hangt ook aan hz-workspace-net, waar de router hem vindt.
+name: ${HZ_INSTANCE:?HZ_INSTANCE ontbreekt}
+
+x-labels: &labels
+  nl.homezero.workspace: '1'
+
+x-app-image: &app
+  labels: *labels
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  logging:
+    driver: local
+    options: { max-size: 10m, max-file: '5' }
+
+services:
+  db:
+    image: postgres:16.10-alpine
+    labels: *labels
+    restart: unless-stopped
+    mem_limit: ${HZ_MEM_DB:-1g}
+    cpus: ${HZ_CPUS_DB:-1.0}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${HZ_PG_SUPERUSER_PASSWORD:?}
+      POSTGRES_DB: hz
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      HZ_PG_MIGRATOR_PASSWORD: ${HZ_PG_MIGRATOR_PASSWORD:?}
+      HZ_PG_APP_PASSWORD: ${HZ_PG_APP_PASSWORD:?}
+      HZ_PG_BACKUP_PASSWORD: ${HZ_PG_BACKUP_PASSWORD:?}
+      HZ_PG_AUTH_PASSWORD: ${HZ_PG_AUTH_PASSWORD:?}
+      HZ_PG_WORKER_PASSWORD: ${HZ_PG_WORKER_PASSWORD:?}
+      HZ_PG_INDEXER_PASSWORD: ${HZ_PG_INDEXER_PASSWORD:?}
+      HZ_PG_BOSS_PASSWORD: ${HZ_PG_BOSS_PASSWORD:?}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ../postgres/hz-roles.sh:/docker-entrypoint-initdb.d/10-hz-roles.sh:ro
+      - ../../packages/db/sql:/hz-sql:ro
+    # Geen gepubliceerde poort: alleen api, worker en migrate (zelfde netwerk) en back-ups via docker exec.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d hz']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+    shm_size: 256m
+    logging:
+      driver: local
+      options: { max-size: 10m, max-file: '5' }
+
+  migrate:
+    <<: *app
+    image: ${HZ_IMAGE_API:?HZ_IMAGE_API ontbreekt}
+    restart: 'no'
+    mem_limit: 256m
+    cpus: 0.5
+    command: ['node', 'dist/migrate.js']
+    environment:
+      DATABASE_URL: postgres://hz_migrator:${HZ_PG_MIGRATOR_PASSWORD}@db:5432/hz
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    <<: *app
+    image: ${HZ_IMAGE_API:?HZ_IMAGE_API ontbreekt}
+    mem_limit: ${HZ_MEM_API:-512m}
+    cpus: ${HZ_CPUS_API:-1.0}
+    env_file: ['${HZ_APP_ENV_FILE:?HZ_APP_ENV_FILE ontbreekt}']
+    environment:
+      NODE_ENV: ${HZ_NODE_ENV:-production}
+      HZ_ENVIRONMENT: ${HZ_ENVIRONMENT:?}
+      HZ_RELEASE: ${HZ_TAG:?HZ_TAG ontbreekt}
+      HZ_STORE: db
+      HZ_API_HOST: 0.0.0.0
+      HZ_API_PORT: '8700'
+      HZ_PUBLIC_URL: ${HZ_PUBLIC_URL:?}
+      HZ_WEB_ORIGIN: ${HZ_PUBLIC_URL}
+      HZ_FIXTURE_SET: ${HZ_FIXTURE_SET:-demo}
+      HZ_DEV_LOGIN: ${HZ_DEV_LOGIN:-0}
+      DATABASE_URL: postgres://hz_app_login:${HZ_PG_APP_PASSWORD}@db:5432/hz
+      # Inloggen en sessies met een eigen login (alleen hz_auth; stuk E2, migratie 0011).
+      HZ_AUTH_DATABASE_URL: postgres://hz_auth_login:${HZ_PG_AUTH_PASSWORD}@db:5432/hz
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8700/api/health').then(r=>r.json()).then(j=>process.exit(j.ok&&j.db!=='error'?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  worker:
+    <<: *app
+    image: ${HZ_IMAGE_WORKER:?HZ_IMAGE_WORKER ontbreekt}
+    mem_limit: ${HZ_MEM_WORKER:-512m}
+    cpus: ${HZ_CPUS_WORKER:-1.0}
+    env_file: ['${HZ_APP_ENV_FILE}']
+    environment:
+      NODE_ENV: ${HZ_NODE_ENV:-production}
+      HZ_ENVIRONMENT: ${HZ_ENVIRONMENT}
+      HZ_RELEASE: ${HZ_TAG}
+      HZ_FIXTURE_SET: ${HZ_FIXTURE_SET:-demo}
+      HZ_WORKER_HEARTBEAT: /tmp/hz-worker-alive
+      # App-tabellen als de worker-login (hz_app en hz_worker: werkt namens collega's; stuk E2, migratie 0010).
+      DATABASE_URL: postgres://hz_worker_login:${HZ_PG_WORKER_PASSWORD}@db:5432/hz
+      # pg-boss in een eigen schema met een eigen login (eigenaar van alleen dat schema; nooit de migratierol).
+      HZ_BOSS_DATABASE_URL: postgres://hz_boss:${HZ_PG_BOSS_PASSWORD}@db:5432/hz
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ['CMD', 'node', 'dist/ops-cli.js', 'heartbeat-ok']
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  web:
+    <<: *app
+    image: ${HZ_IMAGE_WEB:?HZ_IMAGE_WEB ontbreekt}
+    mem_limit: 128m
+    cpus: 0.5
+    environment:
+      HZ_API_UPSTREAM: api:8700
+    depends_on:
+      api: { condition: service_healthy }
+    networks:
+      default: {}
+      hzw:
+        # De router van de workspace vindt elke instantie op <instantie>-web (infra/caddy/router.Caddyfile).
+        aliases: ['${HZ_INSTANCE}-web']
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/healthz']
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  db-data:
+    labels: *labels
+
+networks:
+  default:
+    name: ${HZ_INSTANCE}-net
+    labels: *labels
+  hzw:
+    external: true
+    name: hz-workspace-net

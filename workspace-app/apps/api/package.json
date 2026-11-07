@@ -20,6 +20,7 @@
     "@hono/node-server": "1.19.6",
     "@hz/context": "workspace:*",
     "@hz/db": "workspace:*",
+    "@hz/ops": "workspace:*",
     "@hz/providers": "workspace:*",
     "@hz/shared": "workspace:*",
     "drizzle-orm": "0.44.7",

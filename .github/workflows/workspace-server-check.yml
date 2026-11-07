@@ -1,0 +1,85 @@
+# Servercontrole (HZW-002, HZW-003): wekelijks en op verzoek, op de bestaande server (tailnet, andere projecten).
+#   Van buiten (gewoon internet, vóór de Tailscale-stap): alleen 443 open, SSH dicht, TLS en doorsturen.
+#   Van binnen (tijdelijke Tailscale-node met tag:ci, SSH op het tailnet-adres): hz-ssh-dispatch check ->
+#   tailnet en SSH, firewall, publieke poorten, updates, Docker en de voorcheck op botsingen met andere projecten.
+# De uitkomst komt in de job-samenvatting en in het issue met het label 'servercontrole'.
+name: workspace-server-check
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+defaults:
+  run:
+    working-directory: workspace-app
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    # De sleutel van test mag ook 'check' (alleen lezen); hij en de Tailscale-client staan in de environment 'test'
+    # (alleen main), niet op repo-niveau.
+    environment:
+      name: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Van buiten (poorten, TLS en doorsturen)
+        id: extern
+        env:
+          DOMAIN: ${{ vars.HZ_DOMAIN }}
+          DOMAINS: ${{ vars.HZ_DOMAIN }} ${{ vars.HZ_TEST_DOMAIN }}
+        run: |
+          rc=0
+          {
+            echo "## Servercontrole $(date -u +%Y-%m-%d)"
+            echo; echo "### Van buiten (poorten)"; echo
+            bash infra/scripts/server-check.sh --extern "$DOMAIN" --markdown || rc=1
+            echo; echo "### TLS en doorsturen"; echo; echo '```'
+            # shellcheck disable=SC2086 # twee domeinen
+            bash infra/scripts/tls-check.sh $DOMAINS || rc=1
+            echo '```'
+          } > report.md
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+      - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: SSH-sleutel van test (op de server alleen hz-ssh-dispatch test)
+        working-directory: .
+        env:
+          KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY_TEST }}
+          KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Van binnen via het tailnet (server en voorcheck)
+        id: c
+        env:
+          HOST: ${{ vars.HZ_DEPLOY_HOST }}
+          RC_EXTERN: ${{ steps.extern.outputs.rc }}
+        run: |
+          rc="${RC_EXTERN:-1}"
+          {
+            echo; echo "### Van binnen (via het tailnet)"; echo
+            bash infra/scripts/ci-ssh.sh "$HOST" check </dev/null || rc=1
+          } >> report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+      - name: Uitkomst in het issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RC: ${{ steps.c.outputs.rc }}
+        run: |
+          gh label create servercontrole --repo "$GITHUB_REPOSITORY" --color 0022c4 --description "HZW-002 servercontrole" 2>/dev/null || true
+          nr="$(gh issue list --repo "$GITHUB_REPOSITORY" --label servercontrole --state all --limit 1 --json number --jq '.[0].number // empty')"
+          [[ -n "$nr" ]] || nr="$(gh issue create --repo "$GITHUB_REPOSITORY" --label servercontrole --title "Servercontrole (HZW-002)" --body "Uitkomsten van de wekelijkse servercontrole." | sed 's#.*/##')"
+          [[ -f report.md ]] || echo "Controle kon niet draaien; zie de run." > report.md
+          gh issue comment "$nr" --repo "$GITHUB_REPOSITORY" --body-file report.md
+          if [[ "$RC" == 0 ]]; then gh issue close "$nr" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true; else gh issue reopen "$nr" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true; exit 1; fi

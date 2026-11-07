@@ -1,0 +1,11 @@
+# hz-workspace: eigen unit van de HomeZero Workspace (server-setup.sh); botst niet met andere projecten.
+[Unit]
+Description=HomeZero Workspace: nachtelijke back-up om 02:30 (HZW-008)
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Europe/Amsterdam
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,55 @@
+# Eigen edge-proxy, ALLEEN als er op de server nog geen reverse proxy draait (HZ_PROXY_KIND=eigen in hz.env): een
+# eigen server bij een verhuizing (HZW-082, cloud-init). Op de bestaande server van Robert draait er al een proxy;
+# daar komt alleen een site-blok of labels bij (infra/scripts/proxy-snippet.sh) en wordt dit bestand niet gebruikt.
+# De voorcheck (server-check.sh --voorcheck) weigert deze edge als 443 al bezet is.
+#
+# Caddy met automatische TLS op 443 (TLS-ALPN-challenge; poort 80 blijft dicht: publiek alleen 443). Dezelfde
+# site-blokken als bij een bestaande Caddy (proxy-snippet.sh caddy), alles naar de router op hz-workspace-net.
+#
+#   docker compose -p hz-workspace-edge --env-file .../hz.env -f compose/edge.yaml up -d
+name: hz-workspace-edge
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    labels:
+      nl.homezero.workspace: '1'
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    ports:
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      HZ_ACME_EMAIL: ${HZ_ACME_EMAIL:?}
+    volumes:
+      # Vaste map met de Caddyfile en de gegenereerde site-blokken (deploy.sh, proxy-snippet.sh).
+      - ${HZ_EDGE_DIR:-/srv/hz-workspace/edge}:/etc/caddy:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [hzw]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8082/healthz']
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: local
+      options: { max-size: 20m, max-file: '5' }
+
+volumes:
+  # Certificaten en ACME-account: verliezen is niet erg (Caddy vraagt opnieuw aan).
+  caddy-data:
+    labels:
+      nl.homezero.workspace: '1'
+  caddy-config:
+    labels:
+      nl.homezero.workspace: '1'
+
+networks:
+  hzw:
+    external: true
+    name: hz-workspace-net

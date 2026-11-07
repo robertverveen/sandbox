@@ -1,0 +1,14 @@
+# hz-workspace: eigen unit van de HomeZero Workspace (server-setup.sh); botst niet met andere projecten.
+[Unit]
+Description=HomeZero Workspace: back-up van de database naar de Storage Box (HZW-008)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hz-workspace
+Group=hz-workspace
+ExecStart=/srv/hz-workspace/bin/hz-run backup.sh --label nightly
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h

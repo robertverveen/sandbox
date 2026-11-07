@@ -1,0 +1,28 @@
+// Fragment voor de tailnet-policy van Robert (HZW-004): GitHub Actions komt alleen als tijdelijke node met tag:ci
+// binnen, en mag dan alleen naar poort 22 van de bestaande server. Samenvoegen met de bestaande policy
+// (Tailscale admin, Access controls); de rest van de policy blijft zoals hij is. Zie RUNBOOK.md §2, stap 5.
+//
+// Let op: staat in de policy nog de standaardregel {"src": ["*"], "dst": ["*:*"]}, dan valt tag:ci daar ook onder.
+// Vervang dan "*" in src door "autogroup:member" (alle apparaten van mensen, geen getagde nodes).
+// Het adres van hz-server is een voorbeeld: vul het tailnet-adres van de server in (tailscale ip -4 op de server).
+{
+	"tagOwners": {
+		// Alleen beheerders mogen tag:ci uitdelen; de OAuth-client voor CI krijgt deze tag (scope auth_keys).
+		"tag:ci": ["autogroup:admin"],
+	},
+	"hosts": {
+		"hz-server": "100.64.0.10",
+	},
+	"acls": [
+		// CI-runner (tijdelijk, ephemeral) -> alleen SSH op de server. Op de server mag die sleutel alleen hz-ssh-dispatch.
+		{"action": "accept", "src": ["tag:ci"], "dst": ["hz-server:22"]},
+	],
+	// Tailscale controleert deze tests bij het opslaan van de policy: een fout in de samenvoeging wordt dan geweigerd.
+	"tests": [
+		{
+			"src": "tag:ci",
+			"accept": ["hz-server:22"],
+			"deny": ["hz-server:443", "hz-server:5432", "hz-server:2019", "100.64.0.11:22"],
+		},
+	],
+}
