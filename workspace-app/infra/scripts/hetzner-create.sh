@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# Maak de server in Hetzner Cloud (HZW-002), of een tweede server voor een verhuizing (HZW-082), met de hcloud-CLI.
+# OPTIONEEL, alleen voor HZW-082 (verhuizen of een proefverhuizing naar een eigen server). Niet de hoofdroute: de
+# workspace draait op de bestaande server van Robert (server-setup.sh, RUNBOOK.md §2); daar wordt niets aangemaakt.
+# Maakt een nieuwe Hetzner Cloud-server met de hcloud-CLI en de cloud-init uit infra/cloud-init/render.mjs.
 # Eerst altijd --dry-run: dan zie je precies welke opdrachten er komen, zonder iets aan te maken of te betalen.
 #
-#   HCLOUD_TOKEN=... infra/scripts/hetzner-create.sh --name hz-workspace --location nbg1 \
+#   HCLOUD_TOKEN=... infra/scripts/hetzner-create.sh --name hz-workspace-2 --location nbg1 \
 #     --user-data user-data.yaml --ssh-key ~/.ssh/id_ed25519.pub [--dry-run]
 #
-# Maakt: SSH-sleutel (als die er nog niet is), firewall "hz-web" (in: 22/tcp, 80/tcp, 443/tcp, 443/udp, ICMP),
-# server CX32 met Ubuntu 24.04 en de cloud-init. Geen Hetzner-back-ups: we maken onze eigen (HZW-008).
-# Daarna: DNS naar het IPv4/IPv6-adres (RUNBOOK.md, 'Nieuwe server').
+# Maakt: SSH-sleutel (als die er nog niet is), firewall "hz-workspace-web" (in: alleen 443/tcp en 443/udp; SSH gaat
+# over Tailscale, dat geen inkomende poort nodig heeft), server CX32 met Ubuntu 24.04 en de cloud-init.
+# Geen Hetzner-back-ups: we maken onze eigen (HZW-008). Daarna: DNS naar het IPv4/IPv6-adres (RUNBOOK.md §10).
 set -euo pipefail
 HZ_SCRIPT=hetzner
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$here/lib.sh"
 
-name=hz-workspace
+name=hz-workspace-2
 location=nbg1
 type="${HZ_SERVER_TYPE:-cx32}"
 image=ubuntu-24.04
@@ -49,14 +51,13 @@ if ((dry)) || ! hcloud ssh-key describe "$key_name" >/dev/null 2>&1; then
   run hcloud ssh-key create --name "$key_name" --public-key-from-file "$ssh_key"
 fi
 
-fw=hz-web
+fw=hz-workspace-web
 if ((dry)) || ! hcloud firewall describe "$fw" >/dev/null 2>&1; then
   run hcloud firewall create --name "$fw"
-  for rule in "tcp 22" "tcp 80" "tcp 443" "udp 443"; do
+  for rule in "tcp 443" "udp 443"; do
     read -r proto port <<<"$rule"
-    run hcloud firewall add-rule "$fw" --direction in --protocol "$proto" --port "$port" --source-ips 0.0.0.0/0 --source-ips ::/0 --description "hz $proto/$port"
+    run hcloud firewall add-rule "$fw" --direction in --protocol "$proto" --port "$port" --source-ips 0.0.0.0/0 --source-ips ::/0 --description "hz-workspace $proto/$port"
   done
-  run hcloud firewall add-rule "$fw" --direction in --protocol icmp --source-ips 0.0.0.0/0 --source-ips ::/0 --description "hz ping"
 fi
 
 run hcloud server create --name "$name" --type "$type" --image "$image" --location "$location" \
@@ -67,5 +68,5 @@ if ((dry == 0)); then
   ip6="$(hcloud server ip -6 "$name")"
   printf '\nServer %s staat aan: IPv4 %s, IPv6 %s\n' "$name" "$ip4" "$ip6"
   printf 'Volgende stap: DNS (A en AAAA) voor HZ_DOMAIN, HZ_TEST_DOMAIN, *.HZ_TEST_DOMAIN en HZ_ERRORS_DOMAIN naar dit adres.\n'
-  printf 'Na ~5 minuten: ssh hz@%s sudo cat /var/log/hz/sleutels.txt\n' "$ip4"
+  printf 'Na ~5 minuten, via het tailnet: ssh hz@%s sudo cat /srv/hz-workspace/log/sleutels.txt\n' "$name"
 fi

@@ -1,0 +1,7 @@
+# De bestaande reverse proxy draait op de host (bijv. Caddy als systemd-dienst): de router luistert alleen op
+# 127.0.0.1, op poorten die de voorcheck vrij heeft bevonden (HZ_ROUTER_PORT en HZ_ROUTER_PORT+1). Nooit publiek.
+services:
+  router:
+    ports:
+      - 127.0.0.1:${HZ_ROUTER_PORT:?HZ_ROUTER_PORT ontbreekt in hz.env}:8080
+      - 127.0.0.1:${HZ_ROUTER_ASK_PORT:?}:8081

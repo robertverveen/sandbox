@@ -14,6 +14,8 @@ export default tseslint.config(
       'test-results/**',
       'packages/db/drizzle/**',
       'packages/context/test/reference/**',
+      // Workflow-scripts van de lead (globals van het workflow-harnas), geen app-code.
+      'tools/lead/**',
     ],
   },
   js.configs.recommended,

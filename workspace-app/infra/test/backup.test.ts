@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DbStore } from '@hz/api/store';
 import { runMigrations } from '@hz/db';
+import { cleanupRoles } from './global-setup';
 import {
   adminUrl,
   ageKeys,
@@ -218,5 +219,33 @@ describe('bewaartermijn (30 dagen, de 7 nieuwste blijven altijd)', () => {
     expect(left.sort()).toEqual(expected.sort());
     expect(readdirSync(target)).toContain('iets-anders.txt');
     expect(readdirSync(target).filter((f) => f.endsWith('.sha256'))).toHaveLength(7);
+  });
+});
+
+describe('opruimen na de tests (rollen zijn clusterbreed)', () => {
+  it('cleanupRoles haalt hz_e0_-rollen weg, ook met rechten op een database; andere rollen blijven', async () => {
+    const admin = await adminUrl();
+    const db = 'hz_e0_opruim_db';
+    await recreateDb(admin, db);
+    await sql(admin, 'CREATE ROLE hz_e0_opruim_a LOGIN');
+    await sql(admin, 'CREATE ROLE hz_e0_opruim_b NOLOGIN');
+    await sql(admin, `GRANT CONNECT ON DATABASE ${db} TO hz_e0_opruim_a`);
+    try {
+      expect(await cleanupRoles(admin, false, 'hz_e0_opruim_')).toEqual([]);
+      const left = await sql<{ rolname: string }>(
+        admin,
+        "select rolname from pg_roles where rolname like 'hz_e0_opruim%'",
+      );
+      expect(left).toEqual([]);
+      // De vaste rollen van het fundament en hz_dev blijven staan.
+      const kept = await sql<{ n: string }>(
+        admin,
+        "select count(*) as n from pg_roles where rolname in ('hz_dev', 'hz_app')",
+      );
+      expect(Number(kept[0]!.n)).toBe(2);
+      await expect(cleanupRoles(admin, false, 'hz_')).rejects.toThrow(/eigen rollen/);
+    } finally {
+      await dropDb(admin, db);
+    }
   });
 });

@@ -4,8 +4,8 @@
 #
 #   bash -n + shellcheck   alle scripts
 #   actionlint             de workflows in <git-root>/.github/workflows/workspace-*.yml
-#   caddy validate         edge-Caddyfile en web-Caddyfile (met een CSP uit de echte index.html)
-#   docker compose config  app, edge en ops met voorbeeldwaarden
+#   caddy validate         router, site-blok in een bestaande Caddy, eigen edge en web-Caddyfile (CSP uit index.html)
+#   docker compose config  app, ops, router (met elke proxyvariant) en edge met voorbeeldwaarden
 #   systemd-analyze        kalenders van de timers
 #   cloud-init             renderen met voorbeeldwaarden (het schema controleert de vitest-test)
 set -uo pipefail
@@ -13,6 +13,8 @@ infra="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app="$(dirname "$infra")"
 root="$(dirname "$app")"
 strict="${HZ_VALIDATE_STRICT:-0}"
+# Gereedschap uit 'go install' (actionlint, caddy) staat vaak niet in PATH.
+if command -v go >/dev/null 2>&1; then PATH="$PATH:$(go env GOPATH)/bin"; fi
 fails=0
 ok() { printf 'OK    %s\n' "$*"; }
 bad() {
@@ -43,14 +45,23 @@ trap 'rm -rf "$tmp"' EXIT
 
 if have caddy; then
   # shellcheck disable=SC2016 # een bcrypt-hash bevat letterlijke $-tekens
-  if HZ_DOMAIN=homezero.verveen.me HZ_TEST_DOMAIN=test.homezero.verveen.me HZ_ERRORS_DOMAIN=fouten.homezero.verveen.me \
-    HZ_ACME_EMAIL=ops@example.nl HZ_PREVIEW_USER=hz HZ_PREVIEW_HASH='$2a$14$Zkx19XLiW6VYouLHR5NmfOFU0z2GTNmpkT/5qqR7hx4IjWJPDhjvG' \
-    caddy validate --adapter caddyfile --config "$infra/caddy/Caddyfile" >"$tmp/edge.log" 2>&1; then
-    ok "caddy: edge"
-  else
-    bad "caddy: edge"
-    tail -n 5 "$tmp/edge.log"
-  fi
+  export HZ_DOMAIN=homezero.verveen.me HZ_TEST_DOMAIN=test.homezero.verveen.me HZ_ERRORS_DOMAIN=fouten.homezero.verveen.me \
+    HZ_ACME_EMAIL=ops@example.nl HZ_PREVIEW_USER=hz HZ_PREVIEW_HASH='$2a$14$Zkx19XLiW6VYouLHR5NmfOFU0z2GTNmpkT/5qqR7hx4IjWJPDhjvG'
+  cvalidate() { # naam config
+    if caddy validate --adapter caddyfile --config "$2" >"$tmp/caddy.log" 2>&1; then ok "caddy: $1"; else
+      bad "caddy: $1"
+      tail -n 5 "$tmp/caddy.log"
+    fi
+  }
+  cvalidate router "$infra/caddy/router/Caddyfile"
+  # Site-blok in een bestaande Caddy (zoals op de server van Robert): andere sites blijven, wij importeren erbij.
+  mkdir -p "$tmp/proxy"
+  HZ_PROXY_NETWORK=caddy bash "$infra/scripts/proxy-snippet.sh" caddy --out "$tmp/proxy" 2>/dev/null
+  printf '{\n\temail ops@example.nl\n\timport %s/hz-workspace.global.caddy\n}\n\nblog.example.nl {\n\trespond "blog"\n}\n\nimport %s/hz-workspace.caddy\n' \
+    "$tmp/proxy" "$tmp/proxy" >"$tmp/bestaand.Caddyfile"
+  cvalidate "site-blok in een bestaande Caddy" "$tmp/bestaand.Caddyfile"
+  sed "s#/etc/caddy/#$tmp/proxy/#" "$infra/caddy/edge/Caddyfile" >"$tmp/edge.Caddyfile"
+  cvalidate "eigen edge (HZW-082)" "$tmp/edge.Caddyfile"
   html="$app/apps/web/dist/index.html"
   [[ -f "$html" ]] || html="$app/apps/web/index.html"
   mkdir -p "$tmp/etc/caddy"
@@ -60,23 +71,30 @@ if have caddy; then
     bad "caddy: web"
     tail -n 5 "$tmp/web.log"
   fi
-  if caddy fmt "$infra/caddy/Caddyfile" | diff -q - "$infra/caddy/Caddyfile" >/dev/null &&
+  if caddy fmt "$infra/caddy/router/Caddyfile" | diff -q - "$infra/caddy/router/Caddyfile" >/dev/null &&
+    caddy fmt "$infra/caddy/edge/Caddyfile" | diff -q - "$infra/caddy/edge/Caddyfile" >/dev/null &&
+    caddy fmt "$tmp/proxy/hz-workspace.caddy" | diff -q - "$tmp/proxy/hz-workspace.caddy" >/dev/null &&
     caddy fmt "$infra/docker/web.Caddyfile" | diff -q - "$infra/docker/web.Caddyfile" >/dev/null; then
     ok "caddy fmt"
   else bad "caddy fmt: draai caddy fmt --overwrite"; fi
 else missing caddy; fi
 
 if have docker && docker compose version >/dev/null 2>&1; then
-  for f in app edge ops; do
-    if env HZ_INSTANCE=hz-prod HZ_PG_SUPERUSER_PASSWORD=x HZ_PG_MIGRATOR_PASSWORD=x HZ_PG_APP_PASSWORD=x HZ_PG_BACKUP_PASSWORD=x \
+  c="$infra/compose"
+  for files in "app.yaml" "ops.yaml" "router.yaml router-network.yaml" "router.yaml router-loopback.yaml" \
+    "router.yaml router-network.yaml router-traefik.yaml" "edge.yaml"; do
+    args=()
+    for f in $files; do args+=(-f "$c/$f"); done
+    if env HZ_INSTANCE=hz-workspace-prod HZ_PG_SUPERUSER_PASSWORD=x HZ_PG_MIGRATOR_PASSWORD=x HZ_PG_APP_PASSWORD=x HZ_PG_BACKUP_PASSWORD=x \
       HZ_REGISTRY=ghcr.io/homezerotech HZ_TAG=sha-0000000 HZ_APP_ENV_FILE=/dev/null HZ_ENVIRONMENT=production \
       HZ_PUBLIC_URL=https://homezero.verveen.me HZ_DOMAIN=homezero.verveen.me HZ_TEST_DOMAIN=test.homezero.verveen.me \
       HZ_ERRORS_DOMAIN=fouten.homezero.verveen.me HZ_ACME_EMAIL=ops@example.nl HZ_PREVIEW_HASH=x \
-      HZ_GLITCHTIP_DB_PASSWORD=x HZ_GLITCHTIP_SECRET_KEY=x \
-      docker compose -f "$infra/compose/$f.yaml" config -q 2>"$tmp/compose.log"; then
-      ok "compose: $f"
+      HZ_GLITCHTIP_DB_PASSWORD=x HZ_GLITCHTIP_SECRET_KEY=x HZ_PROXY_NETWORK=caddy HZ_ROUTER_PORT=18780 \
+      HZ_ROUTER_ASK_PORT=18781 'HZ_TEST_DOMAIN_RE=test\.homezero\.verveen\.me' \
+      docker compose "${args[@]}" config -q 2>"$tmp/compose.log"; then
+      ok "compose: $files"
     else
-      bad "compose: $f"
+      bad "compose: $files"
       cat "$tmp/compose.log"
     fi
   done
@@ -92,11 +110,14 @@ else missing systemd-analyze; fi
 
 key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBWwSuA/u/NZjfs+ajxeAO7ufsfPxULK4QoUEeQcdmjs voorbeeld"
 printf '%s\n' "$key" >"$tmp/k.pub"
+printf 'tskey-auth-voorbeeldvoorbeeld\n' >"$tmp/ts.key"
 if node "$infra/cloud-init/render.mjs" --domain homezero.verveen.me --acme-email ops@example.nl \
-  --registry ghcr.io/homezerotech --admin-keys "$tmp/k.pub" --deploy-key "$tmp/k.pub" --out "$tmp/ud.yaml" &&
-  head -n1 "$tmp/ud.yaml" | grep -qx '#cloud-config'; then
-  ok "cloud-init rendert"
+  --registry ghcr.io/homezerotech --admin-keys "$tmp/k.pub" --deploy-key "$tmp/k.pub" \
+  --tailscale-authkey-file "$tmp/ts.key" --out "$tmp/ud.yaml" &&
+  head -n1 "$tmp/ud.yaml" | grep -qx '#cloud-config' && (($(wc -c <"$tmp/ud.yaml") < 32768)); then
+  ok "cloud-init (optie HZW-082) rendert, onder 32 KiB"
 else bad "cloud-init"; fi
+
 
 if ((fails)); then
   printf '\n%d controle(s) rood\n' "$fails"

@@ -1,14 +1,23 @@
-# Eén instantie van de HomeZero Workspace (HZW-004/005): productie (hz-prod), test (hz-test) of een preview
-# per pull request (hz-pr-<nr>). deploy.sh en preview.sh starten dit bestand met:
+# Eén instantie van de HomeZero Workspace (HZW-004/005): productie (hz-workspace-prod), test (hz-workspace-test) of
+# een preview per pull request (hz-workspace-pr-<nr>). deploy.sh en preview.sh starten dit bestand met:
 #
-#   docker compose -p <instantie> --env-file /etc/hz/hz.env --env-file <secrets> -f compose/app.yaml up -d
+#   docker compose -p <instantie> --env-file /srv/hz-workspace/etc/hz.env --env-file <secrets> -f compose/app.yaml up -d
 #
-# Variabelen (interpolatie): uit /etc/hz/hz.env (niet geheim), de ontsleutelde secrets in /run/hz (geheim) en wat
-# deploy.sh zelf zet (HZ_INSTANCE, HZ_TAG, HZ_PUBLIC_URL, HZ_APP_ENV_FILE). api en worker krijgen alleen de
-# app-secrets (HZ_APP_ENV_FILE, zonder databasewachtwoorden); de database krijgt alleen zijn eigen wachtwoorden.
+# Variabelen (interpolatie): uit /srv/hz-workspace/etc/hz.env (niet geheim), de ontsleutelde secrets in
+# /run/hz-workspace (geheim) en wat deploy.sh zelf zet (HZ_INSTANCE, HZ_TAG, HZ_PUBLIC_URL, HZ_APP_ENV_FILE). api en
+# worker krijgen alleen de app-secrets (HZ_APP_ENV_FILE, zonder databasewachtwoorden); de database alleen de zijne.
+#
+# Naast andere projecten op dezelfde server (HZW-002): een eigen projectnaam (hz-workspace-*), een eigen netwerk
+# (<instantie>-net), een eigen volume, het label nl.homezero.workspace=1 op alles (de voorcheck herkent zo wat van
+# ons is), geen gepubliceerde poort en limieten op geheugen en CPU per service (instelbaar in hz.env, previews
+# krijgen kleinere waarden van preview.sh). Alleen web hangt ook aan hz-workspace-net, waar de router hem vindt.
 name: ${HZ_INSTANCE:?HZ_INSTANCE ontbreekt}
 
+x-labels: &labels
+  nl.homezero.workspace: '1'
+
 x-app-image: &app
+  labels: *labels
   restart: unless-stopped
   init: true
   read_only: true
@@ -22,7 +31,10 @@ x-app-image: &app
 services:
   db:
     image: postgres:16.10-alpine
+    labels: *labels
     restart: unless-stopped
+    mem_limit: ${HZ_MEM_DB:-1g}
+    cpus: ${HZ_CPUS_DB:-1.0}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${HZ_PG_SUPERUSER_PASSWORD:?}
@@ -51,6 +63,8 @@ services:
     <<: *app
     image: ${HZ_REGISTRY:?}/hz-api:${HZ_TAG:?}
     restart: 'no'
+    mem_limit: 256m
+    cpus: 0.5
     command: ['node', 'dist/migrate.js']
     environment:
       DATABASE_URL: postgres://hz_migrator:${HZ_PG_MIGRATOR_PASSWORD}@db:5432/hz
@@ -60,6 +74,8 @@ services:
   api:
     <<: *app
     image: ${HZ_REGISTRY}/hz-api:${HZ_TAG}
+    mem_limit: ${HZ_MEM_API:-512m}
+    cpus: ${HZ_CPUS_API:-1.0}
     env_file: ['${HZ_APP_ENV_FILE:?HZ_APP_ENV_FILE ontbreekt}']
     environment:
       NODE_ENV: ${HZ_NODE_ENV:-production}
@@ -89,6 +105,8 @@ services:
   worker:
     <<: *app
     image: ${HZ_REGISTRY}/hz-worker:${HZ_TAG}
+    mem_limit: ${HZ_MEM_WORKER:-512m}
+    cpus: ${HZ_CPUS_WORKER:-1.0}
     env_file: ['${HZ_APP_ENV_FILE}']
     environment:
       NODE_ENV: ${HZ_NODE_ENV:-production}
@@ -111,14 +129,16 @@ services:
   web:
     <<: *app
     image: ${HZ_REGISTRY}/hz-web:${HZ_TAG}
+    mem_limit: 128m
+    cpus: 0.5
     environment:
       HZ_API_UPSTREAM: api:8700
     depends_on:
       api: { condition: service_healthy }
     networks:
       default: {}
-      edge:
-        # De edge-proxy vindt elke instantie op <instantie>-web (zie infra/caddy/Caddyfile).
+      hzw:
+        # De router van de workspace vindt elke instantie op <instantie>-web (infra/caddy/router.Caddyfile).
         aliases: ['${HZ_INSTANCE}-web']
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/healthz']
@@ -127,10 +147,13 @@ services:
       retries: 3
 
 volumes:
-  db-data: {}
+  db-data:
+    labels: *labels
 
 networks:
-  default: {}
-  edge:
+  default:
+    name: ${HZ_INSTANCE}-net
+    labels: *labels
+  hzw:
     external: true
-    name: hz-edge
+    name: hz-workspace-net

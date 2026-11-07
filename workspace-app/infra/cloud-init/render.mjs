@@ -1,21 +1,27 @@
 #!/usr/bin/env node
 /**
- * Maakt de cloud-init (user-data) voor een nieuwe Hetzner Cloud-server (HZW-002, HZW-082).
- * Alles wat de server vóór de eerste uitrol nodig heeft staat hierin: gebruikers (hz voor beheerders, deploy voor
- * GitHub Actions), SSH alleen met sleutel, firewall 22/80/443, automatische beveiligingsupdates, Docker, de vaste
- * scripts (/opt/hz/bin) en de timers voor back-up, hersteltest en hartslag. De rest komt per uitrol uit de bundel.
+ * OPTIONEEL, alleen voor HZW-082 (verhuizen naar een eigen server). NIET de hoofdroute: de workspace draait op de
+ * bestaande server van Robert (in zijn tailnet, naast andere projecten), en die wordt klaargezet met
+ * infra/scripts/server-setup.sh na de voorcheck (RUNBOOK.md §2). Dit script maakt de cloud-init (user-data) voor
+ * een nieuwe, lege Hetzner Cloud-server die zich daarna precies zo gedraagt als de bestaande:
+ *
+ *   - Tailscale geïnstalleerd en aangemeld (eenmalige, getagde auth-key uit een bestand; niet in Git);
+ *   - ufw: standaard dicht, publiek alleen 443 (tcp en udp), SSH (22) alleen op tailscale0;
+ *   - SSH alleen met sleutel, geen root, geen wachtwoorden; automatische beveiligingsupdates; Docker;
+ *   - dan server-setup.sh --proxy eigen (eigen edge op 443, want er draait nog geen proxy): gebruiker hz-workspace,
+ *     /srv/hz-workspace, vaste scripts, timers, sleutels. Zelfde script als op de bestaande server.
  *
  *   node infra/cloud-init/render.mjs \
- *     --domain homezero.verveen.me --test-domain test.homezero.verveen.me \
- *     --acme-email robert@homezero.nl --registry ghcr.io/homezerotech \
- *     --admin-keys ~/.ssh/id_ed25519.pub --deploy-key deploy_ed25519.pub \
+ *     --domain proef.homezero.nl --acme-email robert@homezero.nl --registry ghcr.io/homezerotech \
+ *     --admin-keys ~/.ssh/id_ed25519.pub --deploy-key hz_deploy.pub --tailscale-authkey-file ts.key \
  *     --out user-data.yaml
  *
- * Een tweede server of een ander domein (verhuizen, HZW-082) is alleen andere waarden, geen codewijziging.
+ * Een tweede server of een ander domein is alleen andere waarden, geen codewijziging.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import { stringify } from 'yaml';
 
 const infra = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,9 +30,52 @@ const read = (p) => readFileSync(join(infra, p), 'utf8');
 const DOMAIN = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const SSH_KEY =
   /^(ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ssh-rsa|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/=]+( [^\n]*)?$/;
+const TS_KEY = /^tskey-auth-[A-Za-z0-9_-]{8,}$/;
 
 /** Docker-repository (officieel), sleutel op vingerafdruk zodat apt hem zelf controleert. */
 const DOCKER_KEY_FINGERPRINT = '9DC858229FC7DD38854AE2D88D81803C0EBFCD88';
+
+/** Map waarin cloud-init de installatiebestanden uitpakt; server-setup.sh installeert ze daarvandaan. */
+export const SETUP_DIR = '/root/hz-workspace-setup/infra';
+/** Wat server-setup.sh nodig heeft (scripts die het installeert of aanroept, en de systemd-units). */
+export const SETUP_FILES = [
+  'scripts/server-setup.sh',
+  'scripts/server-check.sh',
+  'scripts/lib.sh',
+  'scripts/hz-ssh-dispatch.sh',
+  'scripts/hz-run.sh',
+  ...['backup', 'heartbeat', 'hersteltest'].flatMap((u) => [
+    `systemd/hz-workspace-${u}.service`,
+    `systemd/hz-workspace-${u}.timer`,
+  ]),
+];
+
+/** Minimale ustar-tarball (vaste tijd en eigenaar, dus elke keer dezelfde bytes), gzip erover. */
+export function setupTarball() {
+  const blocks = [];
+  const field = (buf, off, len, str) => buf.write(str, off, len, 'ascii');
+  const octal = (n, len) => n.toString(8).padStart(len - 1, '0') + '\0';
+  for (const f of SETUP_FILES) {
+    const body = Buffer.from(read(f));
+    const h = Buffer.alloc(512);
+    field(h, 0, 100, f);
+    field(h, 100, 8, octal(f.startsWith('scripts/') ? 0o755 : 0o644, 8));
+    field(h, 108, 8, octal(0, 8));
+    field(h, 116, 8, octal(0, 8));
+    field(h, 124, 12, octal(body.length, 12));
+    field(h, 136, 12, octal(0, 12));
+    field(h, 148, 8, '        ');
+    field(h, 156, 1, '0');
+    field(h, 257, 6, 'ustar\0');
+    field(h, 263, 2, '00');
+    let sum = 0;
+    for (const b of h) sum += b;
+    field(h, 148, 8, octal(sum, 7) + ' ');
+    blocks.push(h, body, Buffer.alloc((512 - (body.length % 512)) % 512));
+  }
+  blocks.push(Buffer.alloc(1024));
+  return gzipSync(Buffer.concat(blocks), { level: 9 });
+}
 
 export function renderCloudInit(o) {
   for (const [k, v] of Object.entries({ domain: o.domain, testDomain: o.testDomain, errorsDomain: o.errorsDomain }))
@@ -38,35 +87,40 @@ export function renderCloudInit(o) {
   if (!adminKeys.length) throw new Error('minstens één SSH-sleutel van een beheerder nodig');
   for (const k of [...adminKeys, o.deployKey ?? ''])
     if (!SSH_KEY.test(k.trim())) throw new Error(`geen geldige publieke SSH-sleutel: ${k.slice(0, 30)}…`);
+  if (!TS_KEY.test((o.tailscaleAuthKey ?? '').trim()))
+    throw new Error('Tailscale-auth-key ontbreekt of is ongeldig (tskey-auth-…, eenmalig, getagd, uit een bestand)');
+  const hostname = o.hostname ?? 'hz-workspace';
+  if (!/^[a-z0-9-]{3,40}$/.test(hostname)) throw new Error('ongeldige hostnaam');
 
-  const hzEnv = [
-    '# Niet-geheime instellingen van deze server (cloud-init). Geheimen staan versleuteld in de repo (infra/secrets).',
-    `HZ_DOMAIN=${o.domain}`,
-    `HZ_TEST_DOMAIN=${o.testDomain}`,
-    `HZ_ERRORS_DOMAIN=${o.errorsDomain}`,
-    `HZ_ACME_EMAIL=${o.acmeEmail}`,
-    `HZ_REGISTRY=${o.registry}`,
-    'HZ_BACKUP_PREFIX=hz-prod',
-    '# Back-up en herstel via de db-container (de database heeft geen open poort).',
-    'HZ_PG_EXEC=docker exec -i hz-prod-db-1',
-    'HZ_RESTORE_ADMIN_DSN=postgresql:///postgres?user=postgres',
-    '',
-  ].join('\n');
-
-  const file = (path, content, permissions = '0644', owner = 'root:root', defer = false) => ({
-    path,
-    content,
-    permissions,
-    owner,
-    ...(defer ? { defer: true } : {}),
-  });
-  const units = ['hz-backup', 'hz-heartbeat', 'hz-hersteltest'].flatMap((u) => [
-    file(`/etc/systemd/system/${u}.service`, read(`systemd/${u}.service`)),
-    file(`/etc/systemd/system/${u}.timer`, read(`systemd/${u}.timer`)),
-  ]);
+  const file = (path, content, permissions = '0644', owner = 'root:root') => ({ path, content, permissions, owner });
+  // De installatiebestanden als één tar.gz (base64): Hetzner neemt user-data tot 32 KiB.
+  const bundle = {
+    path: '/root/hz-workspace-setup/infra.tar.gz',
+    encoding: 'b64',
+    content: setupTarball().toString('base64'),
+    permissions: '0600',
+    owner: 'root:root',
+  };
+  const setup = [
+    `${SETUP_DIR}/scripts/server-setup.sh`,
+    '--proxy',
+    'eigen',
+    '--domain',
+    o.domain,
+    '--test-domain',
+    o.testDomain,
+    '--errors-domain',
+    o.errorsDomain,
+    '--acme-email',
+    o.acmeEmail,
+    '--registry',
+    o.registry,
+    '--deploy-key',
+    '/root/hz-workspace-setup/deploy.pub',
+  ];
 
   const doc = {
-    hostname: o.hostname ?? 'hz-workspace',
+    hostname,
     timezone: 'Europe/Amsterdam',
     package_update: true,
     package_upgrade: true,
@@ -84,7 +138,6 @@ export function renderCloudInit(o) {
       'ca-certificates',
       'curl',
       'ufw',
-      'fail2ban',
       'unattended-upgrades',
       'apt-listchanges',
       'age',
@@ -99,31 +152,22 @@ export function renderCloudInit(o) {
     swap: { filename: '/swapfile', size: '2G', maxsize: '2G' },
     ssh_pwauth: false,
     disable_root: true,
-    groups: ['docker'],
     users: [
       {
         name: 'hz',
-        gecos: 'HomeZero beheer',
+        gecos: 'HomeZero beheer (alleen via het tailnet)',
         groups: ['sudo', 'docker'],
         shell: '/bin/bash',
         sudo: 'ALL=(ALL) NOPASSWD:ALL',
         lock_passwd: true,
         ssh_authorized_keys: adminKeys,
       },
-      {
-        name: 'deploy',
-        gecos: 'Uitrol vanuit GitHub Actions (alleen hz-ssh-dispatch)',
-        groups: ['docker'],
-        shell: '/bin/bash',
-        lock_passwd: true,
-        ssh_authorized_keys: [`restrict,command="/opt/hz/bin/hz-ssh-dispatch" ${o.deployKey.trim()}`],
-      },
     ],
     write_files: [
       file(
-        '/etc/ssh/sshd_config.d/10-hz.conf',
+        '/etc/ssh/sshd_config.d/10-hz-workspace.conf',
         [
-          '# HZW-002: alleen sleutels, geen root, geen wachtwoorden.',
+          '# hz-workspace (HZW-002): alleen sleutels, geen root, geen wachtwoorden. ufw laat 22 alleen toe op tailscale0.',
           'PasswordAuthentication no',
           'KbdInteractiveAuthentication no',
           'PermitRootLogin no',
@@ -131,7 +175,7 @@ export function renderCloudInit(o) {
           'PermitEmptyPasswords no',
           'MaxAuthTries 3',
           'X11Forwarding no',
-          'AllowUsers hz deploy',
+          'AllowUsers hz hz-workspace',
           '',
         ].join('\n'),
       ),
@@ -140,10 +184,10 @@ export function renderCloudInit(o) {
         'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\nAPT::Periodic::AutocleanInterval "7";\n',
       ),
       file(
-        '/etc/apt/apt.conf.d/52unattended-upgrades-hz',
+        '/etc/apt/apt.conf.d/52unattended-upgrades-hz-workspace',
         [
-          '// HZW-002: beveiligingsupdates automatisch, ook voor Docker; herstart als het moet om 04:00.',
-          'Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; };',
+          '// hz-workspace (HZW-002): beveiligingsupdates automatisch, ook Docker en Tailscale; herstart om 04:00 als het moet.',
+          'Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; "origin=Tailscale"; };',
           'Unattended-Upgrade::Automatic-Reboot "true";',
           'Unattended-Upgrade::Automatic-Reboot-Time "04:00";',
           'Unattended-Upgrade::Remove-Unused-Dependencies "true";',
@@ -163,59 +207,42 @@ export function renderCloudInit(o) {
           2,
         ) + '\n',
       ),
-      file('/etc/fail2ban/jail.d/sshd.local', '[sshd]\nenabled = true\nmaxretry = 5\nbantime = 1h\n'),
-      file('/etc/tmpfiles.d/hz.conf', 'd /run/hz 0700 deploy deploy -\n'),
-      file('/etc/hz/hz.env', hzEnv, '0640', 'root:deploy', true),
-      file('/etc/sudoers.d/hz-deploy', 'deploy ALL=(root) NOPASSWD: /opt/hz/bin/hz-server-check --markdown\n', '0440'),
-      file('/opt/hz/bin/lib.sh', read('scripts/lib.sh'), '0644'),
-      file('/opt/hz/bin/hz-ssh-dispatch', read('scripts/hz-ssh-dispatch.sh'), '0755'),
-      file('/opt/hz/bin/hz-run', read('scripts/hz-run.sh'), '0755'),
-      file('/opt/hz/bin/hz-server-check', read('scripts/server-check.sh'), '0755'),
-      ...units,
+      // Eenmalige auth-key: na 'tailscale up' meteen weg (runcmd).
+      file('/root/hz-workspace-setup/tailscale.key', `${o.tailscaleAuthKey.trim()}\n`, '0600'),
+      file('/root/hz-workspace-setup/deploy.pub', `${o.deployKey.trim()}\n`),
+      bundle,
     ],
     runcmd: [
       ['systemctl', 'restart', 'ssh'],
+      // Tailscale volgens de installatie-instructies voor Ubuntu 24.04 (pakketbron van Tailscale, ondertekend).
+      [
+        'sh',
+        '-c',
+        'curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list && apt-get update -q && apt-get install -y -q tailscale',
+      ],
+      ['systemctl', 'enable', '--now', 'tailscaled'],
+      [
+        'sh',
+        '-c',
+        `tailscale up --auth-key=file:/root/hz-workspace-setup/tailscale.key --hostname=${hostname} && shred -u /root/hz-workspace-setup/tailscale.key`,
+      ],
+      // Firewall: publiek alleen 443; SSH alleen over het tailnet.
       ['ufw', 'default', 'deny', 'incoming'],
       ['ufw', 'default', 'allow', 'outgoing'],
-      ['ufw', 'allow', '22/tcp'],
-      ['ufw', 'allow', '80/tcp'],
+      ['ufw', 'allow', 'in', 'on', 'tailscale0', 'to', 'any', 'port', '22', 'proto', 'tcp'],
       ['ufw', 'allow', '443/tcp'],
       ['ufw', 'allow', '443/udp'],
       ['ufw', '--force', 'enable'],
-      ['systemctl', 'enable', '--now', 'fail2ban', 'docker', 'unattended-upgrades'],
-      [
-        'sh',
-        '-c',
-        'mkdir -p /opt/hz/releases /opt/hz/env /opt/hz/edge /opt/hz/previews/allow /var/log/hz && chown -R deploy:deploy /opt/hz/releases /opt/hz/env /opt/hz/edge /opt/hz/previews /var/log/hz && systemd-tmpfiles --create /etc/tmpfiles.d/hz.conf',
-      ],
-      // Sleutel van de server voor de secrets (age): de geheime helft verlaat de server nooit.
-      [
-        'sh',
-        '-c',
-        'test -f /etc/hz/age.key || (umask 027 && age-keygen -o /etc/hz/age.key 2>/dev/null); chgrp deploy /etc/hz/age.key && chmod 0640 /etc/hz/age.key && age-keygen -y /etc/hz/age.key > /etc/hz/age.pub',
-      ],
-      // SSH-sleutel voor de Storage Box (back-ups).
-      [
-        'su',
-        '-s',
-        '/bin/sh',
-        'deploy',
-        '-c',
-        'test -f ~/.ssh/hz_backup_ed25519 || ssh-keygen -q -t ed25519 -N "" -C hz-backup -f ~/.ssh/hz_backup_ed25519',
-      ],
-      ['sh', '-c', 'docker network inspect hz-edge >/dev/null 2>&1 || docker network create hz-edge'],
-      ['systemctl', 'daemon-reload'],
-      ['systemctl', 'enable', '--now', 'hz-backup.timer', 'hz-heartbeat.timer', 'hz-hersteltest.timer'],
-      [
-        'sh',
-        '-c',
-        '{ echo "age (secrets, zet in infra/secrets/recipients.txt):"; cat /etc/hz/age.pub; echo "Storage Box (back-ups):"; cat /home/deploy/.ssh/hz_backup_ed25519.pub; } | tee /var/log/hz/sleutels.txt',
-      ],
+      ['systemctl', 'enable', '--now', 'docker', 'unattended-upgrades'],
+      ['sh', '-c', `mkdir -p ${SETUP_DIR} && tar -xzf /root/hz-workspace-setup/infra.tar.gz -C ${SETUP_DIR}`],
+      // Zelfde stap als op de bestaande server: voorcheck, gebruiker, map, scripts, timers, sleutels, netwerk.
+      setup,
     ],
-    final_message: 'HomeZero Workspace-server klaar na $UPTIME s. Publieke sleutels: /var/log/hz/sleutels.txt',
+    final_message:
+      'HomeZero Workspace-server klaar na $UPTIME s. Publieke sleutels: /srv/hz-workspace/log/sleutels.txt (via het tailnet)',
   };
 
-  return `#cloud-config\n# HomeZero Workspace (HZW-002). Gemaakt met infra/cloud-init/render.mjs; niet met de hand aanpassen.\n${stringify(doc, { lineWidth: 0 })}`;
+  return `#cloud-config\n# HomeZero Workspace, eigen server (optie voor HZW-082). Gemaakt met infra/cloud-init/render.mjs; niet met de hand aanpassen.\n${stringify(doc, { lineWidth: 0 })}`;
 }
 
 function args(argv) {
@@ -241,6 +268,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       registry: a.registry ?? process.env.HZ_REGISTRY,
       adminKeys: keysFile ? readFileSync(keysFile, 'utf8').split('\n') : [],
       deployKey: a['deploy-key'] ? readFileSync(a['deploy-key'], 'utf8') : '',
+      tailscaleAuthKey: a['tailscale-authkey-file'] ? readFileSync(a['tailscale-authkey-file'], 'utf8') : '',
       hostname: a.hostname,
     });
     if (a.out) writeFileSync(a.out, text);

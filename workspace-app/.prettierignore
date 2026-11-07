@@ -12,3 +12,4 @@ apps/web/dist/
 apps/api/dist/
 apps/worker/dist/
 infra/test/schemas/
+tools/lead/

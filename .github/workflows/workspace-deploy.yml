@@ -3,8 +3,10 @@
 #   release gepubliceerd     -> dezelfde images (al getest op test) krijgen de releasetag -> uitrol naar productie,
 #                               pas na goedkeuring in de omgeving 'production' (één klik: Review deployments, Approve)
 #   handmatig (dispatch)     -> een bestaande tag opnieuw uitrollen naar test of productie (ook: terugzetten)
-# De server krijgt alleen "deploy <omgeving> <tag>" via SSH (forced command hz-ssh-dispatch); het registry-token
-# is de GITHUB_TOKEN van deze run (alleen lezen) en verloopt na de job.
+# De runner komt als tijdelijke Tailscale-node (tag:ci, ephemeral) in het tailnet en geeft de server alleen
+# "deploy <omgeving> <tag>" via SSH op het tailnet-adres (ci-ssh.sh weigert een publiek adres; op de server mag de
+# sleutel alleen hz-ssh-dispatch). Nooit publieke SSH (HZW-004). Het registry-token is de GITHUB_TOKEN van deze run
+# (alleen lezen) en verloopt na de job.
 name: workspace-deploy
 on:
   push:
@@ -141,7 +143,13 @@ jobs:
       url: ${{ needs.meta.outputs.environment == 'production' && format('https://{0}', vars.HZ_DOMAIN) || format('https://{0}', vars.HZ_TEST_DOMAIN) }}
     steps:
       - uses: actions/checkout@v4
-      - name: SSH-sleutel van de uitrol
+      - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: SSH-sleutel van de uitrol (op de server alleen hz-ssh-dispatch)
         working-directory: .
         env:
           KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
@@ -150,8 +158,7 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-      - name: Uitrol op de server (met health-check en rollback)
-        working-directory: .
+      - name: Uitrol op de server via het tailnet (met voorcheck, health-check en rollback)
         env:
           HOST: ${{ vars.HZ_DEPLOY_HOST }}
           ENVIRONMENT: ${{ needs.meta.outputs.environment }}
@@ -159,7 +166,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           target="test"; [[ "$ENVIRONMENT" == production ]] && target="prod"
-          printf '%s\n' "$GH_TOKEN" | ssh -i ~/.ssh/hz_deploy -o BatchMode=yes "deploy@$HOST" "deploy $target $TAG"
+          printf '%s\n' "$GH_TOKEN" | bash infra/scripts/ci-ssh.sh "$HOST" deploy "$target" "$TAG"
       - name: Health-check en TLS van buitenaf
         env:
           DOMAIN: ${{ needs.meta.outputs.environment == 'production' && vars.HZ_DOMAIN || vars.HZ_TEST_DOMAIN }}

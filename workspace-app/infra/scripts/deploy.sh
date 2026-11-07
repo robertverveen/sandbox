@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Uitrol van productie of test op de server (HZW-004). Draait vanuit de uitrolbundel van de nieuwe versie
-# (/opt/hz/releases/<tag>/infra/scripts/deploy.sh); hz-ssh-dispatch start hem na het ophalen van de images.
+# (/srv/hz-workspace/releases/<tag>/infra/scripts/deploy.sh); hz-ssh-dispatch start hem na het ophalen van de images.
 #
 #   deploy.sh <prod|test> <tag>
 #
-# Stappen: secrets ontsleutelen (age) -> verplichte sleutels controleren -> edge-proxy bijwerken (herladen zonder
-# onderbreking) -> productie: eerst een back-up -> rollen gelijkzetten -> migraties -> containers vervangen en wachten tot ze gezond zijn ->
-# health-check via https -> vastleggen. Mislukt iets na het vervangen, dan gaat de vorige versie terug (rollback).
+# Stappen: voorcheck (botst niets met de andere projecten op de server, anders stoppen vóór er iets verandert) ->
+# secrets ontsleutelen (age) -> verplichte sleutels controleren -> router bijwerken (herladen zonder onderbreking)
+# en het site-blok voor de bestaande proxy bijhouden -> productie: eerst een back-up -> rollen gelijkzetten ->
+# migraties -> containers vervangen en wachten tot ze gezond zijn -> health-check via https -> vastleggen.
+# Mislukt iets na het vervangen, dan gaat de vorige versie terug (rollback).
 # Migraties gaan alleen vooruit: schrijf ze uitbreidend (eerst kolom erbij, later pas weg), zie RUNBOOK.md.
 set -euo pipefail
 HZ_SCRIPT=deploy
@@ -24,12 +26,20 @@ valid_tag "$tag" || die "ongeldige tag: $tag"
 load_env "$HZ_ETC/hz.env"
 : "${HZ_REGISTRY:?HZ_REGISTRY ontbreekt in $HZ_ETC/hz.env}"
 : "${HZ_DOMAIN:?}" "${HZ_TEST_DOMAIN:?}"
+proxy_env
+valid_proxy || die "HZ_PROXY_KIND/HZ_PROXY_NETWORK/HZ_ROUTER_PORT in $HZ_ETC/hz.env kloppen niet (zie server-setup.sh)"
 
-instance="hz-$env"
+instance="hz-workspace-$env"
 state="$HZ_ROOT/env/$env"
-mkdir -p "$state" "$HZ_RUN" "$HZ_LOG_DIR" "$HZ_ROOT/edge" "$HZ_ROOT/previews/allow"
+mkdir -p "$state" "$HZ_RUN" "$HZ_LOG_DIR" "$HZ_ROOT/router" "$HZ_ROOT/proxy" "$HZ_ROOT/edge" "$HZ_ROOT/previews/allow"
 exec 9>"$state/.lock"
 flock -n 9 || die "er loopt al een uitrol voor $env"
+
+# 0. Voorcheck: botst er iets met de andere projecten op deze server (poorten, netwerken, projecten, volumes,
+# mappen, domeinen), dan stopt de uitrol hier, vóór er iets aan de server verandert.
+if [[ "${HZ_SKIP_VOORCHECK:-0}" != 1 ]]; then
+  "$here/server-check.sh" --voorcheck >&2 || die "voorcheck rood: uitrol gestopt, er is niets gewijzigd (RUNBOOK.md §2)"
+fi
 
 # 1. Secrets: alleen in /run (tmpfs), alleen leesbaar voor deze gebruiker.
 umask 077
@@ -62,25 +72,48 @@ else
 fi
 
 compose_app() { "$HZ_DOCKER" compose -p "$instance" --env-file "$HZ_ETC/hz.env" --env-file "$secrets" -f "$infra/compose/app.yaml" "$@"; }
-compose_edge() { HZ_EDGE_DIR="$HZ_ROOT/edge" "$HZ_DOCKER" compose -p hz-edge --env-file "$HZ_ETC/hz.env" --env-file "$server_env" -f "$infra/compose/edge.yaml" "$@"; }
+mapfile -t router_args < <(router_files "$infra")
+compose_router() { HZ_ROUTER_DIR="$HZ_ROOT/router" HZ_PREVIEWS_ALLOW_DIR="$HZ_ROOT/previews/allow" "$HZ_DOCKER" compose -p hz-workspace-router --env-file "$HZ_ETC/hz.env" --env-file "$server_env" "${router_args[@]}" "$@"; }
+compose_edge() { HZ_EDGE_DIR="$HZ_ROOT/edge" "$HZ_DOCKER" compose -p hz-workspace-edge --env-file "$HZ_ETC/hz.env" -f "$infra/compose/edge.yaml" "$@"; }
 
-# 2. Edge-proxy: Caddyfile naar een vaste map, starten als hij nog niet draait, anders herladen.
-"$HZ_DOCKER" network inspect hz-edge >/dev/null 2>&1 || "$HZ_DOCKER" network create hz-edge >/dev/null
-edge_changed=0
-if ! cmp -s "$infra/caddy/Caddyfile" "$HZ_ROOT/edge/Caddyfile"; then
-  cat "$infra/caddy/Caddyfile" >"$HZ_ROOT/edge/Caddyfile"
-  chmod 644 "$HZ_ROOT/edge/Caddyfile"
-  edge_changed=1
+# Kopieer een bestand alleen als het anders is; zegt of het veranderde.
+sync_file() {
+  if cmp -s "$1" "$2"; then return 1; fi
+  cat "$1" >"$2"
+  chmod 644 "$2"
+}
+
+# 2. Router: Caddyfile naar een vaste map, starten als hij nog niet draait, anders herladen zonder onderbreking.
+ensure_net
+router_changed=0
+sync_file "$infra/caddy/router/Caddyfile" "$HZ_ROOT/router/Caddyfile" && router_changed=1
+compose_router up -d --wait --wait-timeout 60 || die "router start niet"
+if ((router_changed)); then
+  compose_router exec -T router caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || die "router herladen mislukt"
+  log "router herladen"
 fi
-compose_edge up -d --wait --wait-timeout 60 || die "edge-proxy start niet"
-if ((edge_changed)); then
-  compose_edge exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || die "Caddy herladen mislukt"
-  log "edge-proxy herladen"
-fi
+
+# Site-blok voor de bestaande proxy (Caddy) of de eigen edge. De bestaande proxy is van de andere projecten: deze
+# uitrol herlaadt hem niet zelf. Verandert het blok (alleen bij een ander domein), dan zegt de log het.
+case "$HZ_PROXY_KIND" in
+  caddy)
+    before="$(cat "$HZ_ROOT/proxy/hz-workspace.caddy" "$HZ_ROOT/proxy/hz-workspace.global.caddy" 2>/dev/null || true)"
+    "$here/proxy-snippet.sh" caddy --out "$HZ_ROOT/proxy" 2>/dev/null
+    if [[ -n "$before" && "$before" != "$(cat "$HZ_ROOT/proxy/hz-workspace.caddy" "$HZ_ROOT/proxy/hz-workspace.global.caddy")" ]]; then
+      log "LET OP: site-blok voor de proxy gewijzigd ($HZ_ROOT/proxy); valideer en herlaad de bestaande proxy (RUNBOOK.md §2)"
+    fi
+    ;;
+  eigen)
+    "$here/proxy-snippet.sh" caddy --out "$HZ_ROOT/edge" 2>/dev/null
+    sync_file "$infra/caddy/edge/Caddyfile" "$HZ_ROOT/edge/Caddyfile" || true
+    compose_edge up -d --wait --wait-timeout 60 || die "eigen edge start niet"
+    compose_edge exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || die "eigen edge herladen mislukt"
+    ;;
+esac
 
 # Foutregistratie (GlitchTip) hoort bij productie; alleen als de server-secrets ervoor er zijn.
 if [[ "$env" == prod ]] && grep -Eq '^HZ_GLITCHTIP_SECRET_KEY=.+' "$server_env"; then
-  "$HZ_DOCKER" compose -p hz-ops --env-file "$HZ_ETC/hz.env" --env-file "$server_env" -f "$infra/compose/ops.yaml" up -d --remove-orphans ||
+  "$HZ_DOCKER" compose -p hz-workspace-ops --env-file "$HZ_ETC/hz.env" --env-file "$server_env" -f "$infra/compose/ops.yaml" up -d --remove-orphans ||
     log "GlitchTip start niet; uitrol gaat door (zie RUNBOOK.md, Monitoring)"
 fi
 

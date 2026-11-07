@@ -1,15 +1,21 @@
 # Foutregistratie (HZW-007): GlitchTip 6, zelf gehost (Sentry-compatibel; geen extra verwerker voor de AVG).
 # Eén container (web en taken samen, bin/run-all-in-one.sh) plus een eigen Postgres; Valkey staat uit (VALKEY_URL
-# leeg), dat is genoeg voor een team van 15. Bereikbaar op https://{HZ_ERRORS_DOMAIN} via de edge.
+# leeg), dat is genoeg voor een team van 15. Bereikbaar op https://{HZ_ERRORS_DOMAIN} via de router.
 # Api en worker sturen fouten met HZ_ERROR_DSN (packages/ops).
 #
-#   docker compose -p hz-ops --env-file /etc/hz/hz.env --env-file /run/hz/ops.env -f compose/ops.yaml up -d
-name: hz-ops
+#   docker compose -p hz-workspace-ops --env-file .../hz.env --env-file /run/hz-workspace/server.env -f compose/ops.yaml up -d
+name: hz-workspace-ops
+
+x-labels: &labels
+  nl.homezero.workspace: '1'
 
 services:
   gt-db:
     image: postgres:16.10-alpine
+    labels: *labels
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
     command: ['postgres', '-c', 'max_locks_per_transaction=512']
     environment:
       POSTGRES_USER: glitchtip
@@ -28,7 +34,10 @@ services:
 
   glitchtip:
     image: glitchtip/glitchtip:6.2.6
+    labels: *labels
     restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
     command: ['./bin/run-all-in-one.sh']
     environment:
       DATABASE_URL: postgres://glitchtip:${HZ_GLITCHTIP_DB_PASSWORD}@gt-db:5432/glitchtip
@@ -47,8 +56,8 @@ services:
     volumes: [gt-uploads:/code/uploads]
     networks:
       default: {}
-      edge:
-        aliases: [hz-ops-glitchtip]
+      hzw:
+        aliases: [hz-workspace-ops-glitchtip]
     healthcheck:
       test: ['CMD', 'python3', 'healthcheck.py']
       interval: 30s
@@ -61,11 +70,15 @@ services:
       options: { max-size: 10m, max-file: '3' }
 
 volumes:
-  gt-db: {}
-  gt-uploads: {}
+  gt-db:
+    labels: *labels
+  gt-uploads:
+    labels: *labels
 
 networks:
-  default: {}
-  edge:
+  default:
+    name: hz-workspace-ops-net
+    labels: *labels
+  hzw:
     external: true
-    name: hz-edge
+    name: hz-workspace-net

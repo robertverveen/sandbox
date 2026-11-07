@@ -1,36 +1,38 @@
-# Edge-proxy voor de hele server (HZW-003): Caddy met automatische TLS op 80/443, routeert naar de instanties op
-# het netwerk hz-edge. Eén per server; deploy.sh start of herlaadt hem bij elke uitrol.
+# Eigen edge-proxy, ALLEEN als er op de server nog geen reverse proxy draait (HZ_PROXY_KIND=eigen in hz.env): een
+# eigen server bij een verhuizing (HZW-082, cloud-init). Op de bestaande server van Robert draait er al een proxy;
+# daar komt alleen een site-blok of labels bij (infra/scripts/proxy-snippet.sh) en wordt dit bestand niet gebruikt.
+# De voorcheck (server-check.sh --voorcheck) weigert deze edge als 443 al bezet is.
 #
-#   docker compose -p hz-edge --env-file /etc/hz/hz.env --env-file /run/hz/edge.env -f compose/edge.yaml up -d
-name: hz-edge
+# Caddy met automatische TLS op 443 (TLS-ALPN-challenge; poort 80 blijft dicht: publiek alleen 443). Dezelfde
+# site-blokken als bij een bestaande Caddy (proxy-snippet.sh caddy), alles naar de router op hz-workspace-net.
+#
+#   docker compose -p hz-workspace-edge --env-file .../hz.env -f compose/edge.yaml up -d
+name: hz-workspace-edge
 
 services:
   caddy:
     image: caddy:2.10.2-alpine
+    labels:
+      nl.homezero.workspace: '1'
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
     ports:
-      - '80:80'
       - '443:443'
       - '443:443/udp'
     environment:
-      HZ_DOMAIN: ${HZ_DOMAIN:?HZ_DOMAIN ontbreekt in /etc/hz/hz.env}
-      HZ_TEST_DOMAIN: ${HZ_TEST_DOMAIN:?}
-      HZ_ERRORS_DOMAIN: ${HZ_ERRORS_DOMAIN:?}
       HZ_ACME_EMAIL: ${HZ_ACME_EMAIL:?}
-      HZ_PREVIEW_USER: ${HZ_PREVIEW_USER:-hz}
-      HZ_PREVIEW_HASH: ${HZ_PREVIEW_HASH:?bcrypt-hash van het previewwachtwoord (caddy hash-password)}
     volumes:
-      # Een vaste map (deploy.sh kopieert de Caddyfile uit de uitrolbundel erheen en herlaadt zonder onderbreking).
-      - ${HZ_EDGE_DIR:-../caddy}:/etc/caddy:ro
-      - ${HZ_PREVIEWS_ALLOW_DIR:-/opt/hz/previews/allow}:/srv/previews:ro
+      # Vaste map met de Caddyfile en de gegenereerde site-blokken (deploy.sh, proxy-snippet.sh).
+      - ${HZ_EDGE_DIR:-/srv/hz-workspace/edge}:/etc/caddy:ro
       - caddy-data:/data
       - caddy-config:/config
-    networks: [edge]
+    networks: [hzw]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
     healthcheck:
-      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8082/healthz']
       interval: 15s
       timeout: 3s
       retries: 3
@@ -39,11 +41,15 @@ services:
       options: { max-size: 20m, max-file: '5' }
 
 volumes:
-  # Certificaten en ACME-account: verliezen is niet erg (Caddy vraagt opnieuw aan), maar zit wel in de back-up.
-  caddy-data: {}
-  caddy-config: {}
+  # Certificaten en ACME-account: verliezen is niet erg (Caddy vraagt opnieuw aan).
+  caddy-data:
+    labels:
+      nl.homezero.workspace: '1'
+  caddy-config:
+    labels:
+      nl.homezero.workspace: '1'
 
 networks:
-  edge:
+  hzw:
     external: true
-    name: hz-edge
+    name: hz-workspace-net

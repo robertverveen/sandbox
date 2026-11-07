@@ -2,16 +2,16 @@
 # Start een beheerscript uit de uitrolbundel van productie, met de server-secrets in de omgeving (alleen voor dit
 # proces). Voor de systemd-timers (back-up, hersteltest, hartslag), en voor beheerders:
 #
-#   /opt/hz/bin/hz-run backup.sh --label handmatig
-#   /opt/hz/bin/hz-run hersteltest.sh
-#   /opt/hz/bin/hz-run heartbeat.sh
+#   /srv/hz-workspace/bin/hz-run backup.sh --label handmatig
+#   /srv/hz-workspace/bin/hz-run hersteltest.sh
+#   /srv/hz-workspace/bin/hz-run heartbeat.sh
 #
-# Wordt door cloud-init op /opt/hz/bin/hz-run gezet (root, niet schrijfbaar voor deploy).
+# Wordt door server-setup.sh op /srv/hz-workspace/bin/hz-run gezet (root, niet schrijfbaar voor hz-workspace).
 set -euo pipefail
 HZ_SCRIPT=hz-run
-HZ_ROOT="${HZ_ROOT:-/opt/hz}"
-HZ_ETC="${HZ_ETC:-/etc/hz}"
-HZ_RUN="${HZ_RUN:-/run/hz}"
+HZ_ROOT="${HZ_ROOT:-/srv/hz-workspace}"
+HZ_ETC="${HZ_ETC:-$HZ_ROOT/etc}"
+HZ_RUN="${HZ_RUN:-/run/hz-workspace}"
 # shellcheck source=lib.sh
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib.sh"
 

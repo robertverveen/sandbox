@@ -1,0 +1,20 @@
+# De bestaande reverse proxy is Traefik (ook de proxy van Coolify): geen site-blok maar labels op de router.
+# Traefik leest ze zelf uit Docker; aan de configuratie van Traefik verandert niets. Entrypoint en certresolver
+# volgen wat de voorcheck aantreft (Coolify: entrypoint https, resolver letsencrypt).
+# Previews (pr-<nr>.{HZ_TEST_DOMAIN}) vragen een wildcard-certificaat, dus een resolver met DNS-challenge
+# (HZ_TRAEFIK_WILDCARD_RESOLVER); zonder die resolver werken productie en test wel, previews niet.
+services:
+  router:
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: ${HZ_PROXY_NETWORK:?}
+      traefik.http.routers.hz-workspace.rule: Host(`${HZ_DOMAIN}`) || Host(`${HZ_TEST_DOMAIN}`) || Host(`${HZ_ERRORS_DOMAIN}`)
+      traefik.http.routers.hz-workspace.entrypoints: ${HZ_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.hz-workspace.tls.certresolver: ${HZ_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.hz-workspace.service: hz-workspace
+      traefik.http.routers.hz-workspace-pr.rule: HostRegexp(`^pr-[0-9]{1,6}\.${HZ_TEST_DOMAIN_RE:?}$$`)
+      traefik.http.routers.hz-workspace-pr.entrypoints: ${HZ_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.hz-workspace-pr.tls.certresolver: ${HZ_TRAEFIK_WILDCARD_RESOLVER:-letsencrypt}
+      traefik.http.routers.hz-workspace-pr.tls.domains[0].main: '*.${HZ_TEST_DOMAIN}'
+      traefik.http.routers.hz-workspace-pr.service: hz-workspace
+      traefik.http.services.hz-workspace.loadbalancer.server.port: '8080'

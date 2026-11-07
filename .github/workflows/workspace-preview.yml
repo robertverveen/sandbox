@@ -2,6 +2,7 @@
 #   PR geopend of bijgewerkt -> images bouwen (tag pr-<nr>-<commit>) -> preview starten -> link als PR-commentaar
 #   PR gesloten of gemerged  -> preview weg (containers, database, certificaat-aanmelding) en de PR-images weg
 # PR's uit een fork krijgen geen preview (geen secrets naar code van buiten).
+# De runner komt als tijdelijke Tailscale-node (tag:ci) bij de server; SSH alleen op het tailnet-adres (ci-ssh.sh).
 name: workspace-preview
 on:
   pull_request:
@@ -74,7 +75,16 @@ jobs:
       name: preview
       url: https://pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}
     steps:
-      - name: SSH-sleutel van de uitrol
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: workspace-app/infra/scripts
+      - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: SSH-sleutel van de uitrol (op de server alleen hz-ssh-dispatch)
         env:
           KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
@@ -82,12 +92,12 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-      - name: Preview starten
+      - name: Preview starten via het tailnet
         env:
           HOST: ${{ vars.HZ_DEPLOY_HOST }}
           TAG: ${{ needs.meta.outputs.tag }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s\n' "$GH_TOKEN" | ssh -i ~/.ssh/hz_deploy -o BatchMode=yes "deploy@$HOST" "preview up $PR $TAG"
+        run: printf '%s\n' "$GH_TOKEN" | bash workspace-app/infra/scripts/ci-ssh.sh "$HOST" preview up "$PR" "$TAG"
       - name: Wachtwoord gevraagd en certificaat geldig
         env:
           DOMAIN: pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}
@@ -116,7 +126,16 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: SSH-sleutel van de uitrol
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: workspace-app/infra/scripts
+      - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: SSH-sleutel van de uitrol (op de server alleen hz-ssh-dispatch)
         env:
           KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
@@ -124,16 +143,16 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-      - name: Preview opruimen
+      - name: Preview opruimen via het tailnet
         env:
           HOST: ${{ vars.HZ_DEPLOY_HOST }}
-        run: ssh -i ~/.ssh/hz_deploy -o BatchMode=yes "deploy@$HOST" "preview down $PR" </dev/null
+        run: bash workspace-app/infra/scripts/ci-ssh.sh "$HOST" preview down "$PR" </dev/null
       - name: Preview is weg
         env:
           DOMAIN: pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}
         run: |
           code="$(curl -s -o /dev/null -w '%{http_code}' -m 10 "https://$DOMAIN/" || true)"
-          # Zonder aanmelding krijgt Caddy geen certificaat (TLS-fout, 000) of antwoordt 'Onbekende preview' (404).
+          # Zonder aanmelding krijgt de proxy geen certificaat (TLS-fout, 000) of antwoordt de router 404.
           [[ "$code" == 000 || "$code" == 404 || "$code" == 502 ]] || { echo "::error::preview antwoordt nog ($code)"; exit 1; }
       - name: PR-images weg uit de registry
         continue-on-error: true

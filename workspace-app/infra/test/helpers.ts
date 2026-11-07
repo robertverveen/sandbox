@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { inject } from 'vitest';
 
 export const INFRA = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const APP = resolve(INFRA, '..');
@@ -121,10 +122,12 @@ export function sshPublicKey(comment = 'test@hz'): string {
 /**
  * Nep-docker: logt elke aanroep (argumenten en de belangrijkste omgevingsvariabelen) in $FAKE_DOCKER_LOG en doet
  * alsof alles lukt. Gedrag is te sturen met omgevingsvariabelen:
- *   FAKE_DOCKER_FAIL_UP_TAG   'compose up' van een instantie (niet de edge) faalt als HZ_TAG gelijk is
+ *   FAKE_DOCKER_FAIL_UP_TAG   'compose up' van een instantie (niet router of edge) faalt als HZ_TAG gelijk is
  *   FAKE_DOCKER_HEALTH        uitvoer van 'compose exec web wget ... /api/health'
  *   FAKE_DOCKER_UNHEALTHY     uitvoer van 'ps --filter health=unhealthy'
  *   FAKE_DOCKER_BUNDLE        map die 'docker cp <cid>:/app/bundle/.' kopieert
+ *   FAKE_DOCKER_PS, FAKE_DOCKER_NETWORKS, FAKE_DOCKER_VOLUMES   bestanden met de uitvoer van 'ps -a', 'network ls',
+ *                             'volume ls' (tab-gescheiden, zoals server-check.sh ze opvraagt)
  */
 export function fakeDocker(dir: string): { bin: string; log: string; calls(): string[] } {
   mkdirSync(dir, { recursive: true });
@@ -143,7 +146,10 @@ case "$args" in
   *" create "*) echo cid123; exit 0 ;;
   *" cp cid123:/app/bundle/. "*) dest="\${@: -1}"; cp -R "\${FAKE_DOCKER_BUNDLE:?}/." "$dest"; exit 0 ;;
   *" ps --filter health=unhealthy "*) printf '%s' "\${FAKE_DOCKER_UNHEALTHY:-}"; exit 0 ;;
-  *" compose "*" up "*) [[ "$args" != *" -p hz-edge "* && -n "\${FAKE_DOCKER_FAIL_UP_TAG:-}" && "\${HZ_TAG:-}" == "\${FAKE_DOCKER_FAIL_UP_TAG}" ]] && { echo "container unhealthy" >&2; exit 1; }; exit 0 ;;
+  *" ps -a --format "*) [[ -n "\${FAKE_DOCKER_PS:-}" ]] && cat "$FAKE_DOCKER_PS"; exit 0 ;;
+  *" network ls --format "*) [[ -n "\${FAKE_DOCKER_NETWORKS:-}" ]] && cat "$FAKE_DOCKER_NETWORKS"; exit 0 ;;
+  *" volume ls --format "*) [[ -n "\${FAKE_DOCKER_VOLUMES:-}" ]] && cat "$FAKE_DOCKER_VOLUMES"; exit 0 ;;
+  *" compose "*" up "*) [[ "$args" != *" -p hz-workspace-router "* && "$args" != *" -p hz-workspace-edge "* && -n "\${FAKE_DOCKER_FAIL_UP_TAG:-}" && "\${HZ_TAG:-}" == "\${FAKE_DOCKER_FAIL_UP_TAG}" ]] && { echo "container unhealthy" >&2; exit 1; }; exit 0 ;;
   *" compose "*" exec "*"wget"*) printf '%s' "\${FAKE_DOCKER_HEALTH:-{\\"ok\\":true,\\"db\\":\\"ok\\"}}"; exit 0 ;;
   *) exit 0 ;;
 esac
@@ -198,40 +204,15 @@ export async function httpServer(
 
 export const DEV_URL = 'postgres://hz_dev:hz_dev@localhost:5432/postgres';
 
-async function isSuper(url: string): Promise<boolean> {
-  const c = new pg.Client({ connectionString: url, connectionTimeoutMillis: 3000 });
-  try {
-    await c.connect();
-    const r = await c.query<{ rolsuper: boolean }>('select rolsuper from pg_roles where rolname = current_user');
-    return !!r.rows[0]?.rolsuper;
-  } catch {
-    return false;
-  } finally {
-    await c.end().catch(() => {});
-  }
-}
-
 /**
  * Een superuser-verbinding (database 'postgres') voor wat alleen een beheerder mag: BYPASSRLS-rollen maken en als
- * rol herstellen. Volgorde: HZ_PG_ADMIN_URL; in CI postgres met PGPASSWORD; lokaal als root via `su postgres` een
- * eigen testbeheerder hz_e0_admin. Lukt het niet, dan faalt de test met uitleg (geen stille skip).
+ * rol herstellen. Komt uit test/global-setup.ts (HZ_PG_ADMIN_URL, in CI postgres met PGPASSWORD, of lokaal als root
+ * een tijdelijke hz_e0_admin met een willekeurig wachtwoord, die na de run weer weg is, net als alle andere
+ * hz_e0_*-rollen). Lukt het niet, dan faalt de test met uitleg (geen stille skip).
  */
 export async function adminUrl(): Promise<string> {
-  if (process.env.HZ_PG_ADMIN_URL) return process.env.HZ_PG_ADMIN_URL;
-  if (process.env.PGPASSWORD) {
-    const u = `postgres://postgres:${encodeURIComponent(process.env.PGPASSWORD)}@localhost:5432/postgres`;
-    if (await isSuper(u)) return u;
-  }
-  const local = 'postgres://hz_e0_admin:hz_e0_admin@localhost:5432/postgres';
-  if (await isSuper(local)) return local;
-  if (process.getuid?.() === 0) {
-    const sql =
-      "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='hz_e0_admin') THEN CREATE ROLE hz_e0_admin LOGIN SUPERUSER PASSWORD 'hz_e0_admin'; END IF; END $$";
-    const r = spawnSync('su', ['postgres', '-s', '/bin/sh', '-c', `psql -X -q -c "${sql.replace(/\$/g, '\\$')}"`], {
-      encoding: 'utf8',
-    });
-    if (r.status === 0 && (await isSuper(local))) return local;
-  }
+  const url = inject('hzAdminUrl');
+  if (url) return url;
   throw new Error(
     'Geen Postgres-superuser voor de infra-tests: zet HZ_PG_ADMIN_URL=postgres://<superuser>:...@localhost:5432/postgres',
   );

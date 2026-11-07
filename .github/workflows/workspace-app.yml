@@ -47,9 +47,14 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
-      # Infra-tests (stuk E0): back-up/herstel versleutelen met age, scripts door shellcheck.
-      - name: Infra-gereedschap (age, shellcheck)
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends age shellcheck
+      # Infra-tests (stuk E0): back-up/herstel versleutelen met age, scripts door shellcheck, router en site-blok
+      # van de proxy echt in Caddy.
+      - name: Infra-gereedschap (age, shellcheck, caddy)
+        env:
+          CADDY_VERSION: 2.10.2
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends age shellcheck
+          curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin caddy
       - run: pnpm test
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium

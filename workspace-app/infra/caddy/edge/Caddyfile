@@ -1,0 +1,17 @@
+# Eigen edge (HZ_PROXY_KIND=eigen, compose/edge.yaml): alleen op een server zonder bestaande reverse proxy, zoals
+# een eigen server bij een verhuizing (HZW-082). Precies dezelfde site-blokken als bij een bestaande Caddy: deploy.sh
+# zet de uitvoer van `proxy-snippet.sh caddy --out` naast dit bestand. TLS via de TLS-ALPN-challenge op 443; poort 80
+# blijft dicht (publiek alleen 443).
+{
+	email {$HZ_ACME_EMAIL}
+	admin localhost:2019
+	import /etc/caddy/hz-workspace.global.caddy
+}
+
+import /etc/caddy/hz-workspace.caddy
+
+# Healthcheck van de edge zelf (Docker), alleen binnen de container.
+http://127.0.0.1:8082 {
+	bind 127.0.0.1
+	respond /healthz "ok" 200
+}

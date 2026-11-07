@@ -1,0 +1,57 @@
+# Router van de workspace (HZW-003, HZW-005): één ingang voor alles van de workspace, zonder TLS en zonder
+# publieke poort. De reverse proxy die al op de server draait (Caddy of Traefik, voor de andere projecten) doet TLS
+# op 443 en stuurt alleen onze domeinen hierheen; de router verdeelt ze over de instanties op hz-workspace-net:
+#
+#   {HZ_DOMAIN}                 -> hz-workspace-prod-web:8080
+#   {HZ_TEST_DOMAIN}            -> hz-workspace-test-web:8080
+#   pr-<nr>.{HZ_TEST_DOMAIN}    -> hz-workspace-pr-<nr>-web:8080   (alleen met het previewwachtwoord)
+#   {HZ_ERRORS_DOMAIN}          -> GlitchTip (hz-workspace-ops)
+#
+# Zo hoeft de bestaande proxy maar één regel te kennen (infra/scripts/proxy-snippet.sh) en raakt een nieuwe preview
+# of instantie zijn configuratie nooit. Hoe de proxy de router bereikt, kiest deploy.sh met een tweede bestand:
+#   router-network.yaml    proxy in Docker: de router (alleen de router) doet mee in het netwerk van de proxy
+#   router-loopback.yaml   proxy op de host: de router luistert alleen op 127.0.0.1
+#   router-traefik.yaml    proxy is Traefik (ook Coolify): labels in plaats van een site-blok
+#
+#   docker compose -p hz-workspace-router --env-file .../hz.env --env-file /run/hz-workspace/server.env \
+#     -f compose/router.yaml -f compose/router-network.yaml up -d
+name: hz-workspace-router
+
+services:
+  router:
+    image: caddy:2.10.2-alpine
+    labels:
+      nl.homezero.workspace: '1'
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+    read_only: true
+    tmpfs: [/data, /config]
+    environment:
+      HZ_DOMAIN: ${HZ_DOMAIN:?HZ_DOMAIN ontbreekt in hz.env}
+      HZ_TEST_DOMAIN: ${HZ_TEST_DOMAIN:?}
+      HZ_ERRORS_DOMAIN: ${HZ_ERRORS_DOMAIN:?}
+      HZ_PREVIEW_USER: ${HZ_PREVIEW_USER:-hz}
+      HZ_PREVIEW_HASH: ${HZ_PREVIEW_HASH:?bcrypt-hash van het previewwachtwoord (caddy hash-password)}
+    volumes:
+      # Vaste map: deploy.sh kopieert router.Caddyfile uit de uitrolbundel erheen en herlaadt zonder onderbreking.
+      - ${HZ_ROUTER_DIR:-../caddy/router}:/etc/caddy:ro
+      - ${HZ_PREVIEWS_ALLOW_DIR:-/srv/hz-workspace/previews/allow}:/srv/previews:ro
+    networks:
+      hzw:
+        aliases: [hz-workspace-router]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: local
+      options: { max-size: 20m, max-file: '5' }
+
+networks:
+  hzw:
+    external: true
+    name: hz-workspace-net

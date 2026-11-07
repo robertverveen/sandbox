@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Back-up van de database (HZW-008): pg_dump (custom-formaat) -> versleuteld met age -> Hetzner Storage Box.
-# Nachtelijk via systemd (hz-backup.timer, 02:30), en vóór elke productie-uitrol (deploy.sh). 30 dagen bewaren.
+# Nachtelijk via systemd (hz-workspace-backup.timer, 02:30), en vóór elke productie-uitrol (deploy.sh). 30 dagen bewaren.
 #
 #   backup.sh [--label nightly|pre-deploy|handmatig]
 #
-# Omgeving (op de server uit /etc/hz/hz.env en server.env.age, via hz-run):
+# Omgeving (op de server uit /srv/hz-workspace/etc/hz.env en server.env.age, via hz-run):
 #   HZ_BACKUP_TARGET       sftp://<gebruiker>@<host>:23/<map>   of een lokale map (tests, proefverhuizing)
 #   HZ_BACKUP_RECIPIENTS   age-ontvangers (bestand); standaard infra/secrets/recipients.txt (server + beheerders)
 #   HZ_BACKUP_DSN          connection string voor pg_dump; zonder: -U $HZ_BACKUP_PGUSER -d $HZ_BACKUP_DB
-#   HZ_PG_EXEC             voorvoegsel voor pg_dump, bijv. "docker exec -i hz-prod-db-1" (geen open databasepoort)
-#   HZ_BACKUP_PREFIX       naam vooraan het bestand (standaard hz-prod)
+#   HZ_PG_EXEC             voorvoegsel voor pg_dump, bijv. "docker exec -i hz-workspace-prod-db-1" (geen open databasepoort)
+#   HZ_BACKUP_PREFIX       naam vooraan het bestand (standaard hz-workspace-prod)
 #   HZ_BACKUP_KEEP_DAYS    bewaartermijn in dagen (standaard 30); de 7 nieuwste blijven altijd
 #   HZ_BACKUP_SSH_KEY      sleutel voor de Storage Box (standaard ~/.ssh/hz_backup_ed25519)
 #   HZ_BACKUP_PING_URL     uptime-check: ping bij succes, /fail bij een fout
@@ -36,7 +36,7 @@ done
 
 target="${HZ_BACKUP_TARGET:?HZ_BACKUP_TARGET ontbreekt}"
 recipients="${HZ_BACKUP_RECIPIENTS:-$here/../secrets/recipients.txt}"
-prefix="${HZ_BACKUP_PREFIX:-hz-prod}"
+prefix="${HZ_BACKUP_PREFIX:-hz-workspace-prod}"
 keep_days="${HZ_BACKUP_KEEP_DAYS:-30}"
 ssh_key="${HZ_BACKUP_SSH_KEY:-$HOME/.ssh/hz_backup_ed25519}"
 [[ "$prefix" =~ ^[a-z0-9-]+$ ]] || die "ongeldig voorvoegsel"

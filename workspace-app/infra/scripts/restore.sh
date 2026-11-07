@@ -10,11 +10,11 @@
 #
 # Omgeving:
 #   HZ_BACKUP_TARGET       waar de back-ups staan (sftp://... of een lokale map), voor 'latest' of een bestandsnaam
-#   HZ_BACKUP_PREFIX       standaard hz-prod
-#   HZ_AGE_IDENTITY        age-sleutel die mag ontsleutelen (server: /etc/hz/age.key)
+#   HZ_BACKUP_PREFIX       standaard hz-workspace-prod
+#   HZ_AGE_IDENTITY        age-sleutel die mag ontsleutelen (server: /srv/hz-workspace/etc/age.key)
 #   HZ_RESTORE_ADMIN_DSN   verbinding met rechten om databases te maken, naar de database 'postgres'
 #                          (server: postgresql:///postgres?user=postgres binnen de db-container)
-#   HZ_PG_EXEC             voorvoegsel voor psql/pg_restore, bijv. "docker exec -i hz-prod-db-1"
+#   HZ_PG_EXEC             voorvoegsel voor psql/pg_restore, bijv. "docker exec -i hz-workspace-prod-db-1"
 set -euo pipefail
 HZ_SCRIPT=restore
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -47,7 +47,7 @@ done
 [[ "$db" =~ ^[a-z_][a-z0-9_]*$ ]] || die "ongeldige databasenaam: $db"
 [[ -z "$role" || "$role" =~ ^[a-z_][a-z0-9_]*$ ]] || die "ongeldige rol"
 admin_dsn="${HZ_RESTORE_ADMIN_DSN:?HZ_RESTORE_ADMIN_DSN ontbreekt}"
-prefix="${HZ_BACKUP_PREFIX:-hz-prod}"
+prefix="${HZ_BACKUP_PREFIX:-hz-workspace-prod}"
 read -r -a exec_prefix <<<"${HZ_PG_EXEC:-}"
 pgx() { "${exec_prefix[@]}" "$@"; }
 

@@ -1,3 +1,4 @@
+# hz-workspace: eigen unit van de HomeZero Workspace (server-setup.sh); botst niet met andere projecten.
 [Unit]
 Description=HomeZero Workspace: maandelijkse hersteltest, eerste zondag om 04:30 (HZW-008)
 

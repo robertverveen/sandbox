@@ -6,7 +6,7 @@
 #   infra/secrets/recipients.txt       publieke age-sleutels die mogen ontsleutelen: de server en de beheerders
 #
 # Opdrachten (identiteit: HZ_AGE_IDENTITY, standaard ~/.config/hz/age.key op een beheerderslaptop):
-#   secrets.sh keygen <pad>                maak een age-sleutel (server: /etc/hz/age.key) en print de publieke sleutel
+#   secrets.sh keygen <pad>                maak een age-sleutel (server: /srv/hz-workspace/etc/age.key) en print de publieke sleutel
 #   secrets.sh gen <omgeving>              vul alle machine-geheimen (wachtwoorden, HZ_TOKEN_KEY, ...) die nog ontbreken
 #   secrets.sh set <omgeving> <SLEUTEL>    zet één waarde, gelezen van stdin (komt nooit in de shell-geschiedenis)
 #   secrets.sh unset <omgeving> <SLEUTEL>

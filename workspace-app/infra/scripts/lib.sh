@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # Gedeelde hulpfuncties voor de beheerscripts. Wordt gesourced, niet uitgevoerd.
 # Alles is via omgevingsvariabelen te overschrijven, zodat de tests de scripts echt kunnen draaien met nep-docker,
-# een lokale Postgres en tijdelijke mappen in plaats van /opt/hz en /etc/hz.
+# een lokale Postgres en tijdelijke mappen in plaats van /srv/hz-workspace.
+#
+# De workspace draait op een bestaande server naast andere projecten (HZW-002, plaat keuze 01). Alles van de
+# workspace heeft daarom één eigen naam, hz-workspace: gebruiker, map (/srv/hz-workspace), compose-projecten
+# (hz-workspace-prod, -test, -pr-<nr>, -ops, -router), Docker-netwerken (hz-workspace-net, <project>-net),
+# volumes, systemd-units en het label nl.homezero.workspace=1 op elke container, elk netwerk en elk volume.
 # shellcheck shell=bash
 
-HZ_ROOT="${HZ_ROOT:-/opt/hz}"
-HZ_ETC="${HZ_ETC:-/etc/hz}"
-HZ_RUN="${HZ_RUN:-/run/hz}"
-HZ_LOG_DIR="${HZ_LOG_DIR:-/var/log/hz}"
+HZ_LABEL=nl.homezero.workspace
+HZ_NET=hz-workspace-net
+HZ_ROOT="${HZ_ROOT:-/srv/hz-workspace}"
+HZ_ETC="${HZ_ETC:-$HZ_ROOT/etc}"
+HZ_RUN="${HZ_RUN:-/run/hz-workspace}"
+HZ_LOG_DIR="${HZ_LOG_DIR:-$HZ_ROOT/log}"
 HZ_DOCKER="${HZ_DOCKER:-docker}"
 HZ_AGE="${HZ_AGE:-age}"
 HZ_CURL="${HZ_CURL:-curl}"
@@ -78,3 +85,46 @@ ping_url() {
 valid_env() { [[ "$1" == prod || "$1" == test ]]; }
 valid_tag() { [[ "$1" =~ ^(sha-[0-9a-f]{7,40}|v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?|pr-[0-9]{1,6}-[0-9a-f]{7,40})$ ]]; }
 valid_pr() { [[ "$1" =~ ^[0-9]{1,6}$ ]]; }
+
+# Het gedeelde netwerk van de workspace (router <-> web-containers van prod, test en previews), met ons label.
+ensure_net() {
+  "$HZ_DOCKER" network inspect "$HZ_NET" >/dev/null 2>&1 ||
+    "$HZ_DOCKER" network create --label "$HZ_LABEL=1" "$HZ_NET" >/dev/null
+}
+
+# Compose-bestanden van de router, afhankelijk van hoe de bestaande reverse proxy erbij komt (hz.env):
+#   HZ_PROXY_KIND=caddy|traefik   proxy die al op de server draait; HZ_PROXY_NETWORK (proxy in Docker) of
+#                                 HZ_ROUTER_PORT (proxy op de host, router alleen op 127.0.0.1)
+#   HZ_PROXY_KIND=eigen           geen proxy op de server (eigen server, HZW-082): eigen edge op 443 (edge.yaml)
+router_files() {
+  local c="$1/compose"
+  printf '%s\n' -f "$c/router.yaml"
+  if [[ -n "${HZ_PROXY_NETWORK:-}" ]]; then
+    printf '%s\n' -f "$c/router-network.yaml"
+  elif [[ -n "${HZ_ROUTER_PORT:-}" ]]; then
+    printf '%s\n' -f "$c/router-loopback.yaml"
+  fi
+  [[ "${HZ_PROXY_KIND:-}" == traefik ]] && printf '%s\n' -f "$c/router-traefik.yaml"
+  return 0
+}
+
+valid_proxy() {
+  case "${HZ_PROXY_KIND:-}" in
+    caddy | traefik)
+      [[ -n "${HZ_PROXY_NETWORK:-}" || -n "${HZ_ROUTER_PORT:-}" ]] || return 1
+      [[ "${HZ_PROXY_KIND}" != traefik || -n "${HZ_PROXY_NETWORK:-}" ]] || return 1
+      ;;
+    eigen) ;;
+    *) return 1 ;;
+  esac
+  [[ -z "${HZ_PROXY_NETWORK:-}" || "$HZ_PROXY_NETWORK" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]] || return 1
+  [[ -z "${HZ_ROUTER_PORT:-}" || "$HZ_ROUTER_PORT" =~ ^[0-9]{4,5}$ ]] || return 1
+}
+
+# Afgeleide waarden voor de router en de proxy (na load_env van hz.env).
+proxy_env() {
+  export HZ_ERRORS_DOMAIN="${HZ_ERRORS_DOMAIN:-fouten.${HZ_DOMAIN:?}}"
+  export HZ_TEST_DOMAIN_RE="${HZ_TEST_DOMAIN//./\\.}"
+  if [[ -n "${HZ_ROUTER_PORT:-}" ]]; then export HZ_ROUTER_ASK_PORT=$((HZ_ROUTER_PORT + 1)); fi
+  return 0
+}

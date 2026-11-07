@@ -5,17 +5,17 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Ajv from 'ajv';
 import Ajv2020 from 'ajv/dist/2020.js';
 import AjvDraft04 from 'ajv-draft-04';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { renderCloudInit } from '../cloud-init/render.mjs';
+import { renderCloudInit, SETUP_FILES } from '../cloud-init/render.mjs';
 import { buildCsp, inlineScriptHashes } from '../docker/web-csp.mjs';
 import { findAll, parseCaddyfile, site, type Node } from './caddyfile';
-import { APP, INFRA, ROOT, sshPublicKey } from './helpers';
+import { APP, INFRA, ROOT, sshPublicKey, tmp } from './helpers';
 
 const read = (p: string) => readFileSync(join(INFRA, p), 'utf8');
 const schema = (f: string) => JSON.parse(readFileSync(join(INFRA, 'test/schemas', f), 'utf8'));
@@ -27,25 +27,48 @@ type Service = {
   healthcheck?: unknown;
   restart?: string;
   environment?: Record<string, string>;
-  networks?: Record<string, { aliases?: string[] } | null>;
+  networks?: Record<string, { aliases?: string[] } | null> | string[];
+  labels?: Record<string, string>;
+  mem_limit?: string | number;
+  cpus?: string | number;
   user?: string;
   read_only?: boolean;
   cap_drop?: string[];
   env_file?: string[];
 };
 type Compose = {
-  name: string;
+  name?: string;
   services: Record<string, Service>;
-  networks?: Record<string, { external?: boolean; name?: string }>;
+  networks?: Record<string, { external?: boolean; name?: string; labels?: Record<string, string> }>;
+  volumes?: Record<string, { labels?: Record<string, string> } | null>;
 };
 
 const compose = (f: string) => parse(read(`compose/${f}`), { merge: true }) as Compose;
+const FILES = [
+  'app.yaml',
+  'ops.yaml',
+  'router.yaml',
+  'router-network.yaml',
+  'router-loopback.yaml',
+  'router-traefik.yaml',
+  'edge.yaml',
+];
+const FULL = ['app.yaml', 'ops.yaml', 'router.yaml', 'edge.yaml'];
+/** '1g', '512m', 768 (bytes) of '${HZ_MEM_DB:-1g}' -> MiB, met de standaardwaarde. */
+const mib = (v: string | number | undefined): number => {
+  const t = String(v ?? '').replace(/^\$\{[A-Z_]+:-([^}]+)\}$/, '$1');
+  const m = /^(\d+(?:\.\d+)?)([mg])$/.exec(t);
+  if (!m) throw new Error(`geen geheugenlimiet: ${v}`);
+  return Number(m[1]) * (m[2] === 'g' ? 1024 : 1);
+};
+const cpu = (v: string | number | undefined): number =>
+  Number(String(v ?? '').replace(/^\$\{[A-Z_]+:-([^}]+)\}$/, '$1'));
 
-describe('compose (HZW-004, HZW-005)', () => {
+describe('compose (HZW-002, HZW-004, HZW-005)', () => {
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   const validate = ajv.compile(schema('compose-spec.json'));
 
-  it.each(['app.yaml', 'edge.yaml', 'ops.yaml'])('%s voldoet aan de compose-specificatie', (f) => {
+  it.each(FILES)('%s voldoet aan de compose-specificatie', (f) => {
     const doc = parse(read(`compose/${f}`), { merge: true });
     expect(validate(doc), errorsOf(validate)).toBe(true);
   });
@@ -62,10 +85,100 @@ describe('compose (HZW-004, HZW-005)', () => {
     }
   });
 
-  it('alleen de edge publiceert poorten (80/443); de database heeft geen open poort', () => {
-    for (const [name, s] of Object.entries(compose('app.yaml').services)) expect(s.ports, name).toBeUndefined();
-    for (const [name, s] of Object.entries(compose('ops.yaml').services)) expect(s.ports, name).toBeUndefined();
-    expect(compose('edge.yaml').services.caddy!.ports).toEqual(['80:80', '443:443', '443:443/udp']);
+  it('eigen namen naast andere projecten: projecten, netwerken en het gedeelde netwerk heten hz-workspace-*', () => {
+    expect(compose('app.yaml').name).toBe('${HZ_INSTANCE:?HZ_INSTANCE ontbreekt}');
+    expect(compose('ops.yaml').name).toBe('hz-workspace-ops');
+    expect(compose('router.yaml').name).toBe('hz-workspace-router');
+    expect(compose('edge.yaml').name).toBe('hz-workspace-edge');
+    expect(compose('app.yaml').networks!.default).toMatchObject({ name: '${HZ_INSTANCE}-net' });
+    expect(compose('ops.yaml').networks!.default).toMatchObject({ name: 'hz-workspace-ops-net' });
+    for (const f of ['app.yaml', 'ops.yaml', 'router.yaml', 'edge.yaml'])
+      expect(compose(f).networks!.hzw, f).toEqual({ external: true, name: 'hz-workspace-net' });
+    // De instanties krijgen hun projectnaam van deploy.sh en preview.sh: altijd hz-workspace-<omgeving|pr-nr>.
+    expect(read('scripts/deploy.sh')).toContain('instance="hz-workspace-$env"');
+    expect(read('scripts/preview.sh')).toContain('compose -p "hz-workspace-pr-$nr"');
+    expect(read('scripts/deploy.sh')).toContain('compose -p hz-workspace-router');
+    expect(read('scripts/deploy.sh')).toContain('compose -p hz-workspace-ops');
+    // Geen oude, te algemene namen meer (hz-prod, hz-edge, /opt/hz) die met een ander project kunnen botsen.
+    for (const f of [...FILES.map((x) => `compose/${x}`), 'scripts/deploy.sh', 'scripts/preview.sh', 'scripts/lib.sh'])
+      expect(read(f), f).not.toMatch(/\bhz-(prod|test|edge|ops|pr)\b|\/(opt|etc)\/hz\//);
+  });
+
+  it('label nl.homezero.workspace=1 op elke service, elk eigen netwerk en elk volume (zo herkent de voorcheck wat van ons is)', () => {
+    for (const f of FULL) {
+      const c = compose(f);
+      for (const [n, s] of Object.entries(c.services))
+        expect(s.labels?.['nl.homezero.workspace'], `${f}/${n}`).toBe('1');
+      for (const [n, v] of Object.entries(c.volumes ?? {}))
+        expect(v?.labels?.['nl.homezero.workspace'], `${f} volume ${n}`).toBe('1');
+      for (const [n, net] of Object.entries(c.networks ?? {}))
+        if (!net.external) expect(net.labels?.['nl.homezero.workspace'], `${f} netwerk ${n}`).toBe('1');
+    }
+  });
+
+  it('limieten op geheugen en CPU voor elke service; previews kleiner; som past bij de voorcheck', () => {
+    for (const f of FULL)
+      for (const [n, s] of Object.entries(compose(f).services)) {
+        expect(mib(s.mem_limit), `${f}/${n} mem_limit`).toBeGreaterThan(0);
+        expect(mib(s.mem_limit), `${f}/${n} mem_limit`).toBeLessThanOrEqual(1024);
+        expect(cpu(s.cpus), `${f}/${n} cpus`).toBeGreaterThan(0);
+        expect(cpu(s.cpus), `${f}/${n} cpus`).toBeLessThanOrEqual(1);
+      }
+    const app = compose('app.yaml').services;
+    const inst = ['db', 'api', 'worker', 'web'].reduce((t, n) => t + mib(app[n]!.mem_limit), 0);
+    const ops = Object.values(compose('ops.yaml').services).reduce((t, s) => t + mib(s.mem_limit), 0);
+    const router = mib(compose('router.yaml').services.router!.mem_limit);
+    const total = 2 * inst + ops + router; // productie + test + GlitchTip + router
+    expect(read('scripts/server-check.sh')).toContain(`limits_mib=${total}\n`);
+    const preview = read('scripts/preview.sh');
+    for (const v of [
+      'HZ_MEM_DB="${HZ_PREVIEW_MEM_DB:-384m}"',
+      'HZ_MEM_API="${HZ_PREVIEW_MEM_API:-256m}"',
+      'HZ_CPUS_DB=0.5',
+    ])
+      expect(preview).toContain(v);
+    expect(preview).toContain('max="${HZ_PREVIEW_MAX:-3}"');
+  });
+
+  it('geen publieke poort: app, ops en router publiceren niets; loopback alleen op 127.0.0.1; eigen edge alleen 443', () => {
+    for (const f of ['app.yaml', 'ops.yaml', 'router.yaml', 'router-network.yaml', 'router-traefik.yaml'])
+      for (const [name, s] of Object.entries(compose(f).services)) expect(s.ports, `${f}/${name}`).toBeUndefined();
+    expect(compose('router-loopback.yaml').services.router!.ports).toEqual([
+      '127.0.0.1:${HZ_ROUTER_PORT:?HZ_ROUTER_PORT ontbreekt in hz.env}:8080',
+      '127.0.0.1:${HZ_ROUTER_ASK_PORT:?}:8081',
+    ]);
+    expect(compose('edge.yaml').services.caddy!.ports).toEqual(['443:443', '443:443/udp']);
+  });
+
+  it('alleen de router doet mee in het netwerk van de bestaande proxy; de app-containers alleen in hz-workspace-net', () => {
+    expect(compose('router-network.yaml').networks!.proxy).toEqual({
+      external: true,
+      name: '${HZ_PROXY_NETWORK:?HZ_PROXY_NETWORK ontbreekt in hz.env}',
+    });
+    expect(compose('router-network.yaml').services.router!.networks).toEqual({
+      proxy: { aliases: ['hz-workspace-router'] },
+    });
+    for (const f of ['app.yaml', 'ops.yaml', 'router.yaml', 'edge.yaml'])
+      expect(read(`compose/${f}`), f).not.toContain('HZ_PROXY_NETWORK');
+    const c = compose('app.yaml');
+    expect((c.services.web!.networks as Record<string, { aliases?: string[] }>).hzw!.aliases).toEqual([
+      '${HZ_INSTANCE}-web',
+    ]);
+    for (const n of ['db', 'api', 'worker', 'migrate']) expect(c.services[n]!.networks, n).toBeUndefined();
+    expect(read('scripts/lib.sh')).toContain('HZ_NET=hz-workspace-net');
+  });
+
+  it('Traefik (ook Coolify): labels op de router voor onze domeinen en previews, via het proxynetwerk', () => {
+    const l = compose('router-traefik.yaml').services.router!.labels!;
+    expect(l['traefik.enable']).toBe('true');
+    expect(l['traefik.docker.network']).toBe('${HZ_PROXY_NETWORK:?}');
+    expect(l['traefik.http.routers.hz-workspace.rule']).toBe(
+      'Host(`${HZ_DOMAIN}`) || Host(`${HZ_TEST_DOMAIN}`) || Host(`${HZ_ERRORS_DOMAIN}`)',
+    );
+    expect(l['traefik.http.routers.hz-workspace-pr.rule']).toBe(
+      'HostRegexp(`^pr-[0-9]{1,6}\\.${HZ_TEST_DOMAIN_RE:?}$$`)',
+    );
+    expect(l['traefik.http.services.hz-workspace.loadbalancer.server.port']).toBe('8080');
   });
 
   it('api en worker: app-login (hz_app_login) voor de app, migratierol alleen voor migrate en pg-boss, geen superuser-wachtwoord', () => {
@@ -84,23 +197,19 @@ describe('compose (HZW-004, HZW-005)', () => {
     expect(s.api!.environment!.HZ_DEV_LOGIN).toBe('${HZ_DEV_LOGIN:-0}');
   });
 
-  it('app-containers: alleen-lezen bestandssysteem, geen extra rechten', () => {
+  it('app-containers en router: alleen-lezen bestandssysteem, geen extra rechten', () => {
     for (const n of ['api', 'worker', 'web', 'migrate']) {
       const s = compose('app.yaml').services[n]!;
       expect(s.read_only, n).toBe(true);
       expect(s.cap_drop, n).toEqual(['ALL']);
     }
-  });
-
-  it('web hangt aan het edge-netwerk als <instantie>-web; de edge routeert daarheen', () => {
-    const c = compose('app.yaml');
-    expect(c.services.web!.networks!.edge!.aliases).toEqual(['${HZ_INSTANCE}-web']);
-    expect(c.networks!.edge).toEqual({ external: true, name: 'hz-edge' });
-    expect(compose('edge.yaml').networks!.edge).toEqual({ external: true, name: 'hz-edge' });
+    const r = compose('router.yaml').services.router!;
+    expect(r.read_only).toBe(true);
+    expect(r.cap_drop).toEqual(['ALL']);
   });
 
   it('images met vaste versies (geen latest), app-images uit de registry met de uitroltag', () => {
-    for (const f of ['app.yaml', 'edge.yaml', 'ops.yaml'])
+    for (const f of FULL)
       for (const [n, s] of Object.entries(compose(f).services)) {
         expect(s.image, `${f}/${n}`).toBeTruthy();
         expect(s.image, `${f}/${n}`).not.toMatch(/:latest$|^[^:]+$/);
@@ -111,7 +220,7 @@ describe('compose (HZW-004, HZW-005)', () => {
     expect(s.web!.image).toBe('${HZ_REGISTRY}/hz-web:${HZ_TAG}');
   });
 
-  it('elke variabele in app.yaml komt uit de secrets (prod.keys), /etc/hz/hz.env of deploy.sh', () => {
+  it('elke variabele in app.yaml komt uit de secrets (prod.keys), hz.env of deploy.sh/preview.sh', () => {
     const vars = new Set([...read('compose/app.yaml').matchAll(/\$\{([A-Z_][A-Z0-9_]*)/g)].map((m) => m[1]!));
     const keys = new Set(
       read('secrets/prod.keys')
@@ -128,43 +237,44 @@ describe('compose (HZW-004, HZW-005)', () => {
   });
 });
 
-describe('edge-Caddyfile (HZW-003, HZW-005)', () => {
-  const nodes = parseCaddyfile(read('caddy/Caddyfile'));
+const ENV = {
+  HZ_DOMAIN: 'homezero.verveen.me',
+  HZ_TEST_DOMAIN: 'test.homezero.verveen.me',
+  HZ_ERRORS_DOMAIN: 'fouten.homezero.verveen.me',
+};
+
+describe('router van de workspace (HZW-003, HZW-005)', () => {
+  const nodes = parseCaddyfile(read('caddy/router/Caddyfile'));
   const directive = (n: Node, name: string) => findAll(n.children ?? [], name);
 
-  it('parset: globale opties, snippets en de sites voor productie, test, previews, fouten', () => {
+  it('parset: geen TLS (dat doet de bestaande proxy), sites voor productie, test, previews, fouten, rest en /ask', () => {
     const addresses = nodes.filter((n) => n.children).map((n) => n.tokens.join(' '));
     expect(addresses).toEqual([
       '',
       '(beveiliging)',
       '(log-zonder-pii)',
-      '{$HZ_DOMAIN}',
-      '{$HZ_TEST_DOMAIN}',
-      '*.{$HZ_TEST_DOMAIN}',
-      '{$HZ_ERRORS_DOMAIN}',
-      'http://127.0.0.1:5555',
-      'http://127.0.0.1:8081',
+      'http://{$HZ_DOMAIN}:{$HZ_ROUTER_LISTEN:8080}',
+      'http://{$HZ_TEST_DOMAIN}:{$HZ_ROUTER_LISTEN:8080}',
+      'http://*.{$HZ_TEST_DOMAIN}:{$HZ_ROUTER_LISTEN:8080}',
+      'http://{$HZ_ERRORS_DOMAIN}:{$HZ_ROUTER_LISTEN:8080}',
+      'http://:{$HZ_ROUTER_LISTEN:8080}',
+      'http://:{$HZ_ROUTER_ASK_LISTEN:8081}',
     ]);
+    expect(findAll(nodes[0]!.children!, 'auto_https')[0]!.tokens).toEqual(['auto_https', 'off']);
   });
 
-  it('automatische TLS met ACME-mail; productie en test naar hun eigen web-container', () => {
-    const global = nodes[0]!;
-    expect(findAll(global.children!, 'email')[0]!.tokens).toEqual(['email', '{$HZ_ACME_EMAIL}']);
-    expect(directive(site(nodes, '{$HZ_DOMAIN}'), 'reverse_proxy')[0]!.tokens).toEqual([
+  it('productie, test, previews en GlitchTip naar hun eigen container op hz-workspace-net', () => {
+    const rp = (a: string) => directive(site(nodes, a), 'reverse_proxy')[0]!.tokens;
+    expect(rp('http://{$HZ_DOMAIN}:{$HZ_ROUTER_LISTEN:8080}')).toEqual(['reverse_proxy', 'hz-workspace-prod-web:8080']);
+    expect(rp('http://{$HZ_TEST_DOMAIN}:{$HZ_ROUTER_LISTEN:8080}')).toEqual([
       'reverse_proxy',
-      'hz-prod-web:8080',
+      'hz-workspace-test-web:8080',
     ]);
-    expect(directive(site(nodes, '{$HZ_TEST_DOMAIN}'), 'reverse_proxy')[0]!.tokens).toEqual([
+    expect(rp('http://{$HZ_ERRORS_DOMAIN}:{$HZ_ROUTER_LISTEN:8080}')).toEqual([
       'reverse_proxy',
-      'hz-test-web:8080',
+      'hz-workspace-ops-glitchtip:8000',
     ]);
-    // Geen 'auto_https off' of http://-adres voor de publieke sites: Caddy stuurt http zelf door naar https.
-    expect(findAll(nodes, 'auto_https')).toHaveLength(0);
-  });
-
-  it('preview: on-demand TLS alleen voor aangemelde previews, wachtwoord, routering op pr-<nr>', () => {
-    const p = site(nodes, '*.{$HZ_TEST_DOMAIN}');
-    expect(directive(p, 'on_demand')).toHaveLength(1);
+    const p = site(nodes, 'http://*.{$HZ_TEST_DOMAIN}:{$HZ_ROUTER_LISTEN:8080}');
     expect(directive(p, '@preview')[0]!.tokens).toEqual([
       '@preview',
       'header_regexp',
@@ -173,21 +283,16 @@ describe('edge-Caddyfile (HZW-003, HZW-005)', () => {
       '^pr-([0-9]{1,6})\\.',
     ]);
     expect(directive(p, 'basic_auth')[0]!.children![0]!.tokens).toEqual(['{$HZ_PREVIEW_USER}', '{$HZ_PREVIEW_HASH}']);
-    expect(directive(p, 'reverse_proxy')[0]!.tokens).toEqual(['reverse_proxy', 'hz-pr-{re.pr.1}-web:8080']);
-    const ask = findAll(nodes[0]!.children!, 'ask')[0]!;
-    expect(ask.tokens).toEqual(['ask', 'http://127.0.0.1:5555/ask']);
-    const askSite = site(nodes, 'http://127.0.0.1:5555');
-    expect(directive(askSite, 'bind')[0]!.tokens).toEqual(['bind', '127.0.0.1']);
-    expect(directive(askSite, 'try_files')[0]!.tokens).toEqual(['try_files', '{query.domain}']);
+    expect(directive(p, 'reverse_proxy')[0]!.tokens).toEqual(['reverse_proxy', 'hz-workspace-pr-{re.pr.1}-web:8080']);
   });
 
-  it('HSTS en nosniff op alle publieke sites; logs zonder IP, headers of OAuth-codes', () => {
+  it('HSTS en nosniff op alle sites; logs zonder IP, headers of OAuth-codes', () => {
     const sec = site(nodes, '(beveiliging)');
     const headers = sec.children![0]!.children!.map((n) => n.tokens[0]);
     expect(headers).toContain('Strict-Transport-Security');
     expect(headers).toContain('X-Content-Type-Options');
     for (const a of ['{$HZ_DOMAIN}', '{$HZ_TEST_DOMAIN}', '*.{$HZ_TEST_DOMAIN}', '{$HZ_ERRORS_DOMAIN}']) {
-      const imports = directive(site(nodes, a), 'import').map((n) => n.tokens[1]);
+      const imports = directive(site(nodes, `http://${a}:{$HZ_ROUTER_LISTEN:8080}`), 'import').map((n) => n.tokens[1]);
       expect(imports, a).toEqual(['beveiliging', 'log-zonder-pii']);
     }
     const log = JSON.stringify(site(nodes, '(log-zonder-pii)'));
@@ -200,6 +305,54 @@ describe('edge-Caddyfile (HZW-003, HZW-005)', () => {
   it('een fout in de Caddyfile wordt gevonden', () => {
     expect(() => parseCaddyfile('a {\n b\n')).toThrow(/ontbrekende/);
     expect(() => parseCaddyfile('a {\n b }\n}\n')).toThrow(/eigen regel/);
+  });
+});
+
+describe('site-blok voor de bestaande proxy (proxy-snippet.sh, HZW-003)', () => {
+  const snippet = (env: Record<string, string>, kind = 'caddy') =>
+    execFileSync('bash', [join(INFRA, 'scripts/proxy-snippet.sh'), kind], {
+      env: { PATH: process.env.PATH, ...ENV, ...env },
+      encoding: 'utf8',
+    });
+
+  it('Caddy in Docker: onze drie domeinen en de wildcard voor previews naar hz-workspace-router, tussen markeringen', () => {
+    const out = snippet({ HZ_PROXY_NETWORK: 'caddy' });
+    const nodes = parseCaddyfile(out);
+    const sites = nodes.filter((n) => n.children).map((n) => n.tokens.join(' '));
+    expect(sites).toEqual([
+      'homezero.verveen.me, test.homezero.verveen.me, fouten.homezero.verveen.me',
+      '*.test.homezero.verveen.me',
+      'on_demand_tls',
+    ]);
+    expect(findAll(nodes, 'reverse_proxy').map((n) => n.tokens)).toEqual([
+      ['reverse_proxy', 'hz-workspace-router:8080'],
+      ['reverse_proxy', 'hz-workspace-router:8080'],
+    ]);
+    expect(findAll(site(nodes, '*.test.homezero.verveen.me').children!, 'on_demand')).toHaveLength(1);
+    expect(findAll(nodes, 'ask')[0]!.tokens).toEqual(['ask', 'http://hz-workspace-router:8081/ask']);
+    expect(out.match(/^# >>> hz-workspace/gm)).toHaveLength(2);
+    expect(out.match(/^# <<< hz-workspace$/gm)).toHaveLength(2);
+  });
+
+  it('Caddy op de host: naar 127.0.0.1 op de routerpoort', () => {
+    const out = snippet({ HZ_ROUTER_PORT: '18780' });
+    expect(out).toContain('reverse_proxy 127.0.0.1:18780');
+    expect(out).toContain('ask http://127.0.0.1:18781/ask');
+  });
+
+  it('Traefik: niets aan Traefik zelf, wel een netwerk; zonder netwerk weigert het', () => {
+    expect(snippet({ HZ_PROXY_NETWORK: 'coolify' }, 'traefik')).toContain('Netwerk: coolify');
+    expect(() => snippet({ HZ_ROUTER_PORT: '18780' }, 'traefik')).toThrow();
+  });
+
+  it('de eigen edge (alleen voor HZW-082) gebruikt exact dezelfde site-blokken via import', () => {
+    const edge = parseCaddyfile(read('caddy/edge/Caddyfile'));
+    expect(findAll(edge, 'import').map((n) => n.tokens[1])).toEqual([
+      '/etc/caddy/hz-workspace.global.caddy',
+      '/etc/caddy/hz-workspace.caddy',
+    ]);
+    expect(findAll(edge, 'reverse_proxy')).toHaveLength(0);
+    expect(read('scripts/deploy.sh')).toContain('"$here/proxy-snippet.sh" caddy --out "$HZ_ROOT/edge"');
   });
 });
 
@@ -278,13 +431,15 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
     for (const f of names) expect(validate(wf(f)), `${f}: ${errorsOf(validate)}`).toBe(true);
   });
 
-  it('CI draait lint, typecheck, test (met age voor de infra-tests), build en e2e', () => {
+  it('CI draait lint, typecheck, test (met age, shellcheck en caddy voor de infra-tests), build en e2e', () => {
     const steps = wf('workspace-app.yml').jobs.check.steps as { run?: string }[];
     const runs = steps.map((s) => s.run ?? '');
     for (const r of ['pnpm lint', 'pnpm typecheck', 'pnpm test', 'pnpm build', 'pnpm test:e2e'])
       expect(runs).toContain(r);
     const iAge = runs.findIndex((r) => r.includes('install') && r.includes(' age'));
     expect(iAge).toBeGreaterThan(-1);
+    expect(runs[iAge]).toContain('shellcheck');
+    expect(runs[iAge]).toContain('caddy');
     expect(iAge).toBeLessThan(runs.indexOf('pnpm test'));
   });
 
@@ -307,7 +462,7 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
     expect(meta).toContain('environment=production');
     expect(meta).toContain('environment=test');
     const steps = JSON.stringify(d.jobs.deploy.steps);
-    expect(steps).toContain('deploy $target $TAG');
+    expect(steps).toContain('ci-ssh.sh \\"$HOST\\" deploy \\"$target\\" \\"$TAG\\"');
     expect(steps).toContain('/api/health');
     expect(steps).toContain('tls-check.sh');
   });
@@ -316,20 +471,56 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
     const p = wf('workspace-preview.yml');
     expect(p.on.pull_request.types).toEqual(['opened', 'synchronize', 'reopened', 'closed']);
     expect(p.jobs.meta.if).toBe('github.event.pull_request.head.repo.full_name == github.repository');
-    expect(JSON.stringify(p.jobs.up.steps)).toContain('preview up $PR $TAG');
+    expect(JSON.stringify(p.jobs.up.steps)).toContain('preview up \\"$PR\\" \\"$TAG\\"');
     expect(JSON.stringify(p.jobs.up.steps)).toContain('gh pr comment');
     expect(p.jobs.down.if).toBe("github.event.action == 'closed'");
-    expect(JSON.stringify(p.jobs.down.steps)).toContain('preview down $PR');
+    expect(JSON.stringify(p.jobs.down.steps)).toContain('preview down \\"$PR\\"');
     expect(p.jobs.up.environment.url).toBe(
       'https://pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}',
     );
   });
 
-  it('servercontrole: wekelijks, uitkomst in het issue', () => {
+  it('servercontrole: wekelijks, van buiten vóór de Tailscale-stap, van binnen via het tailnet, uitkomst in het issue', () => {
     const s = wf('workspace-server-check.yml');
     expect(s.on.schedule[0].cron).toMatch(/^\d+ \d+ \* \* 1$/);
-    expect(JSON.stringify(s.jobs.check.steps)).toContain('gh issue comment');
-    expect(JSON.stringify(s.jobs.check.steps)).toContain('server-check.sh --extern');
+    const steps = s.jobs.check.steps as Step[];
+    const iExtern = steps.findIndex((st) => st.run?.includes('server-check.sh --extern'));
+    const iTs = steps.findIndex((st) => st.uses?.startsWith('tailscale/github-action@'));
+    const iIn = steps.findIndex((st) => st.run?.includes('ci-ssh.sh "$HOST" check'));
+    expect(iExtern).toBeGreaterThan(-1);
+    expect(iExtern).toBeLessThan(iTs);
+    expect(iTs).toBeLessThan(iIn);
+    expect(JSON.stringify(steps)).toContain('gh issue comment');
+  });
+
+  type Step = { name?: string; uses?: string; run?: string; with?: Record<string, string> };
+  it('nooit publieke SSH (HZW-004): vóór elke SSH-stap een tijdelijke Tailscale-node met tag:ci, SSH alleen via ci-ssh.sh', () => {
+    let sshSteps = 0;
+    for (const f of names) {
+      for (const [job, j] of Object.entries(wf(f).jobs as Record<string, { steps?: Step[] }>)) {
+        const steps = j.steps ?? [];
+        steps.forEach((st, i) => {
+          const run = st.run ?? '';
+          // Elke ssh/scp-aanroep naar de server loopt via ci-ssh.sh; geen kale ssh of 'deploy@<host>'.
+          const bare = run
+            .split('\n')
+            .filter((l) => /(^|[\s|;&(])(ssh|scp|sftp)\s/.test(l) && !l.includes('ci-ssh.sh'));
+          expect(bare, `${f}/${job}: ${st.name}`).toEqual([]);
+          expect(run, `${f}/${job}`).not.toMatch(/\w@\$\{?\{? ?(vars\.)?HZ_DEPLOY_HOST|deploy@/);
+          if (!run.includes('ci-ssh.sh')) return;
+          sshSteps++;
+          const ts = steps.slice(0, i).find((p) => p.uses?.startsWith('tailscale/github-action@'));
+          expect(ts, `${f}/${job}: ${st.name} zonder Tailscale-stap ervoor`).toBeTruthy();
+          expect(ts!.with).toEqual({
+            'oauth-client-id': '${{ secrets.TS_OAUTH_CLIENT_ID }}',
+            'oauth-secret': '${{ secrets.TS_OAUTH_SECRET }}',
+            tags: 'tag:ci',
+          });
+        });
+      }
+    }
+    // deploy, preview up, preview down en de servercontrole.
+    expect(sshSteps).toBe(4);
   });
 
   it('standaard alleen leesrechten; schrijfrechten alleen per job waar nodig', () => {
@@ -337,7 +528,7 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
   });
 });
 
-describe('cloud-init (HZW-002, HZW-082)', () => {
+describe('cloud-init: alleen een optie voor een eigen server (HZW-082)', () => {
   const base = {
     domain: 'homezero.verveen.me',
     testDomain: 'test.homezero.verveen.me',
@@ -346,107 +537,116 @@ describe('cloud-init (HZW-002, HZW-082)', () => {
     registry: 'ghcr.io/homezerotech',
     adminKeys: [sshPublicKey('robert')],
     deployKey: sshPublicKey('deploy'),
+    tailscaleAuthKey: 'tskey-auth-voorbeeldvoorbeeld',
   };
   const text: string = renderCloudInit(base);
   const doc = parse(text);
-  const files = new Map<string, { content: string; permissions: string; owner: string }>(
+  const files = new Map<string, { content: string; permissions: string; owner: string; encoding?: string }>(
     doc.write_files.map((f: { path: string }) => [f.path, f]),
   );
+  const cmds = (doc.runcmd as (string | string[])[]).map((c) => (Array.isArray(c) ? c.join(' ') : c));
 
-  it('is een geldige cloud-config volgens het schema van cloud-init', () => {
+  it('is een geldige cloud-config volgens het schema van cloud-init, en past in de 32 KiB van Hetzner', () => {
     expect(text.startsWith('#cloud-config\n')).toBe(true);
     const ajv = new AjvDraft04({ strict: false, allErrors: true });
     const validate = ajv.compile(schema('cloud-config-v1.json'));
     expect(validate(doc), errorsOf(validate)).toBe(true);
+    expect(Buffer.byteLength(text)).toBeLessThan(32 * 1024);
   });
 
-  it('SSH alleen met sleutel: geen wachtwoorden, geen root; CI-sleutel alleen voor hz-ssh-dispatch', () => {
+  it('is als optie gemarkeerd, niet de hoofdroute (die is server-setup.sh op de bestaande server)', () => {
+    const src = read('cloud-init/render.mjs');
+    expect(src).toContain('OPTIONEEL, alleen voor HZW-082');
+    expect(read('scripts/hetzner-create.sh')).toContain('OPTIONEEL, alleen voor HZW-082');
+    expect(text).toContain('eigen server (optie voor HZW-082)');
+  });
+
+  it('Tailscale geïnstalleerd en aangemeld met een eenmalige sleutel, die daarna weg is', () => {
+    expect(cmds.some((c) => c.includes('pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg'))).toBe(true);
+    const up = cmds.find((c) => c.includes('tailscale up'))!;
+    expect(up).toContain('--auth-key=file:/root/hz-workspace-setup/tailscale.key');
+    expect(up).toContain('shred -u /root/hz-workspace-setup/tailscale.key');
+    expect(files.get('/root/hz-workspace-setup/tailscale.key')!.permissions).toBe('0600');
+    expect(() => renderCloudInit({ ...base, tailscaleAuthKey: '' })).toThrow(/Tailscale/);
+  });
+
+  it('firewall: standaard dicht, publiek alleen 443, SSH alleen op tailscale0 (pas nadat Tailscale draait)', () => {
+    const ufw = doc.runcmd.filter((c: string[]) => c[0] === 'ufw').map((c: string[]) => c.slice(1).join(' '));
+    expect(ufw).toEqual([
+      'default deny incoming',
+      'default allow outgoing',
+      'allow in on tailscale0 to any port 22 proto tcp',
+      'allow 443/tcp',
+      'allow 443/udp',
+      '--force enable',
+    ]);
+    expect(cmds.findIndex((c) => c.includes('tailscale up'))).toBeLessThan(cmds.indexOf('ufw --force enable'));
+    expect(text).not.toMatch(/allow (22|80)\/tcp/);
+  });
+
+  it('SSH alleen met sleutel: geen wachtwoorden, geen root; alleen de beheerder hz en hz-workspace', () => {
     expect(doc.ssh_pwauth).toBe(false);
     expect(doc.disable_root).toBe(true);
-    const sshd = files.get('/etc/ssh/sshd_config.d/10-hz.conf')!.content;
+    const sshd = files.get('/etc/ssh/sshd_config.d/10-hz-workspace.conf')!.content;
     for (const l of [
       'PasswordAuthentication no',
       'KbdInteractiveAuthentication no',
       'PermitRootLogin no',
       'PubkeyAuthentication yes',
+      'AllowUsers hz hz-workspace',
     ])
       expect(sshd).toContain(l);
-    const [hz, deploy] = doc.users;
-    expect(hz.lock_passwd).toBe(true);
-    expect(hz.ssh_authorized_keys).toEqual(base.adminKeys);
-    expect(deploy.ssh_authorized_keys).toEqual([`restrict,command="/opt/hz/bin/hz-ssh-dispatch" ${base.deployKey}`]);
-    expect(deploy.groups).toEqual(['docker']);
-  });
-
-  it('firewall: standaard dicht, alleen 22, 80 en 443 open', () => {
-    const ufw = doc.runcmd.filter((c: string[]) => c[0] === 'ufw').map((c: string[]) => c.slice(1).join(' '));
-    expect(ufw).toEqual([
-      'default deny incoming',
-      'default allow outgoing',
-      'allow 22/tcp',
-      'allow 80/tcp',
-      'allow 443/tcp',
-      'allow 443/udp',
-      '--force enable',
-    ]);
+    expect(doc.users).toHaveLength(1);
+    expect(doc.users[0].name).toBe('hz');
+    expect(doc.users[0].lock_passwd).toBe(true);
+    expect(doc.users[0].ssh_authorized_keys).toEqual(base.adminKeys);
   });
 
   it('automatische beveiligingsupdates met herstart om 04:00; Docker uit de officiële repository', () => {
     expect(files.get('/etc/apt/apt.conf.d/20auto-upgrades')!.content).toContain(
       'APT::Periodic::Unattended-Upgrade "1";',
     );
-    expect(files.get('/etc/apt/apt.conf.d/52unattended-upgrades-hz')!.content).toContain(
+    expect(files.get('/etc/apt/apt.conf.d/52unattended-upgrades-hz-workspace')!.content).toContain(
       'Automatic-Reboot-Time "04:00"',
     );
     expect(doc.packages).toEqual(
-      expect.arrayContaining(['unattended-upgrades', 'docker-ce', 'docker-compose-plugin', 'age', 'ufw', 'fail2ban']),
+      expect.arrayContaining(['unattended-upgrades', 'docker-ce', 'docker-compose-plugin', 'age', 'ufw']),
     );
     expect(doc.apt.sources.docker.keyid).toBe('9DC858229FC7DD38854AE2D88D81803C0EBFCD88');
   });
 
-  it('vaste scripts zijn exact de bestanden uit de repo; timers voor back-up, hersteltest en hartslag staan aan', () => {
-    expect(files.get('/opt/hz/bin/hz-ssh-dispatch')!.content).toBe(read('scripts/hz-ssh-dispatch.sh'));
-    expect(files.get('/opt/hz/bin/hz-run')!.content).toBe(read('scripts/hz-run.sh'));
-    expect(files.get('/opt/hz/bin/hz-server-check')!.content).toBe(read('scripts/server-check.sh'));
-    expect(files.get('/opt/hz/bin/lib.sh')!.content).toBe(read('scripts/lib.sh'));
-    expect(files.get('/opt/hz/bin/hz-ssh-dispatch')!.permissions).toBe('0755');
-    expect(files.get('/etc/systemd/system/hz-backup.timer')!.content).toBe(read('systemd/hz-backup.timer'));
-    const enable = doc.runcmd.find((c: string[]) => c.includes('hz-backup.timer'));
-    expect(enable).toEqual([
-      'systemctl',
-      'enable',
-      '--now',
-      'hz-backup.timer',
-      'hz-heartbeat.timer',
-      'hz-hersteltest.timer',
-    ]);
-    expect(files.get('/etc/sudoers.d/hz-deploy')!.content).toBe(
-      'deploy ALL=(root) NOPASSWD: /opt/hz/bin/hz-server-check --markdown\n',
+  it('daarna precies dezelfde stap als op de bestaande server: server-setup.sh met een eigen edge; bestanden exact uit de repo', () => {
+    const setup = doc.runcmd.find((c: string[]) => Array.isArray(c) && c[0]?.endsWith('/scripts/server-setup.sh'));
+    expect(setup.slice(1, 3)).toEqual(['--proxy', 'eigen']);
+    expect(setup).toEqual(expect.arrayContaining(['--domain', 'homezero.verveen.me', '--deploy-key']));
+    expect(files.get('/root/hz-workspace-setup/deploy.pub')!.content).toBe(`${base.deployKey}\n`);
+    const tgz = files.get('/root/hz-workspace-setup/infra.tar.gz')!;
+    expect(tgz.encoding).toBe('b64');
+    const dir = tmp('hz-e0-ci-');
+    writeFileSync(join(dir, 'b.tgz'), Buffer.from(tgz.content, 'base64'));
+    execFileSync('tar', ['-xzf', join(dir, 'b.tgz'), '-C', dir]);
+    for (const f of SETUP_FILES) expect(readFileSync(join(dir, f), 'utf8'), f).toBe(read(f));
+    expect(SETUP_FILES).toEqual(expect.arrayContaining(['scripts/server-setup.sh', 'scripts/server-check.sh']));
+    expect(cmds.findIndex((c) => c.includes('infra.tar.gz'))).toBeLessThan(
+      cmds.findIndex((c) => c.includes('server-setup.sh')),
     );
   });
 
-  it('server maakt zijn eigen age-sleutel; alleen de publieke helft komt naar buiten', () => {
-    const cmd = JSON.stringify(doc.runcmd);
-    expect(cmd).toContain('age-keygen -o /etc/hz/age.key');
-    expect(cmd).toContain('age-keygen -y /etc/hz/age.key > /etc/hz/age.pub');
-    expect(cmd).not.toContain('cat /etc/hz/age.key');
-  });
-
   it('ander domein of tweede server = alleen andere waarden (geen codewijziging)', () => {
-    const other: string = renderCloudInit({
-      ...base,
-      domain: 'workspace.homezero.nl',
-      testDomain: 'test.workspace.homezero.nl',
-      errorsDomain: 'fouten.workspace.homezero.nl',
+    const other = parse(
+      renderCloudInit({
+        ...base,
+        domain: 'proef.homezero.nl',
+        testDomain: 'test.proef.homezero.nl',
+        errorsDomain: 'fouten.proef.homezero.nl',
+      }),
+    );
+    const strip = (d: { runcmd: unknown[] }) => ({
+      ...d,
+      runcmd: d.runcmd.filter((c) => !(Array.isArray(c) && String(c[0]).endsWith('server-setup.sh'))),
     });
-    const a = parse(text);
-    const b = parse(other);
-    const env = (d: typeof a) =>
-      d.write_files.find((f: { path: string }) => f.path === '/etc/hz/hz.env').content as string;
-    expect(env(b)).toContain('HZ_DOMAIN=workspace.homezero.nl');
-    a.write_files = a.write_files.filter((f: { path: string }) => f.path !== '/etc/hz/hz.env');
-    b.write_files = b.write_files.filter((f: { path: string }) => f.path !== '/etc/hz/hz.env');
-    expect(b).toEqual(a);
+    expect(strip(other)).toEqual(strip(doc));
+    expect(JSON.stringify(other.runcmd)).toContain('proef.homezero.nl');
   });
 
   it('weigert ongeldige invoer', () => {
@@ -454,6 +654,33 @@ describe('cloud-init (HZW-002, HZW-082)', () => {
     expect(() => renderCloudInit({ ...base, adminKeys: [] })).toThrow(/beheerder/);
     expect(() => renderCloudInit({ ...base, deployKey: 'ssh-rsa' })).toThrow(/SSH-sleutel/);
     expect(() => renderCloudInit({ ...base, registry: 'GHCR' })).toThrow(/registry/);
+  });
+});
+
+describe('Tailscale-policy voor CI (HZW-004)', () => {
+  const hujson = read('tailscale/acl.hujson');
+  // HuJSON -> JSON: commentaar en komma's aan het eind weg.
+  const policy = JSON.parse(
+    hujson
+      .split('\n')
+      .map((l) => l.replace(/^\s*\/\/.*$/, '').replace(/\s\/\/ .*$/, ''))
+      .join('\n')
+      .replace(/,(\s*[}\]])/g, '$1'),
+  );
+
+  it('tag:ci mag alleen naar poort 22 van de server; Tailscale controleert dat zelf met tests bij het opslaan', () => {
+    expect(policy.tagOwners['tag:ci']).toEqual(['autogroup:admin']);
+    const fromCi = policy.acls.filter((r: { src: string[] }) => r.src.includes('tag:ci'));
+    expect(fromCi).toEqual([{ action: 'accept', src: ['tag:ci'], dst: ['hz-server:22'] }]);
+    expect(policy.acls.some((r: { src: string[] }) => r.src.includes('*'))).toBe(false);
+    expect(policy.tests).toEqual([
+      expect.objectContaining({
+        src: 'tag:ci',
+        accept: ['hz-server:22'],
+        deny: expect.arrayContaining(['hz-server:443']),
+      }),
+    ]);
+    expect(hujson).toContain('autogroup:member');
   });
 });
 
@@ -471,6 +698,7 @@ describe('geen secrets leesbaar in Git (HZW-006)', () => {
     ['Anthropic-sleutel', /sk-ant-[A-Za-z0-9_-]{40,}/],
     ['Google-clientgeheim', /GOCSPX-[A-Za-z0-9_-]{20,}/],
     ['Hetzner-token', /HCLOUD_TOKEN=[A-Za-z0-9]{64}/],
+    ['Tailscale-sleutel', /tskey-(auth|client|api)-[A-Za-z0-9]{6,}-[A-Za-z0-9]{16,}/],
   ];
 
   it('geen tokens, sleutels of privésleutels in de bestanden van de repo', () => {

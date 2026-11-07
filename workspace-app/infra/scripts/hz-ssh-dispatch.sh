@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # Vaste opdracht (forced command) voor de SSH-sleutel van GitHub Actions op de server (HZW-004/005).
-# Staat in /home/deploy/.ssh/authorized_keys als: restrict,command="/opt/hz/bin/hz-ssh-dispatch" ssh-ed25519 ...
-# De CI-sleutel kan dus géén shell openen; alleen deze opdrachten, met gecontroleerde argumenten:
+# Staat in /srv/hz-workspace/.ssh/authorized_keys als:
+#   restrict,command="/srv/hz-workspace/bin/hz-ssh-dispatch" ssh-ed25519 ...
+# GitHub Actions komt alleen via een tijdelijke Tailscale-node (tag:ci) binnen; sshd is niet publiek bereikbaar.
+# De CI-sleutel kan géén shell openen; alleen deze opdrachten, met gecontroleerde argumenten:
 #
 #   deploy <prod|test> <tag>      images ophalen, uitrolbundel uitpakken, deploy.sh van die versie draaien
 #   rollback <prod|test>          terug naar de vorige versie (bundel en images staan nog op de server)
 #   preview up <nr> <tag>         preview van pull request <nr> starten of bijwerken
 #   preview down <nr>             preview opruimen
 #   status                        wat draait er (versies, previews, containers)
-#   check                         servercontrole (server-check.sh --markdown)
+#   check                         servercontrole met voorcheck (server-check.sh --markdown)
+#   voorcheck                     alleen de voorcheck (botst de workspace met andere projecten?), zonder root
 #
 # Een registry-token (GITHUB_TOKEN van de workflow, alleen packages:read, verloopt na de job) komt op stdin mee
 # en wordt alleen in een tijdelijke DOCKER_CONFIG gebruikt; op de server staat geen blijvend registry-token.
 set -euo pipefail
-HZ_ROOT="${HZ_ROOT:-/opt/hz}"
-HZ_ETC="${HZ_ETC:-/etc/hz}"
+HZ_ROOT="${HZ_ROOT:-/srv/hz-workspace}"
+HZ_ETC="${HZ_ETC:-$HZ_ROOT/etc}"
 HZ_DOCKER="${HZ_DOCKER:-docker}"
 
 log() { printf '%s [dispatch] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
@@ -106,12 +109,16 @@ case "${a[0]:-}" in
     for d in "$HZ_ROOT"/previews/pr-*/; do
       [[ -d "$d" ]] && printf 'preview %s: %s\n' "$(basename "$d")" "$(cat "$d/tag" 2>/dev/null || echo ?)"
     done
-    "$HZ_DOCKER" ps --format '{{.Names}}\t{{.Status}}'
+    "$HZ_DOCKER" ps --filter label=nl.homezero.workspace=1 --format '{{.Names}}\t{{.Status}}'
     ;;
   check)
     ((${#a[@]} == 1)) || die "gebruik: check"
     # Vaste kopie van root (cloud-init), met een sudo-regel voor precies deze opdracht: sshd -T en ufw vragen root.
     sudo -n "$HZ_ROOT/bin/hz-server-check" --markdown
+    ;;
+  voorcheck)
+    ((${#a[@]} == 1)) || die "gebruik: voorcheck"
+    "$HZ_ROOT/bin/hz-server-check" --voorcheck --markdown
     ;;
   *) die "niet toegestaan: ${a[0]:-<leeg>}" ;;
 esac

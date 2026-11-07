@@ -80,8 +80,12 @@ describe('inhoud van de images (build-app.sh, HZW-004)', () => {
       expect(existsSync(join(apiDir, f)), f).toBe(true);
     for (const f of [
       'infra/compose/app.yaml',
-      'infra/caddy/Caddyfile',
+      'infra/compose/router.yaml',
+      'infra/caddy/router/Caddyfile',
+      'infra/caddy/edge/Caddyfile',
       'infra/scripts/deploy.sh',
+      'infra/scripts/server-check.sh',
+      'infra/scripts/proxy-snippet.sh',
       'infra/postgres/hz-roles.sh',
       'packages/db/sql/bootstrap-roles.sql',
     ])

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Uptime-hartslag (HZW-007). Elke 5 minuten via systemd (hz-heartbeat.timer):
-#   - /api/health van productie via https (dus ook DNS, TLS en de edge-proxy);
-#   - geen container 'unhealthy';
+# Uptime-hartslag (HZW-007). Elke 5 minuten via systemd (hz-workspace-heartbeat.timer):
+#   - /api/health van productie via https (dus ook DNS, TLS, de bestaande proxy en de router);
+#   - geen container van de workspace 'unhealthy' (andere projecten op de server tellen niet mee);
 #   - schijf niet voller dan 85 %.
 # Alles goed: ping naar HZ_HEARTBEAT_PING_URL. Iets mis: ping naar .../fail met de reden (zonder persoonsgegevens).
 # Ligt de hele server plat, dan komt er géén ping, en meldt de uptime-dienst (healthchecks.io of compatibel) dat na
@@ -27,7 +27,7 @@ else
   problems+=("health niet bereikbaar: $(head -c 120 <<<"$body" | tr '\n' ' ')")
 fi
 
-if unhealthy="$("$HZ_DOCKER" ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null)"; then
+if unhealthy="$("$HZ_DOCKER" ps --filter health=unhealthy --filter "label=$HZ_LABEL=1" --format '{{.Names}}' 2>/dev/null)"; then
   [[ -z "$unhealthy" ]] || problems+=("unhealthy: $(tr '\n' ' ' <<<"$unhealthy")")
 else
   problems+=("docker reageert niet")
