@@ -2,29 +2,26 @@
  * De API (Hono). Elke route komt uit het contract in @hz/shared: methode, pad en zod-schema's.
  * In het fundament serveren de routes de fixture-providers; de stukken maken ze af (owner in het contract).
  */
+import { randomBytes } from 'node:crypto';
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { streamSSE } from 'hono/streaming';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import {
-  routes,
-  ProviderName as ProviderNameSchema,
-  type Connection,
-  type ProviderName,
-  type RouteDef,
-  type RouteName,
-  type Routes,
-  type SessionInfo,
-  type User,
-} from '@hz/shared';
+import { routes, type RouteDef, type RouteName, type Routes, type SessionInfo, type User } from '@hz/shared';
 import { ctxAge, freeSlots, localISO, orgFromText, orgIndex, ymd } from '@hz/shared/logic';
 import { planRepoWrite, RepoWriteError } from '@hz/context';
+import { parseMasterKey } from '@hz/db';
 import type { ProviderBundle } from '@hz/providers';
+import { authjsConfig, authSecret, handleAuthjs, isAuthjsPath } from './auth/authjs';
+import { SESSION_MS } from './auth/checks';
+import { registerE1, resolveSession } from './auth/routes';
+import { DbAuthStore, MemoryAuthStore, type AuthStore } from './auth/store';
+import type { Fetch } from './auth/oauth';
 import type { Config } from './config';
 import { EventBus } from './events';
 import { catchCount, collect, firstName, myPartnerActies, slimContext, type Ctx } from './services';
-import type { AppStore } from './store';
+import { DbStore, type AppStore } from './store';
 
 export const VERSION = '0.1.0';
 export const SESSION_COOKIE = 'hz_session';
@@ -38,6 +35,18 @@ export interface AppDeps {
   bus?: EventBus;
   /** Ping-interval voor SSE (ms); korter in tests. */
   ssePingMs?: number;
+  /** Stuk E1: opslag voor inloggen, sessies, onboarding en koppelingen (standaard passend bij `store`). */
+  auth?: AuthStore;
+  /** Stuk E1: fetch voor OAuth-aanroepen naar de bronnen (in tests de nep-autorisatieserver). */
+  fetch?: Fetch;
+}
+
+/** Hoofdsleutel voor tokens: verplicht in productie (config), anders per proces willekeurig (alleen lokaal). */
+function masterKeyFor(config: Config): Buffer {
+  if (config.HZ_TOKEN_KEY) return parseMasterKey(config.HZ_TOKEN_KEY);
+  if (config.NODE_ENV === 'development')
+    console.warn('[api] HZ_TOKEN_KEY ontbreekt: tijdelijke sleutel; gekoppelde tokens overleven geen herstart.');
+  return randomBytes(32);
 }
 
 type Input<N extends RouteName> = {
@@ -51,22 +60,23 @@ type Handler<N extends RouteName> = (
   ctx: Ctx,
 ) => Promise<z.input<Routes[N]['response']>> | z.input<Routes[N]['response']>;
 
-const PROVIDERS = ProviderNameSchema.options;
-const PROVIDER_OF: Record<ProviderName, keyof ProviderBundle['providers']> = {
-  google_tasks: 'tasks',
-  calendar: 'calendar',
-  gmail: 'gmail',
-  slack: 'slack',
-  jira: 'jira',
-  github: 'context',
-  wispr: 'wispr',
-};
-
 export function createApp(deps: AppDeps) {
   const { config, bundle, store } = deps;
   const bus = deps.bus ?? new EventBus();
   const app = new Hono<Env>();
   const nowLocal = () => localISO(bundle.now());
+  const masterKey = masterKeyFor(config);
+  const auth: AuthStore =
+    deps.auth ??
+    (store instanceof DbStore ? new DbAuthStore(store.db, masterKey) : new MemoryAuthStore(store, masterKey));
+  const secret = authSecret(config);
+  const cookieOpts = (expires: Date) => ({
+    httpOnly: true,
+    secure: config.secureCookies,
+    sameSite: 'Lax' as const,
+    path: '/',
+    expires,
+  });
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) return c.json({ error: 'http', message: err.message }, err.status);
@@ -84,16 +94,41 @@ export function createApp(deps: AppDeps) {
     c.header('Cache-Control', 'no-store');
   });
 
-  // Sessie-middleware (stub tot het auth-stuk er is): cookie -> gebruiker.
+  // Verzoeken die iets veranderen moeten van de eigen site komen (naast SameSite=Lax op de sessiecookie).
+  const trustedOrigins = new Set(
+    [config.HZ_WEB_ORIGIN, config.HZ_PUBLIC_URL].filter(Boolean).map((o) => new URL(o!).origin),
+  );
+  app.use('/api/*', async (c, next) => {
+    const origin = c.req.header('origin');
+    if (origin && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
+      let ok = false;
+      try {
+        const o = new URL(origin);
+        ok = o.host === c.req.header('host') || trustedOrigins.has(o.origin);
+      } catch {
+        ok = false;
+      }
+      if (!ok) return c.json({ error: 'forbidden', message: 'Verzoek van een andere site geweigerd.' }, 403);
+    }
+    return next();
+  });
+
+  // Sessie-middleware (HZW-011): cookie -> sessie in Postgres (alleen de hash), verlopen, ingetrokken, geblokkeerd
+  // of ander apparaat = 401; glijdend venster van 30 dagen (hooguit eens per dag een nieuwe vervaldatum).
   const publicPaths = new Set(
     (Object.values(routes) as RouteDef[]).filter((r) => r.auth === false).map((r) => `${r.method} ${r.path}`),
   );
   app.use('/api/*', async (c, next) => {
-    if (publicPaths.has(`${c.req.method} ${c.req.path}`)) return next();
+    if (publicPaths.has(`${c.req.method} ${c.req.path}`) || isAuthjsPath(c.req.path)) return next();
     const token = getCookie(c, SESSION_COOKIE);
-    const user = token ? await store.userForSession(token) : null;
-    if (!user || !token) return c.json({ error: 'unauthenticated', message: 'Log in om verder te gaan.' }, 401);
-    c.set('user', user);
+    const r = token ? await resolveSession(auth, token, c.req.header('user-agent') ?? '') : null;
+    if (!r?.user || !token) {
+      if (token) deleteCookie(c, SESSION_COOKIE, { path: '/' });
+      const why = r?.reason === 'ander-apparaat' ? ' (sessie op een ander apparaat gebruikt en ingetrokken)' : '';
+      return c.json({ error: 'unauthenticated', message: `Log in om verder te gaan.${why}` }, 401);
+    }
+    if (r.renewTo) setCookie(c, SESSION_COOKIE, token, cookieOpts(r.renewTo));
+    c.set('user', r.user);
     c.set('token', token);
     return next();
   });
@@ -151,21 +186,19 @@ export function createApp(deps: AppDeps) {
     if (!email.endsWith('@' + config.HZ_ALLOWED_DOMAIN))
       throw new HTTPException(403, { message: `Alleen @${config.HZ_ALLOWED_DOMAIN}` });
     const name = email === 'robert@homezero.nl' ? 'Robert Verveen' : email.split('@')[0]!;
-    const user = await store.ensureUser(email, name, email === 'robert@homezero.nl' ? 'admin' : 'member');
-    const { token, expiresAt } = await store.createSession(user.id, c.req.header('user-agent') ?? '');
-    setCookie(c, SESSION_COOKIE, token, {
-      httpOnly: true,
-      secure: config.secureCookies,
-      sameSite: 'Lax',
-      path: '/',
-      expires: expiresAt,
-    });
+    const role = config.adminEmails.includes(email) ? 'admin' : 'member';
+    const user = (await auth.userByEmail(email)) ?? (await auth.createUser(email, name, role, { onboarding: false }));
+    if (user.blocked) throw new HTTPException(403, { message: 'Geblokkeerd' });
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + SESSION_MS);
+    await auth.createSession(user.id, token, c.req.header('user-agent') ?? '', expiresAt, 'dev-login');
+    setCookie(c, SESSION_COOKIE, token, cookieOpts(expiresAt));
     await store.audit(user.id, 'session.dev-login');
     return sessionInfo(user);
   });
 
   on('logout', async (_i, c) => {
-    await store.revokeSession(c.get('token'));
+    await auth.revokeSessionByToken(c.get('token'), 'logout');
     deleteCookie(c, SESSION_COOKIE, { path: '/' });
     return { ok: true as const };
   });
@@ -474,38 +507,17 @@ export function createApp(deps: AppDeps) {
     return p;
   });
 
-  /* ---------- Koppelingen ---------- */
-  const connectionList = async (userId: string): Promise<Connection[]> => {
-    const saved = await store.connections(userId);
-    return PROVIDERS.map((p) => {
-      const prov = bundle.providers[PROVIDER_OF[p]];
-      const s = saved[p];
-      const fixture = prov.mode === 'fixture';
-      return {
-        provider: p,
-        status: s?.status ?? (fixture ? 'connected' : 'disconnected'),
-        scopes: [],
-        connectedAt: s?.connectedAt,
-        mode: prov.mode,
-      };
-    });
-  };
-  on('connections', async (_i, _c, ctx) => ({ connections: await connectionList(ctx.user.id) }));
-  on('connect', async ({ params }, _c, ctx) => {
-    await store.setConnection(ctx.user.id, params.provider, {
-      status: 'connected',
-      connectedAt: new Date().toISOString(),
-    });
-    await store.audit(ctx.user.id, 'connection.connect', params.provider);
-    const connection = (await connectionList(ctx.user.id)).find((c) => c.provider === params.provider)!;
-    // TODO(koppelingen): OAuth-URL per bron teruggeven; in fixture-modus is er niets te autoriseren.
-    return { redirect: null, connection };
-  });
-  on('disconnect', async ({ params }, _c, ctx) => {
-    await store.setConnection(ctx.user.id, params.provider, { status: 'disconnected' });
-    await store.audit(ctx.user.id, 'connection.disconnect', params.provider);
-    bus.invalidate(ctx.user.id, 'connections', 'items', 'dagstart');
-    return { ok: true as const };
+  /* ---------- Stuk E1: sessies, teamleden, onboarding en koppelingen ---------- */
+  const onAny = (name: string, h: (input: never, c: Context<Env>, ctx: Ctx) => unknown) =>
+    on(name as RouteName, h as unknown as Handler<RouteName>);
+  const connections = registerE1(onAny as Parameters<typeof registerE1>[0], {
+    config,
+    bundle,
+    store,
+    auth,
+    bus,
+    fetch: deps.fetch ?? fetch,
+    sessionCookie: SESSION_COOKIE,
   });
 
   /* ---------- Claude (nep in fixture-modus) ---------- */
@@ -563,5 +575,14 @@ export function createApp(deps: AppDeps) {
     });
   });
 
-  return { app, bus };
+  /* ---------- Google-inloggen via Auth.js (na alle contractroutes onder /api/auth) ---------- */
+  app.all('/api/auth/*', async (c) => {
+    if (!isAuthjsPath(c.req.path)) return c.json({ error: 'not_found', message: 'Onbekende route' }, 404);
+    if (!config.googleLogin)
+      return c.json({ error: 'not_configured', message: 'Google-inloggen is niet ingericht' }, 404);
+    const cfg = authjsConfig({ config, auth, secret, userAgent: c.req.header('user-agent') ?? '' });
+    return handleAuthjs(c.req.raw, cfg, config.HZ_PUBLIC_URL);
+  });
+
+  return { app, bus, auth, connections };
 }

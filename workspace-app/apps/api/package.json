@@ -16,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@auth/core": "0.41.3",
     "@hono/node-server": "1.19.6",
     "@hz/context": "workspace:*",
     "@hz/db": "workspace:*",

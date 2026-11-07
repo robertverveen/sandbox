@@ -105,14 +105,19 @@ export async function collect(ctx: Ctx, range?: { from?: string; to?: string }):
   const to = range?.to ?? ymd(addDays(now, 28));
   const selfDomain = ctx.user.email.split('@')[1] ?? 'homezero.nl';
 
+  // Stuk E1: een bron die de collega bewust ontkoppelde levert niets meer (ook niet uit fixtures).
+  const conns = await ctx.store.connections(ctx.user.id);
+  const src = <T>(prov: ProviderName, fallback: T, fn: () => Promise<T>) =>
+    conns[prov]?.status === 'disconnected' ? Promise.resolve(fallback) : safe(prov, errors, fallback, fn);
+
   const [rawCals, meetings, mails, slack, tasks, recs, jira, context, state, goals, legacy] = await Promise.all([
-    safe('calendar', errors, [], () => p.calendar.listCalendars()),
-    safe('calendar', errors, [], () => p.calendar.listEvents({ from, to })),
-    safe('gmail', errors, [], () => p.gmail.listThreads()),
-    safe('slack', errors, [], () => p.slack.attention()),
-    safe('google_tasks', errors, [], () => p.tasks.listTasks()),
-    safe('wispr', errors, [], () => p.wispr.listMeetings(ymd(addDays(now, -7)))),
-    safe('jira', errors, { sprint: null, issues: [] }, () => p.jira.activeSprint()),
+    src('calendar', [], () => p.calendar.listCalendars()),
+    src('calendar', [], () => p.calendar.listEvents({ from, to })),
+    src('gmail', [], () => p.gmail.listThreads()),
+    src('slack', [], () => p.slack.attention()),
+    src('google_tasks', [], () => p.tasks.listTasks()),
+    src('wispr', [], () => p.wispr.listMeetings(ymd(addDays(now, -7)))),
+    src('jira', { sprint: null, issues: [] }, () => p.jira.activeSprint()),
     safe<ContextSnapshot>('github', errors, { status: null, partners: {}, acties: {}, pers: null }, () =>
       p.context.snapshot(),
     ),
