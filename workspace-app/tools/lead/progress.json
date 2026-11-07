@@ -1,6 +1,6 @@
 {
- "updated": "7 nov 2026, 22:15",
- "status": "Golf A gewonnen, klaar voor overdracht",
+ "updated": "7 nov 2026, 21:20",
+ "status": "Golf A gewonnen, app staat in een eigen repo",
  "pieces": [
   {
    "id": "F",
@@ -135,6 +135,7 @@
   }
  ],
  "log": [
+  "Overgezet naar robertverveen/homezero-workspace (main), met geschiedenis. GitHub Actions groen: CI met e2e, en de Docker-images bouwen (Alpine kreeg bash, gevonden in de eerste echte build). Uitrol slaat zichzelf over tot de server er is. Volgende stap: jij zet je laptop klaar (OVERDRACHT stap 3-4).",
   "Golf A gewonnen: server en uitrol (ronde 3), inloggen (2), datamodel (5), koppelingen (3). 670 unit-tests groen. Lead: echte contactnamen uit testdata vervangen door verzonnen namen.",
   "Overdrachtsplan klaar (OVERDRACHT.md): na golf A naar een eigen repo robertverveen/homezero-workspace, daarna lokaal verder in Claude Code met Chrome en Tailscale. Overzetscript getest.",
   "Hosting: bestaande Hetzner-server in je eigen tailnet, naast je andere projecten; privacytekst v1 door AI op basis van de privacyverklaring van HomeZero.",
