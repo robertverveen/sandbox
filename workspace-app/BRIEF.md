@@ -36,7 +36,7 @@ Vergelijken = beide naast elkaar op dezelfde viewport (1440x1000 en 400x860, lic
 - MCP-server van de workspace (officiële TS-SDK, OAuth 2.1 via de auth-bibliotheek): briefing schrijven, weekdoelen, tracker, item-status, context zoeken, taken lezen/aanmaken/afvinken. Token van A kan niet bij B.
 - Schrijven naar de contextlaag: alleen volgens `_systeem/schema.md`, wachtrij per repo, `git pull --rebase`, `python3 _systeem/checks/contextcheck.py --push` (exit 1/2 = niet pushen), nooit regels van anderen herschrijven. Test alleen tegen tijdelijke kopieën van de repo's, nooit tegen de echte.
 - Live updates naar de browser via server-sent events. PWA met web push.
-- Hosting: Hetzner Cloud CX32 + Coolify (of Compose + Caddy), alles als script in de repo (cloud-init, compose, Caddy, GitHub Actions), preview per PR, back-up naar Storage Box. Dit wordt hier als code gebouwd en lokaal gevalideerd; uitrollen doet een mens.
+- Hosting: Hetzner Cloud CX32 + Coolify (of Compose + Caddy), alles als script in de repo (cloud-init, compose, Caddy, GitHub Actions), preview per PR, back-up naar Storage Box. Beheer gaat via Tailscale: SSH en het Coolify-dashboard alleen in het tailnet, publiek alleen 80/443 voor de app (homezero.verveen.me, previews op *.test.homezero.verveen.me), uitrol uit GitHub Actions via een tijdelijke Tailscale-node (tag:ci). De server meldt zich bij het tailnet met een auth-key uit de secret-opslag (cloud-init), nooit in Git. Dit wordt hier als code gebouwd en lokaal gevalideerd; uitrollen doet een mens.
 
 ## AGENTS.md-regels die altijd gelden
 

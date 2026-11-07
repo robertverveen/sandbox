@@ -1,0 +1,144 @@
+{
+ "updated": "7 nov 2026, 13:45",
+ "status": "Fundament staat, golf A bouwt",
+ "pieces": [
+  {
+   "id": "F",
+   "naam": "Fundament",
+   "stories": "monorepo, API-contract, testdata, lat-screenshots",
+   "status": "gewonnen",
+   "ronde": 2,
+   "oordeel": "ours",
+   "gat": "Opgelost door de lead: echt partnercontact in een testbestand vervangen door verzonnen data. RLS-aanscherpingen gaan mee in E2 en E8."
+  },
+  {
+   "id": "E0",
+   "naam": "Server en uitrol",
+   "stories": "HZW-001–008, 082",
+   "status": "bezig",
+   "ronde": 1,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E1",
+   "naam": "Inloggen en onboarding",
+   "stories": "HZW-010–014",
+   "status": "bezig",
+   "ronde": 1,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E2",
+   "naam": "Datamodel en import",
+   "stories": "HZW-020–021",
+   "status": "bezig",
+   "ronde": 1,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E3",
+   "naam": "Koppelingen en sync",
+   "stories": "HZW-030–037",
+   "status": "bezig",
+   "ronde": 1,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E4a",
+   "naam": "Schil, Dagstart, Planning, Agenda",
+   "stories": "HZW-040–043",
+   "status": "gepland",
+   "ronde": 0,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E4b",
+   "naam": "Tracker en weekritme",
+   "stories": "HZW-044, 047",
+   "status": "gepland",
+   "ronde": 0,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E4c",
+   "naam": "Gesprekken en Inhalen",
+   "stories": "HZW-045–046",
+   "status": "gepland",
+   "ronde": 0,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E4d",
+   "naam": "Zoeken",
+   "stories": "HZW-048",
+   "status": "gepland",
+   "ronde": 0,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E5",
+   "naam": "Claude, MCP en skills",
+   "stories": "HZW-050–053, keuze 12a",
+   "status": "gepland",
+   "ronde": 0,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E6",
+   "naam": "Contextlaag",
+   "stories": "HZW-060–069",
+   "status": "gepland",
+   "ronde": 0,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E7",
+   "naam": "Mobiel en meldingen",
+   "stories": "HZW-070–071",
+   "status": "gepland",
+   "ronde": 0,
+   "oordeel": "",
+   "gat": ""
+  },
+  {
+   "id": "E8",
+   "naam": "Beveiliging en privacy",
+   "stories": "HZW-080–081",
+   "status": "gepland",
+   "ronde": 0,
+   "oordeel": "",
+   "gat": ""
+  }
+ ],
+ "human": [
+  {
+   "wat": "Deel 1 - Claude regelt via Chrome (11 stappen)",
+   "waarom": "Server, back-ups, DNS, Coolify, Google Cloud, Slack-app, Atlassian, GitHub App, Anthropic-sleutel, meldingen, controle. Jij bent alleen ingelogd en zegt ja bij kosten of rechten. Nodig: een sessie in de desktopapp met Claude in Chrome."
+  },
+  {
+   "wat": "Deel 2 - alleen jij of een ander (6 punten, deels alleen bij vastlopen)",
+   "waarom": "Workspace- of Slack-beheerder als apps afgeschermd zijn, een collega die de onboarding doorloopt, een tweede reviewer, akkoord van Rens of Mike, en twee weken dubbel landen."
+  },
+  {
+   "wat": "Deel 3 - testronde, 8 scenario's, ongeveer 40 minuten",
+   "waarom": "T1 inloggen, T2 koppelen (alleen Google en Slack), T3 Dagstart naast je echte dag, T4 Inhalen en gelezen in Slack, T5 taak naar Google Taken en repo, T6 zoeken, T7 /klant-recap en MCP, T8 iPhone en meldingen. Volledig stappenplan in HUMAN_INPUT.md."
+  }
+ ],
+ "log": [
+  "Testronde herschreven: setup gaat via Claude in Chrome, jij test alleen 8 kritieke scenario's.",
+  "Fundament gewonnen in ronde 2: 160 unit-tests en 17 e2e-tests groen, criticus koos het onze blind (Dagstart gelijk in licht, beter in donker en in de help).",
+  "Lead: echt partnercontact uit testdata gehaald vóór de push; vier commits samengevoegd zodat het niet in de geschiedenis staat.",
+  "Golf A gestart: server en uitrol, inloggen, datamodel, koppelingen (elk in een eigen worktree).",
+  "Start: lat vastgelegd (artifact-prototype v17 met echte contextdata), plan in 13 stukken."
+ ]
+}

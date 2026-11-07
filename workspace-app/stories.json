@@ -8,8 +8,8 @@
  },
  {
   "id": "HZW-002",
-  "wat": "Hetzner Cloud-server (CX32, Ubuntu 24.04, Falkenstein of Neurenberg), SSH alleen met sleutel, firewall 22/80/443, automatische beveiligingsupdates, Docker",
-  "zelftest": "Script checkt open poorten, SSH-instellingen en updates; resultaat in het issue",
+  "wat": "Hetzner Cloud-server (CX32, Ubuntu 24.04, Falkenstein of Neurenberg) in het tailnet van HomeZero: SSH en het Coolify-dashboard alleen via Tailscale (geen publieke poort 22 of 8000), publieke firewall alleen 80/443 voor de app, automatische beveiligingsupdates, Docker",
+  "zelftest": "Script checkt vanaf buiten dat alleen 80/443 open zijn, vanuit het tailnet dat SSH met sleutel werkt (wachtwoordlogin uit), en dat updates aan staan; resultaat in het issue",
   "goedkeuring": "Toegang werkt, wachtwoordlogin staat uit",
   "dep": "001"
  },
@@ -22,7 +22,7 @@
  },
  {
   "id": "HZW-004",
-  "wat": "CI/CD met GitHub Actions: build images naar GHCR, deploy naar test bij merge, naar productie bij een goedgekeurde release",
+  "wat": "CI/CD met GitHub Actions: build images naar GHCR, deploy naar test bij merge, naar productie bij een goedgekeurde release; de runner komt via een tijdelijke Tailscale-node (tag:ci, OAuth-client als secret) bij de server, nooit via publieke SSH",
   "zelftest": "Pipeline-run met deploy en health-check /api/health groen",
   "goedkeuring": "Een release naar productie werkt met één klik",
   "dep": "003"
