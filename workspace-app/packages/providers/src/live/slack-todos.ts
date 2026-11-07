@@ -10,7 +10,7 @@
 import type { TaskItem, TaskList } from '@hz/shared';
 import { toLocal } from '@hz/shared/logic';
 import type { TasksProvider } from '../types';
-import { LiveSlack } from './slack';
+import type { LiveSlack } from './slack';
 import { assertHumanAction } from './tokens';
 
 export interface SlackReminder {
