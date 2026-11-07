@@ -55,10 +55,36 @@ const sunergy = {
     { email: SELF, self: true, responseStatus: 'needsAction' },
   ],
 };
-const declined = { ...sunergy, id: 'evdecl', iCalUID: 'evdecl@google.com', summary: 'Afgewezen', attendees: [{ email: SELF, self: true, responseStatus: 'declined' }] };
-const workLoc = { id: 'evwl', status: 'confirmed', eventType: 'workingLocation', summary: 'Kantoor', start: { date: '2026-10-30' }, end: { date: '2026-10-31' } };
-const priveSport = { id: 'evsport', status: 'confirmed', summary: 'Sport', start: { dateTime: '2026-10-30T18:00:00+01:00' }, end: { dateTime: '2026-10-30T19:00:00+01:00' } };
-const vakantie = { id: 'evvak', status: 'confirmed', summary: 'Vakantie Lou', start: { date: '2026-11-02' }, end: { date: '2026-11-07' }, colorId: '3' };
+const declined = {
+  ...sunergy,
+  id: 'evdecl',
+  iCalUID: 'evdecl@google.com',
+  summary: 'Afgewezen',
+  attendees: [{ email: SELF, self: true, responseStatus: 'declined' }],
+};
+const workLoc = {
+  id: 'evwl',
+  status: 'confirmed',
+  eventType: 'workingLocation',
+  summary: 'Kantoor',
+  start: { date: '2026-10-30' },
+  end: { date: '2026-10-31' },
+};
+const priveSport = {
+  id: 'evsport',
+  status: 'confirmed',
+  summary: 'Sport',
+  start: { dateTime: '2026-10-30T18:00:00+01:00' },
+  end: { dateTime: '2026-10-30T19:00:00+01:00' },
+};
+const vakantie = {
+  id: 'evvak',
+  status: 'confirmed',
+  summary: 'Vakantie Lou',
+  start: { date: '2026-11-02' },
+  end: { date: '2026-11-07' },
+  colorId: '3',
+};
 /** Dezelfde afspraak, ook zichtbaar in de privé-agenda (gedeeld): mag maar één keer verschijnen. */
 const feenstraDup = { ...feenstra, attendees: feenstra.attendees.map((a) => ({ ...a, self: false })) };
 
@@ -81,7 +107,8 @@ const { server, requests, clear } = mockServer(
     if (!s) return HttpResponse.json({ error: { code: 404, message: 'Not Found' } }, { status: 404 });
     const sync = u.searchParams.get('syncToken');
     if (sync) {
-      if (s.gone) return HttpResponse.json({ error: { code: 410, message: 'Sync token is no longer valid' } }, { status: 410 });
+      if (s.gone)
+        return HttpResponse.json({ error: { code: 410, message: 'Sync token is no longer valid' } }, { status: 410 });
       const items = s.changes ?? [];
       s.changes = [];
       return HttpResponse.json({ items, nextSyncToken: s.token + '+' });
@@ -149,7 +176,14 @@ describe('Google Agenda live (HZW-030)', () => {
     clear();
     state[SELF]!.changes = [
       { id: 'evsun1', status: 'cancelled' },
-      { ...feenstra, id: 'evnew', iCalUID: 'evnew@google.com', summary: 'Nieuw: TonZon x HomeZero', start: { dateTime: '2026-10-30T15:00:00+01:00' }, end: { dateTime: '2026-10-30T16:00:00+01:00' } },
+      {
+        ...feenstra,
+        id: 'evnew',
+        iCalUID: 'evnew@google.com',
+        summary: 'Nieuw: TonZon x HomeZero',
+        start: { dateTime: '2026-10-30T15:00:00+01:00' },
+        end: { dateTime: '2026-10-30T16:00:00+01:00' },
+      },
     ];
     const r = await cal.syncCalendar(SELF, { force: true });
     expect(r).toMatchObject({ changed: 2, full: false });
@@ -214,9 +248,16 @@ describe('Google Agenda live (HZW-030)', () => {
         });
       }),
     );
-    const r = await make().freeBusy([SELF, 'mike@homezero.nl', 'onbekend@homezero.nl'], { from: '2026-10-25', to: '2026-10-27' });
+    const r = await make().freeBusy([SELF, 'mike@homezero.nl', 'onbekend@homezero.nl'], {
+      from: '2026-10-25',
+      to: '2026-10-27',
+    });
     // 25 oktober 2026: zomertijd eindigt (03:00 CEST -> 02:00 CET).
-    expect(body).toMatchObject({ timeMin: '2026-10-24T22:00:00.000Z', timeMax: '2026-10-26T23:00:00.000Z', timeZone: 'Europe/Amsterdam' });
+    expect(body).toMatchObject({
+      timeMin: '2026-10-24T22:00:00.000Z',
+      timeMax: '2026-10-26T23:00:00.000Z',
+      timeZone: 'Europe/Amsterdam',
+    });
     expect(r[0]).toEqual({ email: SELF, busy: [{ start: '2026-10-26T10:00', end: '2026-10-26T11:00' }] });
     expect(r[1]!.busy).toEqual([{ start: '2026-10-25T00:30', end: '2026-10-25T02:30' }]);
     expect(r[2]).toMatchObject({ email: 'onbekend@homezero.nl', error: 'notFound' });
@@ -244,7 +285,13 @@ describe('Google Agenda live (HZW-030)', () => {
       }),
     );
     const cal = make();
-    const input = { title: 'Sparren partnerovereenkomst', start: '2026-03-30T10:00', end: '2026-03-30T10:30', attendees: ['mike@homezero.nl'], meet: true };
+    const input = {
+      title: 'Sparren partnerovereenkomst',
+      start: '2026-03-30T10:00',
+      end: '2026-03-30T10:30',
+      attendees: ['mike@homezero.nl'],
+      meet: true,
+    };
     await expect(cal.createEvent(input)).rejects.toBeInstanceOf(NotHumanError);
     expect(req).toBeNull();
     const ev = await withHumanAction('u1', () => withUserScope('u1', () => cal.createEvent(input)));
@@ -258,19 +305,32 @@ describe('Google Agenda live (HZW-030)', () => {
       conferenceData: { createRequest: { conferenceSolutionKey: { type: 'hangoutsMeet' } } },
     });
     // Eerste werkdag na de overgang naar zomertijd (29 maart 2026): 10:00 blijft 10:00.
-    expect(ev).toMatchObject({ id: 'ev:evcreated', start: '2026-03-30T10:00', end: '2026-03-30T10:30', meet: 'https://meet.google.com/new-meet-xyz' });
+    expect(ev).toMatchObject({
+      id: 'ev:evcreated',
+      start: '2026-03-30T10:00',
+      end: '2026-03-30T10:30',
+      meet: 'https://meet.google.com/new-meet-xyz',
+    });
   });
 
   it('rate limit (429) wordt een RateLimitError met Retry-After', async () => {
-    server.use(http.get(`${G}/users/me/calendarList`, () => new HttpResponse('{}', { status: 429, headers: { 'retry-after': '12' } })));
-    const e = await make().listCalendars().catch((x) => x);
+    server.use(
+      http.get(
+        `${G}/users/me/calendarList`,
+        () => new HttpResponse('{}', { status: 429, headers: { 'retry-after': '12' } }),
+      ),
+    );
+    const e = await make()
+      .listCalendars()
+      .catch((x) => x);
     expect(e).toBeInstanceOf(RateLimitError);
     expect((e as RateLimitError).retryAfterMs).toBe(12_000);
   });
 });
 
 describe('tijdzone rond zomertijd (Europe/Amsterdam)', () => {
-  const at = (dateTime: string) => mapEvent({ id: 'x', start: { dateTime }, end: { dateTime } }, { calId: SELF, selfEmail: SELF })!.start;
+  const at = (dateTime: string) =>
+    mapEvent({ id: 'x', start: { dateTime }, end: { dateTime } }, { calId: SELF, selfEmail: SELF })!.start;
   it('voorjaar: 29 maart 2026 02:00 CET -> 03:00 CEST', () => {
     expect(at('2026-03-29T00:59:00Z')).toBe('2026-03-29T01:59');
     expect(at('2026-03-29T01:00:00Z')).toBe('2026-03-29T03:00');

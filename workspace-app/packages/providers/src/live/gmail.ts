@@ -100,7 +100,8 @@ export function messageBody(m: GMessage): { text: string; files: string[] } {
 
 /** Geciteerde tekst afsplitsen ("Op … schreef …:", "On … wrote:", regels met >). */
 export function splitQuoted(text: string): { body: string; quoted: string } {
-  const re = /^(Op .{5,200}(schreef|het volgende geschreven)|On .{5,200}wrote:|-{2,}\s*(Oorspronkelijk|Original) bericht|From: .+$)/im;
+  const re =
+    /^(Op .{5,200}(schreef|het volgende geschreven)|On .{5,200}wrote:|-{2,}\s*(Oorspronkelijk|Original) bericht|From: .+$)/im;
   const m = re.exec(text);
   let idx = m ? m.index : -1;
   const q = /^>.*$/m.exec(text);
@@ -263,7 +264,9 @@ export class LiveGmail implements GmailProvider {
     const refs = [header(last, 'References'), msgId].filter(Boolean).join(' ');
     const sig = await this.signature().catch(() => '');
     const text = sig ? `${body.trim()}\n\n--\n${sig}` : body.trim();
-    const encSubject = /[^\x20-\x7e]/.test(subject) ? `=?UTF-8?B?${Buffer.from(subject).toString('base64')}?=` : subject;
+    const encSubject = /[^\x20-\x7e]/.test(subject)
+      ? `=?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`
+      : subject;
     const raw = [
       `To: ${to.join(', ')}`,
       ...(cc.length ? [`Cc: ${cc.join(', ')}`] : []),

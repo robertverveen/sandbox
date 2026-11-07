@@ -152,9 +152,7 @@ export class LiveTasks implements TasksProvider {
     let task: GTask | null = null;
     // Naar of uit de Backlog-lijst: verplaatsen tussen lijsten (tasks.move met destinationTasklist).
     if (patch.backlog !== undefined) {
-      const target = patch.backlog
-        ? await this.backlogList(lists)
-        : (lists.find((l) => !isBacklog(l.title)) ?? list);
+      const target = patch.backlog ? await this.backlogList(lists) : (lists.find((l) => !isBacklog(l.title)) ?? list);
       if (target.id !== list.id) {
         task = await this.http.json<GTask>(
           `/lists/${encodeURIComponent(list.id)}/tasks/${encodeURIComponent(taskId)}/move`,
@@ -172,10 +170,10 @@ export class LiveTasks implements TasksProvider {
     }
     const newId = task?.id ?? taskId;
     if (Object.keys(body).length)
-      task = await this.http.json<GTask>(
-        `/lists/${encodeURIComponent(list.id)}/tasks/${encodeURIComponent(newId)}`,
-        { method: 'PATCH', body },
-      );
+      task = await this.http.json<GTask>(`/lists/${encodeURIComponent(list.id)}/tasks/${encodeURIComponent(newId)}`, {
+        method: 'PATCH',
+        body,
+      });
     if (!task)
       task = await this.http.json<GTask>(`/lists/${encodeURIComponent(list.id)}/tasks/${encodeURIComponent(newId)}`);
     const idx = (await this.store.get<Record<string, string>>('tasks:index')) ?? {};

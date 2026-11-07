@@ -99,7 +99,9 @@ export class LiveJira implements JiraProvider {
   async cloudId(): Promise<string> {
     const c = await this.store.get<string>('jira:cloud');
     if (c) return c;
-    const r = await this.http.json<Array<{ id: string; url?: string; name?: string }>>('/oauth/token/accessible-resources');
+    const r = await this.http.json<Array<{ id: string; url?: string; name?: string }>>(
+      '/oauth/token/accessible-resources',
+    );
     const site = this.o.site?.replace(/^https?:\/\//, '');
     const hit = (site && r.find((x) => x.url?.includes(site))) || r[0];
     if (!hit) throw new Error('geen Jira-site met toegang voor dit account');
@@ -119,7 +121,10 @@ export class LiveJira implements JiraProvider {
     const ids: FieldIds = {
       storyPoints: [...new Set([...byName(/^story point/i), 'customfield_10016'])],
       tester: fields.find((f) => /^tester$/i.test(f.name))?.id ?? null,
-      sprint: fields.find((f) => f.schema?.custom?.endsWith(':gh-sprint'))?.id ?? byName(/^sprint$/i)[0] ?? 'customfield_10020',
+      sprint:
+        fields.find((f) => f.schema?.custom?.endsWith(':gh-sprint'))?.id ??
+        byName(/^sprint$/i)[0] ??
+        'customfield_10020',
     };
     await this.store.set('jira:fields', { at: Date.now(), ids });
     return ids;
@@ -156,19 +161,28 @@ export class LiveJira implements JiraProvider {
     const out: JIssue[] = [];
     let nextPageToken: string | undefined;
     do {
-      const r = await this.api<{ issues?: JIssue[]; nextPageToken?: string; isLast?: boolean }>('/rest/api/3/search/jql', {
-        jql,
-        fields: fields.join(','),
-        maxResults: 100,
-        nextPageToken,
-      });
+      const r = await this.api<{ issues?: JIssue[]; nextPageToken?: string; isLast?: boolean }>(
+        '/rest/api/3/search/jql',
+        {
+          jql,
+          fields: fields.join(','),
+          maxResults: 100,
+          nextPageToken,
+        },
+      );
       out.push(...(r.issues ?? []));
       nextPageToken = r.isLast === false || r.nextPageToken ? r.nextPageToken : undefined;
     } while (nextPageToken);
     return out;
   }
 
-  private toItem(i: JIssue, f: FieldIds, me: string, sprint: JiraSprint, siteUrl: string): JiraItem & { updated?: string } {
+  private toItem(
+    i: JIssue,
+    f: FieldIds,
+    me: string,
+    sprint: JiraSprint,
+    siteUrl: string,
+  ): JiraItem & { updated?: string } {
     const sp = f.storyPoints.map((id) => i.fields[id]).find((v) => typeof v === 'number') as number | undefined;
     const tester = f.tester ? (i.fields[f.tester] as JUser | JUser[] | null | undefined) : null;
     const testers = Array.isArray(tester) ? tester : tester ? [tester] : [];
@@ -208,8 +222,18 @@ export class LiveJira implements JiraProvider {
       ...(raw.goal ? { goal: raw.goal } : {}),
     };
     const [f, me, run] = await Promise.all([this.fieldIds(), this.myself(), this.o.lastNightRun?.() ?? null]);
-    const siteUrl = this.o.site ? `https://${this.o.site.replace(/^https?:\/\//, '')}` : 'https://homezero.atlassian.net';
-    const fields = ['summary', 'status', 'assignee', 'updated', f.sprint, ...f.storyPoints, ...(f.tester ? [f.tester] : [])];
+    const siteUrl = this.o.site
+      ? `https://${this.o.site.replace(/^https?:\/\//, '')}`
+      : 'https://homezero.atlassian.net';
+    const fields = [
+      'summary',
+      'status',
+      'assignee',
+      'updated',
+      f.sprint,
+      ...f.storyPoints,
+      ...(f.tester ? [f.tester] : []),
+    ];
     const basis = run ? run.toISOString() : this.now().toISOString().slice(0, 10);
     const key = 'jira:sprint';
     const startedAt = this.now();
@@ -225,7 +249,10 @@ export class LiveJira implements JiraProvider {
     } else {
       // Alleen wat sinds de vorige sync veranderde (ook issues die uit de sprint gingen).
       const project = this.o.project ?? 'HOM';
-      const changed = await this.search(`project = ${project} AND updated >= "${jqlDate(new Date(cache.syncedAt))}"`, fields);
+      const changed = await this.search(
+        `project = ${project} AND updated >= "${jqlDate(new Date(cache.syncedAt))}"`,
+        fields,
+      );
       for (const i of changed) {
         if (this.inSprint(i, f, raw.id)) cache.issues[i.key] = this.toItem(i, f, me, sprint, siteUrl);
         else delete cache.issues[i.key];

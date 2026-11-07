@@ -102,7 +102,9 @@ class RepoMirror {
     await Promise.all(
       Array.from({ length: 8 }, async () => {
         for (let e = queue.shift(); e; e = queue.shift()) {
-          const b = await this.http.json<{ content: string; encoding: string }>(`/repos/${this.repo}/git/blobs/${e.sha}`);
+          const b = await this.http.json<{ content: string; encoding: string }>(
+            `/repos/${this.repo}/git/blobs/${e.sha}`,
+          );
           const text = b.encoding === 'base64' ? Buffer.from(b.content, 'base64').toString('utf8') : b.content;
           const abs = join(this.dir, e.path);
           mkdirSync(dirname(abs), { recursive: true, mode: 0o700 });
@@ -132,7 +134,13 @@ export class GitHubContext implements ContextProvider {
   ) {
     this.http = new HttpClient('github', opts.base ?? GITHUB_API, creds, opts.fetchImpl);
     this.root = mkdtempSync(join(tmpdir(), 'hz-github-'));
-    this.ctx = new RepoMirror(this.http, opts.repo ?? 'HomeZeroTech/HomeZero-context', opts.branch ?? 'main', 'context', this.root);
+    this.ctx = new RepoMirror(
+      this.http,
+      opts.repo ?? 'HomeZeroTech/HomeZero-context',
+      opts.branch ?? 'main',
+      'context',
+      this.root,
+    );
     this.pers = opts.persoonlijk
       ? new RepoMirror(this.http, opts.persoonlijk, opts.persoonlijkBranch ?? 'main', 'persoonlijk', this.root)
       : null;

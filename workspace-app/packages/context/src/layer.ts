@@ -73,7 +73,8 @@ export function liveWindow(
   const margin = (o.marginMinutes ?? 30) * 60_000;
   const max = (o.maxDays ?? 14) * 864e5;
   const run = lastSuccessfulRun(runs);
-  if (!run) return { since: new Date(+now - (o.fallbackDays ?? 7) * 864e5), basis: 'geen-run', run: null, missedNight: true };
+  if (!run)
+    return { since: new Date(+now - (o.fallbackDays ?? 7) * 864e5), basis: 'geen-run', run: null, missedNight: true };
   const since = new Date(Math.max(+run.at - margin, +now - max));
   return { since, basis: 'nachtrun', run, missedNight: +now - +run.at > 36 * 3600_000 };
 }
@@ -98,7 +99,10 @@ export function readJiraLayer(reader: LayerReader): JiraLayerIssue[] {
   const dir = 'product/jira';
   if (!reader.isDir(dir)) return [];
   const out = new Map<string, JiraLayerIssue>();
-  for (const f of reader.list(dir).filter((x) => x.endsWith('.md') && x !== 'README.md').sort()) {
+  for (const f of reader
+    .list(dir)
+    .filter((x) => x.endsWith('.md') && x !== 'README.md')
+    .sort()) {
     const text = reader.read(`${dir}/${f}`);
     const { fm, body } = frontmatter(text);
     const asOf = /stand (\d{4}-\d{2}-\d{2})/.exec(body)?.[1] ?? fm.bijgewerkt ?? '';

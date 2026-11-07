@@ -11,7 +11,14 @@
 import type { Conversation, Message, SlackItem } from '@hz/shared';
 import { addDays, toLocal, ymd } from '@hz/shared/logic';
 import type { SlackProvider } from '../types';
-import { AuthError, HttpClient, ProviderHttpError, RateLimitError, parseRetryAfter, type LiveCredentials } from './http';
+import {
+  AuthError,
+  HttpClient,
+  ProviderHttpError,
+  RateLimitError,
+  parseRetryAfter,
+  type LiveCredentials,
+} from './http';
 import { MemorySyncStore, type SyncStore } from './store';
 import { assertHumanAction } from './tokens';
 
@@ -102,7 +109,11 @@ export class LiveSlack implements SlackProvider {
   }
 
   /** Slack-methode aanroepen; {ok:false} en 429 worden getypeerde fouten. */
-  async call<T = Record<string, unknown>>(method: string, args: Record<string, unknown> = {}, write = false): Promise<T> {
+  async call<T = Record<string, unknown>>(
+    method: string,
+    args: Record<string, unknown> = {},
+    write = false,
+  ): Promise<T> {
     const res = write
       ? await this.http.raw(`/${method}`, { method: 'POST', body: args, form: true })
       : await this.http.raw(`/${method}`, { query: args as Record<string, string> });
@@ -110,7 +121,8 @@ export class LiveSlack implements SlackProvider {
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string } & T;
     if (!res.ok) throw await this.http.toError(res, data);
     if (!data.ok) {
-      if (data.error === 'ratelimited') throw new RateLimitError('slack', parseRetryAfter(res.headers.get('retry-after')));
+      if (data.error === 'ratelimited')
+        throw new RateLimitError('slack', parseRetryAfter(res.headers.get('retry-after')));
       if (AUTH_ERRORS.has(String(data.error))) {
         await this.creds.rejected?.('slack');
         throw new AuthError('slack', `Slack: ${data.error}`);
@@ -140,7 +152,13 @@ export class LiveSlack implements SlackProvider {
         ...(cursor ? { cursor } : {}),
       });
       for (const u of r.members ?? [])
-        users[u.id] = { id: u.id, name: u.name, real_name: u.real_name, is_bot: u.is_bot, profile: { display_name: u.profile?.display_name, real_name: u.profile?.real_name } };
+        users[u.id] = {
+          id: u.id,
+          name: u.name,
+          real_name: u.real_name,
+          is_bot: u.is_bot,
+          profile: { display_name: u.profile?.display_name, real_name: u.profile?.real_name },
+        };
       cursor = r.response_metadata?.next_cursor || undefined;
     } while (cursor);
     await this.store.set('slack:users', { at: Date.now(), users });
@@ -153,7 +171,12 @@ export class LiveSlack implements SlackProvider {
     do {
       const r = await this.call<{ channels?: SConv[]; response_metadata?: { next_cursor?: string } }>(
         'users.conversations',
-        { types: 'public_channel,private_channel,mpim,im', exclude_archived: true, limit: 200, ...(cursor ? { cursor } : {}) },
+        {
+          types: 'public_channel,private_channel,mpim,im',
+          exclude_archived: true,
+          limit: 200,
+          ...(cursor ? { cursor } : {}),
+        },
       );
       out.push(...(r.channels ?? []));
       cursor = r.response_metadata?.next_cursor || undefined;
@@ -210,16 +233,23 @@ export class LiveSlack implements SlackProvider {
       Array.from({ length: 5 }, async () => {
         for (let c = queue.shift(); c; c = queue.shift()) {
           const allow = budget-- > 0;
-          states.set(c.id, await this.state(c.id, allow).catch((e) => {
-            if (e instanceof AuthError) throw e;
-            return null;
-          }));
+          states.set(
+            c.id,
+            await this.state(c.id, allow).catch((e) => {
+              if (e instanceof AuthError) throw e;
+              return null;
+            }),
+          );
         }
       }),
     );
     for (const c of convs) {
       const st = states.get(c.id);
-      const unread = !!(st?.latest_ts && st.latest_user !== me.user_id && (!st.last_read || st.latest_ts > st.last_read));
+      const unread = !!(
+        st?.latest_ts &&
+        st.latest_user !== me.user_id &&
+        (!st.last_read || st.latest_ts > st.last_read)
+      );
       const who = st?.latest_user === me.user_id ? 'jij' : userName(users[st?.latest_user ?? '']) || '';
       out.push({
         key: 'sl:' + c.id,
@@ -228,7 +258,9 @@ export class LiveSlack implements SlackProvider {
         purpose: c.purpose?.value || undefined,
         unread,
         time: st?.latest_ts ? tsToLocal(st.latest_ts) : undefined,
-        preview: st?.latest_text ? `${who ? who + ': ' : ''}${cleanText(st.latest_text, users).replace(/\s+/g, ' ')}`.slice(0, 200) : c.purpose?.value || undefined,
+        preview: st?.latest_text
+          ? `${who ? who + ': ' : ''}${cleanText(st.latest_text, users).replace(/\s+/g, ' ')}`.slice(0, 200)
+          : c.purpose?.value || undefined,
         entities: [],
       });
     }
@@ -239,7 +271,7 @@ export class LiveSlack implements SlackProvider {
     return {
       ts: m.ts,
       time: tsToLocal(m.ts),
-      fromName: userName(users[m.user ?? '']) || m.username || (m.bot_id ? 'Bot' : m.user ?? ''),
+      fromName: userName(users[m.user ?? '']) || m.username || (m.bot_id ? 'Bot' : (m.user ?? '')),
       fromId: m.user ?? m.bot_id ?? '',
       me: m.user === me,
       bot: !!m.bot_id || m.subtype === 'bot_message',
@@ -322,7 +354,9 @@ export class LiveSlack implements SlackProvider {
           fromMe: m.user === me.user_id,
           [flag]: true,
           ...(isDm ? { dm: true } : {}),
-          title: cleanText(m.text ?? '', users).replace(/\s+/g, ' ').slice(0, 300),
+          title: cleanText(m.text ?? '', users)
+            .replace(/\s+/g, ' ')
+            .slice(0, 300),
           body: cleanText(m.text ?? '', users),
           entities: [],
           url: m.permalink ?? null,
@@ -385,7 +419,14 @@ export class LiveSlack implements SlackProvider {
    * nieuw bericht -> laatste bericht bijwerken; channel_marked/im_marked/group_marked/mpim_marked (gelezen in
    * een andere Slack-app) -> last_read bijwerken. Geeft terug of er iets veranderde.
    */
-  async applyEvent(ev: { type: string; channel?: string; ts?: string; user?: string; text?: string; subtype?: string }): Promise<boolean> {
+  async applyEvent(ev: {
+    type: string;
+    channel?: string;
+    ts?: string;
+    user?: string;
+    text?: string;
+    subtype?: string;
+  }): Promise<boolean> {
     if (!ev.channel) return false;
     const key = `slack:state:${ev.channel}`;
     const st = (await this.store.get<ConvState>(key)) ?? { at: 0 };

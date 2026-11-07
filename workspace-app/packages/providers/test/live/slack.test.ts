@@ -5,7 +5,16 @@
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Conversation, Message, SlackItem } from '@hz/shared';
-import { AuthError, LiveSlack, MemorySyncStore, NotHumanError, RateLimitError, SLACK_BASE as S, withHumanAction, withUserScope } from '../../src';
+import {
+  AuthError,
+  LiveSlack,
+  MemorySyncStore,
+  NotHumanError,
+  RateLimitError,
+  SLACK_BASE as S,
+  withHumanAction,
+  withUserScope,
+} from '../../src';
 import { mockServer } from './msw';
 
 const ME = 'U04L22BRJQ7';
@@ -30,7 +39,14 @@ beforeEach(() => {
     lastRead: { CDEMOFEEN: '1793260000.000100', DDEMOMIKE: '1793300000.000100', CDEMOINT: '1793350000.000300' },
     history: {
       CDEMOFEEN: [
-        { ts: '1793262720.000200', user: 'UMJ', text: 'De leads van gisteravond staan niet in de planning, <@U04L22BRJQ7> kan je kijken?', reply_count: 2, latest_reply: '1793263000.000100', reactions: [{ name: 'eyes', count: 2, users: ['UMIKE', ME] }] },
+        {
+          ts: '1793262720.000200',
+          user: 'UMJ',
+          text: 'De leads van gisteravond staan niet in de planning, <@U04L22BRJQ7> kan je kijken?',
+          reply_count: 2,
+          latest_reply: '1793263000.000100',
+          reactions: [{ name: 'eyes', count: 2, users: ['UMIKE', ME] }],
+        },
         { ts: '1793261000.000100', user: ME, text: 'Goedemorgen' },
       ],
       DDEMOMIKE: [{ ts: '1793299000.000100', user: 'UMIKE', text: 'Kan jij Peter van TonZon nog een keer bellen?' }],
@@ -45,15 +61,26 @@ const form = async (r: Request) => Object.fromEntries(new URLSearchParams(await 
 const q = (r: Request) => Object.fromEntries(new URL(r.url).searchParams);
 
 const { server, requests, clear } = mockServer(
-  http.get(`${S}/auth.test`, () => HttpResponse.json({ ok: true, user_id: ME, team_id: 'TDEMO', url: 'https://homezero-demo.slack.com/' })),
-  http.get(`${S}/users.list`, () => HttpResponse.json({ ok: true, members: users, response_metadata: { next_cursor: '' } })),
+  http.get(`${S}/auth.test`, () =>
+    HttpResponse.json({ ok: true, user_id: ME, team_id: 'TDEMO', url: 'https://homezero-demo.slack.com/' }),
+  ),
+  http.get(`${S}/users.list`, () =>
+    HttpResponse.json({ ok: true, members: users, response_metadata: { next_cursor: '' } }),
+  ),
   http.get(`${S}/users.conversations`, ({ request }) => {
     const c = q(request).cursor;
-    return HttpResponse.json(c ? { ok: true, channels: convs.slice(2), response_metadata: { next_cursor: '' } } : { ok: true, channels: convs.slice(0, 2), response_metadata: { next_cursor: 'next1' } });
+    return HttpResponse.json(
+      c
+        ? { ok: true, channels: convs.slice(2), response_metadata: { next_cursor: '' } }
+        : { ok: true, channels: convs.slice(0, 2), response_metadata: { next_cursor: 'next1' } },
+    );
   }),
   http.get(`${S}/conversations.info`, ({ request }) => {
     const ch = q(request).channel!;
-    return HttpResponse.json({ ok: true, channel: { ...convs.find((c) => c.id === ch), last_read: slack.lastRead[ch] } });
+    return HttpResponse.json({
+      ok: true,
+      channel: { ...convs.find((c) => c.id === ch), last_read: slack.lastRead[ch] },
+    });
   }),
   http.get(`${S}/conversations.history`, ({ request }) => {
     const { channel, limit } = q(request);
@@ -61,13 +88,25 @@ const { server, requests, clear } = mockServer(
     return HttpResponse.json({ ok: true, messages: h.slice(0, Number(limit ?? 100)) });
   }),
   http.get(`${S}/conversations.replies`, () =>
-    HttpResponse.json({ ok: true, messages: [slack.history.CDEMOFEEN![0], { ts: '1793263000.000100', user: ME, text: 'Ik kijk!', thread_ts: '1793262720.000200' }] }),
+    HttpResponse.json({
+      ok: true,
+      messages: [
+        slack.history.CDEMOFEEN![0],
+        { ts: '1793263000.000100', user: ME, text: 'Ik kijk!', thread_ts: '1793262720.000200' },
+      ],
+    }),
   ),
   http.get(`${S}/search.messages`, ({ request }) => {
     const query = q(request).query!;
-    const m = (ch: (typeof convs)[number], msg: Record<string, unknown>) => ({ ...msg, channel: { id: ch.id, name: ch.name, is_im: !!ch.is_im }, permalink: `https://homezero-demo.slack.com/archives/${ch.id}/p${String(msg.ts).replace('.', '')}` });
-    if (query.startsWith('to:me')) return HttpResponse.json({ ok: true, messages: { matches: [m(convs[1]!, slack.history.DDEMOMIKE![0]!)] } });
-    if (query.startsWith('<@')) return HttpResponse.json({ ok: true, messages: { matches: [m(convs[0]!, slack.history.CDEMOFEEN![0]!)] } });
+    const m = (ch: (typeof convs)[number], msg: Record<string, unknown>) => ({
+      ...msg,
+      channel: { id: ch.id, name: ch.name, is_im: !!ch.is_im },
+      permalink: `https://homezero-demo.slack.com/archives/${ch.id}/p${String(msg.ts).replace('.', '')}`,
+    });
+    if (query.startsWith('to:me'))
+      return HttpResponse.json({ ok: true, messages: { matches: [m(convs[1]!, slack.history.DDEMOMIKE![0]!)] } });
+    if (query.startsWith('<@'))
+      return HttpResponse.json({ ok: true, messages: { matches: [m(convs[0]!, slack.history.CDEMOFEEN![0]!)] } });
     return HttpResponse.json({ ok: true, messages: { matches: [m(convs[2]!, slack.history.CDEMOINT![0]!)] } });
   }),
   http.post(`${S}/conversations.mark`, async ({ request }) => {
@@ -83,14 +122,20 @@ const { server, requests, clear } = mockServer(
     slack.reactions.push(await form(request));
     return HttpResponse.json({ ok: true });
   }),
-  http.get(`${S}/emoji.list`, () => HttpResponse.json({ ok: true, emoji: { mega: 'https://emoji.slack-edge.com/TDEMO/mega/abc.png', hz: 'alias:mega' } })),
+  http.get(`${S}/emoji.list`, () =>
+    HttpResponse.json({
+      ok: true,
+      emoji: { mega: 'https://emoji.slack-edge.com/TDEMO/mega/abc.png', hz: 'alias:mega' },
+    }),
+  ),
 );
 
 const creds = () => {
   const rejected: string[] = [];
   return { accessToken: async () => 'xoxp-test', rejected: async (p: string) => void rejected.push(p), list: rejected };
 };
-const make = (c = creds()) => new LiveSlack(c, { store: new MemorySyncStore(), stateTtlMs: 0, now: () => new Date('2026-10-30T07:40:00Z') });
+const make = (c = creds()) =>
+  new LiveSlack(c, { store: new MemorySyncStore(), stateTtlMs: 0, now: () => new Date('2026-10-30T07:40:00Z') });
 
 describe('Slack live met user token (HZW-033)', () => {
   it('kanalen, DM’s en groepen (gepagineerd) met echte ongelezen-status uit last_read', async () => {
@@ -110,7 +155,14 @@ describe('Slack live met user token (HZW-033)', () => {
     const h = await s.history('CDEMOFEEN');
     for (const m of h) expect(() => Message.parse(m)).not.toThrow();
     expect(h.map((m) => m.ts)).toEqual(['1793261000.000100', '1793262720.000200']);
-    expect(h[1]).toMatchObject({ fromName: 'Marie-José', me: false, replies: 2, latest: '1793263000.000100', time: '2026-10-29T09:32', reactions: [{ name: 'eyes', count: 2, mine: true }] });
+    expect(h[1]).toMatchObject({
+      fromName: 'Marie-José',
+      me: false,
+      replies: 2,
+      latest: '1793263000.000100',
+      time: '2026-10-29T09:32',
+      reactions: [{ name: 'eyes', count: 2, mine: true }],
+    });
     expect(h[0]).toMatchObject({ me: true, fromName: 'Robert' });
     expect((await s.history('CDEMOINT'))[0]!.files).toEqual(['plan.pdf']);
     const t = await s.thread('CDEMOFEEN', '1793262720.000200');
@@ -121,10 +173,17 @@ describe('Slack live met user token (HZW-033)', () => {
     const items = await make().attention();
     for (const i of items) expect(() => SlackItem.parse(i)).not.toThrow();
     const byCh = Object.fromEntries(items.map((i) => [i.channelId, i]));
-    expect(byCh.CDEMOFEEN).toMatchObject({ mention: true, read: false, channel: '#feenstra-hz', fromName: 'Marie-José' });
+    expect(byCh.CDEMOFEEN).toMatchObject({
+      mention: true,
+      read: false,
+      channel: '#feenstra-hz',
+      fromName: 'Marie-José',
+    });
     expect(byCh.DDEMOMIKE).toMatchObject({ dm: true, read: true, channel: 'DM Mike' });
     expect(byCh.CDEMOINT).toMatchObject({ mega: true });
-    const queries = requests.filter((r) => r.url.pathname.endsWith('search.messages')).map((r) => r.url.searchParams.get('query'));
+    const queries = requests
+      .filter((r) => r.url.pathname.endsWith('search.messages'))
+      .map((r) => r.url.searchParams.get('query'));
     expect(queries).toEqual(['to:me after:2026-10-23', `<@${ME}> after:2026-10-23`, 'hasmy::mega:']);
   });
 
@@ -160,14 +219,20 @@ describe('Slack live met user token (HZW-033)', () => {
     expect(requests.some((r) => r.url.pathname.endsWith('chat.postMessage'))).toBe(false);
     await withUserScope('u1', () =>
       withHumanAction('u1', async () => {
-        expect(await s.postMessage('CDEMOFEEN', 'Ik kijk ernaar', '1793262720.000200')).toEqual({ ts: '1793400000.000100' });
+        expect(await s.postMessage('CDEMOFEEN', 'Ik kijk ernaar', '1793262720.000200')).toEqual({
+          ts: '1793400000.000100',
+        });
         await s.react('CDEMOFEEN', '1793262720.000200', ':white_check_mark:');
       }),
     );
     expect(slack.posted).toEqual([{ channel: 'CDEMOFEEN', text: 'Ik kijk ernaar', thread_ts: '1793262720.000200' }]);
-    expect(slack.reactions).toEqual([{ channel: 'CDEMOFEEN', timestamp: '1793262720.000200', name: 'white_check_mark' }]);
+    expect(slack.reactions).toEqual([
+      { channel: 'CDEMOFEEN', timestamp: '1793262720.000200', name: 'white_check_mark' },
+    ]);
     // Een klik van collega A geldt niet voor collega B.
-    await expect(withUserScope('u2', () => withHumanAction('u1', () => s.postMessage('CDEMOFEEN', 'x')))).rejects.toBeInstanceOf(NotHumanError);
+    await expect(
+      withUserScope('u2', () => withHumanAction('u1', () => s.postMessage('CDEMOFEEN', 'x'))),
+    ).rejects.toBeInstanceOf(NotHumanError);
   });
 
   it('eigen workspace-emoji', async () => {
@@ -179,8 +244,12 @@ describe('Slack live met user token (HZW-033)', () => {
     server.use(http.get(`${S}/auth.test`, () => HttpResponse.json({ ok: false, error: 'invalid_auth' })));
     await expect(make(c).history('CDEMOFEEN')).rejects.toBeInstanceOf(AuthError);
     expect(c.list).toContain('slack');
-    server.use(http.get(`${S}/auth.test`, () => new HttpResponse(null, { status: 429, headers: { 'retry-after': '3' } })));
-    const e = await make().history('CDEMOFEEN').catch((x) => x);
+    server.use(
+      http.get(`${S}/auth.test`, () => new HttpResponse(null, { status: 429, headers: { 'retry-after': '3' } })),
+    );
+    const e = await make()
+      .history('CDEMOFEEN')
+      .catch((x) => x);
     expect(e).toBeInstanceOf(RateLimitError);
     expect(e.retryAfterMs).toBe(3000);
   });

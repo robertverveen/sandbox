@@ -391,7 +391,10 @@ export class LiveCalendar implements CalendarProvider {
     });
     return emails.map((email) => {
       const c = r.calendars?.[email] ?? r.calendars?.[email.toLowerCase()];
-      const busy: BusyBlock[] = (c?.busy ?? []).map((b) => ({ start: toLocal(new Date(b.start)), end: toLocal(new Date(b.end)) }));
+      const busy: BusyBlock[] = (c?.busy ?? []).map((b) => ({
+        start: toLocal(new Date(b.start)),
+        end: toLocal(new Date(b.end)),
+      }));
       const err = c?.errors?.[0]?.reason ?? (c ? undefined : 'notFound');
       return err ? { email, busy, error: err } : { email, busy };
     });
@@ -411,7 +414,10 @@ export class LiveCalendar implements CalendarProvider {
     };
     if (e.meet)
       body.conferenceData = {
-        createRequest: { requestId: `hz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, conferenceSolutionKey: { type: 'hangoutsMeet' } },
+        createRequest: {
+          requestId: `hz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
       };
     const ev = await this.http.json<GEvent>(`/calendars/${encodeURIComponent(calId)}/events`, {
       method: 'POST',
@@ -420,7 +426,7 @@ export class LiveCalendar implements CalendarProvider {
     });
     const cals = await this.calendarsCached().catch(() => []);
     const self = (await this.selfEmail(cals)) || '';
-    const realCal = calId === 'primary' ? cals.find((c) => c.primary)?.id ?? calId : calId;
+    const realCal = calId === 'primary' ? (cals.find((c) => c.primary)?.id ?? calId) : calId;
     const key = this.cacheKey(realCal);
     const cache = await this.store.get<CalendarCache>(key);
     if (cache) {

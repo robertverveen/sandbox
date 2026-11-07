@@ -24,7 +24,8 @@ export function mockServer(...handlers: RequestHandler[]) {
     try {
       body = text ? JSON.parse(text) : undefined;
     } catch {
-      if ((request.headers.get('content-type') ?? '').includes('form')) body = Object.fromEntries(new URLSearchParams(text));
+      if ((request.headers.get('content-type') ?? '').includes('form'))
+        body = Object.fromEntries(new URLSearchParams(text));
     }
     requests.push({ method: request.method, url: new URL(request.url), body, headers: request.headers });
   });
