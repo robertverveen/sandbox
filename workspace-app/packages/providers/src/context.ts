@@ -11,9 +11,17 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ContextSnapshot } from '@hz/shared';
 import { ContextSnapshot as SnapshotSchema } from '@hz/shared';
-import { exportContext, readExport, toSnapshot } from '@hz/context';
+import {
+  exportContext,
+  readExport,
+  readJiraLayer,
+  readNightRuns,
+  RepoReader,
+  toSnapshot,
+  type JiraLayerIssue,
+  type NightRun,
+} from '@hz/context';
 import type { ContextProvider } from './types';
-import { NotConnectedError } from './types';
 
 export class FixtureContext implements ContextProvider {
   readonly mode = 'fixture' as const;
@@ -58,16 +66,19 @@ export class RepoContext implements ContextProvider {
     }
     return this.cache.snap;
   }
-}
-
-/**
- * TODO(context, HZW-060): HomeZeroTech/HomeZero-context en de Persoonlijk-repo via de GitHub App lezen,
- * webhook op push -> worker werkt de index (context_index) bij; lezen uit de index, bestand openen live.
- */
-export class GitHubContext implements ContextProvider {
-  readonly mode = 'live' as const;
-  readonly source = 'repo' as const;
-  async snapshot(): Promise<ContextSnapshot> {
-    throw new NotConnectedError('github', 'nog niet gebouwd (GitHub App + index)');
+  /** Jira uit de laag (product/jira/) en heartbeats van de routines (HZW-034/035). */
+  async jiraLayer(): Promise<JiraLayerIssue[]> {
+    return readJiraLayer(new RepoReader(this.ctxDir));
+  }
+  async nightRuns(routine: string): Promise<NightRun[]> {
+    return readNightRuns(new RepoReader(this.ctxDir), routine);
   }
 }
+
+/** Een contextbron die ook de ruwe laag kan lezen (Jira per epic, heartbeats). */
+export interface LayerAware {
+  jiraLayer(): Promise<JiraLayerIssue[]>;
+  nightRuns(routine: string): Promise<NightRun[]>;
+}
+export const isLayerAware = (c: unknown): c is LayerAware =>
+  !!c && typeof (c as LayerAware).jiraLayer === 'function' && typeof (c as LayerAware).nightRuns === 'function';

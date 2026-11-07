@@ -6,12 +6,17 @@
  *  HZ_NOW               vaste wandklok `JJJJ-MM-DDTHH:MM` of `now`; standaard demo: 2026-10-30T08:40, harness: nu
  *  HZ_CONTEXT_EXPORT    map met een export van de contextlaag (alleen runtime, nooit committen)
  *  HZ_CONTEXT_REPO      map van HomeZero-context op schijf (alleen lezen), met HZ_PERSOONLIJK_REPO
- *  HZ_LIVE_<BRON>=1     zet de live-implementatie aan (CALENDAR, GMAIL, TASKS, SLACK, JIRA, WISPR, ANTHROPIC)
+ *  HZ_LIVE_<BRON>=1     zet de live-implementatie aan (CALENDAR, GMAIL, TASKS, SLACK, JIRA, WISPR, GITHUB, ANTHROPIC)
+ *  HZ_JIRA_SITE         Jira-site (standaard homezero.atlassian.net), HZ_JIRA_PROJECT (standaard HOM)
+ *  HZ_WISPR_MCP_URL     endpoint van de Wispr Flow MCP-server (streamable HTTP)
+ *  HZ_GITHUB_CONTEXT_REPO / HZ_GITHUB_PERSOONLIJK_REPO   owner/repo (live contextlaag via GitHub)
+ *  HZ_SLACK_TODOS=1     spike HZW-037: Slack-herinneringen en Lists als takenbron (achter een vlag)
  */
 import type { ContextSnapshot } from '@hz/shared';
 import { ContextSnapshot as SnapshotSchema } from '@hz/shared';
 import { pd, wall } from '@hz/shared/logic';
-import { ExportContext, FixtureContext, RepoContext } from './context';
+import { lastSuccessfulRun } from '@hz/context';
+import { ExportContext, FixtureContext, RepoContext, isLayerAware } from './context';
 import { loadFixtureSet, type FixtureDataset, type FixtureSetName } from './fixtures/dataset';
 import {
   FakeAnthropic,
@@ -24,6 +29,8 @@ import {
   type FixtureLog,
 } from './fixture';
 import {
+  ContextFirstWispr,
+  GitHubContext,
   LiveAnthropic,
   LiveCalendar,
   LiveGmail,
@@ -31,7 +38,11 @@ import {
   LiveSlack,
   LiveTasks,
   LiveWispr,
+  MemorySyncStore,
+  UserScopedGitHubContext,
+  currentUserId,
   type LiveCredentials,
+  type SyncStore,
 } from './live';
 import type { Providers } from './types';
 
@@ -68,7 +79,20 @@ const noCreds: LiveCredentials = {
   },
 };
 
-export function createProviders(env: ProviderEnv = {}, creds: LiveCredentials = noCreds): ProviderBundle {
+export interface LiveOptions {
+  /** Sync-opslag per collega (Postgres in api/worker, geheugen in tests). */
+  store?: SyncStore;
+  /** Alleen voor tests: fetch vervangen (msw vangt anders de globale fetch af). */
+  fetchImpl?: typeof fetch;
+  /** Persoonlijk-repo (owner/repo) per collega; standaard HZ_GITHUB_PERSOONLIJK_REPO. */
+  persoonlijkRepoFor?: (userId: string) => string | null;
+}
+
+export function createProviders(
+  env: ProviderEnv = {},
+  creds: LiveCredentials = noCreds,
+  liveOpts: LiveOptions = {},
+): ProviderBundle {
   const set: FixtureSetName = env.HZ_FIXTURE_SET === 'harness' ? 'harness' : 'demo';
   const fixed = env.HZ_NOW && env.HZ_NOW !== 'now' ? pd(env.HZ_NOW) : null;
   const realNow = () => wall(new Date());
@@ -86,8 +110,25 @@ export function createProviders(env: ProviderEnv = {}, creds: LiveCredentials = 
     return fx();
   };
 
+  const store = liveOpts.store ?? new MemorySyncStore();
+  const fetchImpl = liveOpts.fetchImpl;
+  const owner = env.HZ_OWNER || 'Robert';
+  const wallNow = () => new Date();
+
   let context: Providers['context'];
-  if (env.HZ_CONTEXT_EXPORT) context = new ExportContext(env.HZ_CONTEXT_EXPORT);
+  if (live('GITHUB')) {
+    liveOn.push('github');
+    context = new UserScopedGitHubContext(
+      (userId) =>
+        new GitHubContext(creds, {
+          repo: env.HZ_GITHUB_CONTEXT_REPO || 'HomeZeroTech/HomeZero-context',
+          persoonlijk: liveOpts.persoonlijkRepoFor?.(userId) ?? env.HZ_GITHUB_PERSOONLIJK_REPO ?? null,
+          owner,
+          fetchImpl,
+        }),
+      currentUserId,
+    );
+  } else if (env.HZ_CONTEXT_EXPORT) context = new ExportContext(env.HZ_CONTEXT_EXPORT);
   else if (env.HZ_CONTEXT_REPO)
     context = new RepoContext(env.HZ_CONTEXT_REPO, env.HZ_PERSOONLIJK_REPO || null, env.HZ_OWNER || 'Robert');
   else context = new FixtureContext(SnapshotSchema.parse(dataset.context) as ContextSnapshot);
@@ -96,32 +137,49 @@ export function createProviders(env: ProviderEnv = {}, creds: LiveCredentials = 
     calendar: pick<Providers['calendar']>(
       'CALENDAR',
       () => new FixtureCalendar(dataset, log),
-      () => new LiveCalendar(creds),
+      () => new LiveCalendar(creds, { store, fetchImpl }),
     ),
     gmail: pick<Providers['gmail']>(
       'GMAIL',
       () => new FixtureGmail(dataset, log),
-      () => new LiveGmail(creds),
+      () => new LiveGmail(creds, { store, fetchImpl }),
     ),
     tasks: pick<Providers['tasks']>(
       'TASKS',
       () => new FixtureTasks(dataset, log),
-      () => new LiveTasks(creds),
+      () => new LiveTasks(creds, { store, fetchImpl }),
     ),
     slack: pick<Providers['slack']>(
       'SLACK',
       () => new FixtureSlack(dataset, log),
-      () => new LiveSlack(creds),
+      () => new LiveSlack(creds, { store, fetchImpl }),
     ),
     jira: pick<Providers['jira']>(
       'JIRA',
       () => new FixtureJira(dataset),
-      () => new LiveJira(creds),
+      () =>
+        new LiveJira(creds, {
+          store,
+          fetchImpl,
+          site: env.HZ_JIRA_SITE || 'homezero.atlassian.net',
+          project: env.HZ_JIRA_PROJECT || 'HOM',
+          // Contextlaag eerst: Jira staat 's nachts in product/jira/ (info-nachtdienst).
+          lastNightRun: async () =>
+            isLayerAware(context) ? (lastSuccessfulRun(await context.nightRuns('info'))?.at ?? null) : null,
+          layerKeys: async () =>
+            isLayerAware(context)
+              ? new Map((await context.jiraLayer()).map((i) => [i.key, i.asOf] as [string, string]))
+              : new Map<string, string>(),
+        }),
     ),
     wispr: pick<Providers['wispr']>(
       'WISPR',
       () => new FixtureWispr(dataset),
-      () => new LiveWispr(creds),
+      () =>
+        new ContextFirstWispr(new LiveWispr(creds, { url: env.HZ_WISPR_MCP_URL, fetchImpl }), context, {
+          owner,
+          now: wallNow,
+        }),
     ),
     context,
     anthropic: pick<Providers['anthropic']>(

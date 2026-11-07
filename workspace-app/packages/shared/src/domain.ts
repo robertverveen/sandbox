@@ -149,6 +149,10 @@ export const JiraItem = ItemBase.extend({
   sprint: JiraSprint.nullable(),
   /** Robert is Tester op deze story. */
   mine: z.boolean(),
+  /** Herkomst (keuze 08): uit de contextlaag (product/jira/, met stand-datum) of live uit Jira. */
+  source: z.enum(['laag', 'live']).optional(),
+  /** Stand-datum (laag) of laatste wijziging (live). */
+  asOf: z.string().optional(),
 });
 export type JiraItem = z.infer<typeof JiraItem>;
 
