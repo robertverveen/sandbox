@@ -140,6 +140,26 @@ e2e/          Playwright-tests (schil, Dagstart, toetsenbord, axe, 400 px)
 - **Huisstijl.** `apps/web/src/styles/prototype.css` is de CSS van het prototype (alleen lettertype en viltkorrel naar
   `src/assets`); aanvullingen (toegankelijkheid, links) staan in `app.css`.
 
+## Inloggen, sessies en koppelingen (stuk E1)
+
+- **Inloggen** met Google (OIDC) via Auth.js (`@auth/core`, `apps/api/src/auth/authjs.ts`) met een eigen adapter op
+  `users`/`sessions` (alleen een sha256 van het token). Alleen naam en e-mail; de server eist e-mail in het domein,
+  `hd`, `email_verified` en de uitnodigingslijst (tabel `allowlist`, `HZ_ALLOWLIST`, vaste beheerders
+  `HZ_ADMIN_EMAILS`). Anders `/login?fout=…` met een nette weigerpagina. Eerste login: profiel en `/welkom`.
+  Keuze Auth.js boven Better Auth (open vraag S3): de kleine adapter houdt de sessies op de fundamenttabellen.
+- **Sessies**: cookie `hz_session` HttpOnly, SameSite=Lax, Secure in productie; 30 dagen, hooguit eens per dag
+  verlengd; een cookie in een andere browser of op een ander systeem (user-agent zonder versienummers) trekt de
+  sessie meteen in. Uitloggen per apparaat of overal (Instellingen → Apparaten). Verzoeken die iets wijzigen
+  moeten van de eigen site komen (Origin-controle). De dev-login-stub alleen buiten productie.
+- **Koppelingen** per bron met eigen toestemming (`apps/api/src/auth/oauth.ts`): state en PKCE in `connect_flows`,
+  tokens envelope-versleuteld in `connections`, nooit naar de browser. Intrekken trekt het token in bij Google,
+  Slack of GitHub (Atlassian heeft geen intrek-API) en wist de eigen data van die bron (itemstate, agenda-instellingen).
+- **Lokaal en in tests** tegen de nep-autorisatieserver `packages/fake-oauth` (Google-uitgever met testaccounts,
+  Slack, Atlassian, GitHub). E2e start die vanzelf met een tweede API (zie `e2e/e1-env.ts`).
+- Schermen: `/login`, `/welkom` (wizard, `g w`), `/instellingen/{koppelingen,apparaten,team}` (`g i`), ook via ⌘K.
+- Migratie `0005_e1_auth.sql`: `allowlist`, `auth_accounts`, `connect_flows`, `onboarding` met RLS, plus purpose
+  `admin` (alleen via `withAdmin()`, na controle van de rol in dezelfde transactie).
+
 ## Status van dit stuk
 
 Gebouwd en getest: zie de tests per pakket en `e2e/`. Bewust nog niet: echte OAuth en Google-inloggen, echte
