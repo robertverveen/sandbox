@@ -274,7 +274,7 @@ describe('wegschrijven naar de contextlaag via de wachtrij', () => {
     const res = await req('POST', '/api/repo/queue', {
       kind: 'wachten-op',
       tekst: 'Akkoord op de nieuwe offerteflow',
-      wie: 'Marie-José',
+      wie: 'Femke',
       klant: 'feenstra',
       bron: 'https://homezero-workspace.slack.com/archives/CDEMOFEEN/p1',
       itemKey: 's1',
@@ -283,7 +283,7 @@ describe('wegschrijven naar de contextlaag via de wachtrij', () => {
     const e = routes.repoQueue.response.parse(await res.json());
     expect(e).toMatchObject({ repo: 'persoonlijk', path: 'wachten-op.md', op: 'append', status: 'queued' });
     expect(e.line).toBe(
-      '- [ ] Akkoord op de nieuwe offerteflow [wie:: Marie-José] [sinds:: 2026-10-30] [reminder:: 2026-11-04] [bron:: https://homezero-workspace.slack.com/archives/CDEMOFEEN/p1] [klant:: feenstra]',
+      '- [ ] Akkoord op de nieuwe offerteflow [wie:: Femke] [sinds:: 2026-10-30] [reminder:: 2026-11-04] [bron:: https://homezero-workspace.slack.com/archives/CDEMOFEEN/p1] [klant:: feenstra]',
     );
     const got = routes.repoQueueEntry.response.parse(await (await req('GET', `/api/repo/queue/${e.id}`)).json());
     expect(got.id).toBe(e.id);

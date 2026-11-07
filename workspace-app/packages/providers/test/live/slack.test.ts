@@ -20,7 +20,7 @@ import { mockServer } from './msw';
 const ME = 'U04L22BRJQ7';
 const users = [
   { id: ME, name: 'robert', real_name: 'Robert Verveen', profile: { display_name: 'Robert' } },
-  { id: 'UMJ', name: 'mj', real_name: 'Marie-José', profile: { display_name: '' } },
+  { id: 'UMJ', name: 'mj', real_name: 'Femke', profile: { display_name: '' } },
   { id: 'UMIKE', name: 'mike', real_name: 'Mike', profile: { display_name: 'Mike' } },
 ];
 const convs = [
@@ -144,7 +144,7 @@ describe('Slack live met user token (HZW-033)', () => {
     expect(list.map((c) => c.key).sort()).toEqual(['sl:CDEMOFEEN', 'sl:CDEMOINT', 'sl:DDEMOMIKE']);
     const feen = list.find((c) => c.key === 'sl:CDEMOFEEN')!;
     expect(feen).toMatchObject({ kind: 'ch', name: '#feenstra-hz', unread: true, purpose: 'Partnerkanaal Feenstra' });
-    expect(feen.preview).toBe('Marie-José: De leads van gisteravond staan niet in de planning, @Robert kan je kijken?');
+    expect(feen.preview).toBe('Femke: De leads van gisteravond staan niet in de planning, @Robert kan je kijken?');
     expect(list.find((c) => c.key === 'sl:DDEMOMIKE')).toMatchObject({ kind: 'dm', name: 'Mike', unread: false });
     expect(list.find((c) => c.key === 'sl:CDEMOINT')).toMatchObject({ unread: false });
     expect(requests.every((r) => r.headers.get('authorization') === 'Bearer xoxp-test')).toBe(true);
@@ -156,7 +156,7 @@ describe('Slack live met user token (HZW-033)', () => {
     for (const m of h) expect(() => Message.parse(m)).not.toThrow();
     expect(h.map((m) => m.ts)).toEqual(['1793261000.000100', '1793262720.000200']);
     expect(h[1]).toMatchObject({
-      fromName: 'Marie-José',
+      fromName: 'Femke',
       me: false,
       replies: 2,
       latest: '1793263000.000100',
@@ -177,7 +177,7 @@ describe('Slack live met user token (HZW-033)', () => {
       mention: true,
       read: false,
       channel: '#feenstra-hz',
-      fromName: 'Marie-José',
+      fromName: 'Femke',
     });
     expect(byCh.DDEMOMIKE).toMatchObject({ dm: true, read: true, channel: 'DM Mike' });
     expect(byCh.CDEMOINT).toMatchObject({ mega: true });

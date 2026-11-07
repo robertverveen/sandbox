@@ -104,7 +104,7 @@ const { server } = mockServer(
         title: 'Feenstra maandelijkse check-in',
         start: '2026-11-05T09:00:00Z',
         end: '2026-11-05T10:00:00Z',
-        attendees: ['Marie-José'],
+        attendees: ['Femke'],
         share_link: 'https://notes.wisprflow.ai/shared/wm-0511',
       },
     ];

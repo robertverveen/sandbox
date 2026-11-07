@@ -38,7 +38,7 @@ const feenstra = {
   organizer: { email: SELF, self: true },
   attendees: [
     { email: SELF, self: true, organizer: true, responseStatus: 'accepted' },
-    { email: 'marie-jose@feenstra.example', displayName: 'Marie-José', responseStatus: 'needsAction' },
+    { email: 'femke@feenstra.example', displayName: 'Femke', responseStatus: 'needsAction' },
     { email: 'lisanne@homezero.nl', displayName: 'Lisanne', responseStatus: 'accepted' },
   ],
 };
@@ -49,9 +49,9 @@ const sunergy = {
   iCalUID: 'evsun1@google.com',
   start: { dateTime: '2026-11-02T14:15:00+01:00' },
   end: { dateTime: '2026-11-02T15:00:00+01:00' },
-  organizer: { email: 'bjorn@sunergy.example', displayName: 'Bjorn' },
+  organizer: { email: 'joost@sunergy.example', displayName: 'Joost' },
   attendees: [
-    { email: 'bjorn@sunergy.example', displayName: 'Bjorn', organizer: true, responseStatus: 'accepted' },
+    { email: 'joost@sunergy.example', displayName: 'Joost', organizer: true, responseStatus: 'accepted' },
     { email: SELF, self: true, responseStatus: 'needsAction' },
   ],
 };
@@ -152,8 +152,8 @@ describe('Google Agenda live (HZW-030)', () => {
       external: true,
       organizerName: 'jij',
     });
-    expect(f.attendeeNames).toEqual(['Robert', 'Marie-José', 'Lisanne']);
-    expect(events.find((e) => e.title === 'Sunergy')).toMatchObject({ needsAction: true, organizerName: 'Bjorn' });
+    expect(f.attendeeNames).toEqual(['Robert', 'Femke', 'Lisanne']);
+    expect(events.find((e) => e.title === 'Sunergy')).toMatchObject({ needsAction: true, organizerName: 'Joost' });
     expect(events.find((e) => e.title === 'Vakantie Lou')).toMatchObject({
       allDay: true,
       start: '2026-11-02',
@@ -228,7 +228,7 @@ describe('Google Agenda live (HZW-030)', () => {
     await withHumanAction('u1', () => withUserScope('u1', () => cal.respond('ev:evsun1', 'accepted')));
     expect(patched).toEqual({
       attendees: [
-        { email: 'bjorn@sunergy.example', displayName: 'Bjorn', organizer: true, responseStatus: 'accepted' },
+        { email: 'joost@sunergy.example', displayName: 'Joost', organizer: true, responseStatus: 'accepted' },
         { email: SELF, self: true, responseStatus: 'accepted' },
       ],
     });

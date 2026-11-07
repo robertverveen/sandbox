@@ -135,12 +135,12 @@ describe('Google Taken live (HZW-032)', () => {
   it('snel toevoegen bij Vandaag en Morgen: datum als RFC 3339 in de eerste gewone lijst', async () => {
     const p = make();
     clear();
-    const t = await p.addTask({ title: 'Bel Marie-José over capaciteit', due: '2026-10-31' });
+    const t = await p.addTask({ title: 'Bel Femke over capaciteit', due: '2026-10-31' });
     const post = requests.find((r) => r.method === 'POST')!;
     expect(post.url.pathname).toBe('/tasks/v1/lists/L-mine/tasks');
-    expect(post.body).toEqual({ title: 'Bel Marie-José over capaciteit', due: '2026-10-31T00:00:00.000Z' });
-    expect(t).toMatchObject({ title: 'Bel Marie-José over capaciteit', due: '2026-10-31', tasklist: 'L-mine' });
-    expect((await p.listTasks()).map((x) => x.title)).toContain('Bel Marie-José over capaciteit');
+    expect(post.body).toEqual({ title: 'Bel Femke over capaciteit', due: '2026-10-31T00:00:00.000Z' });
+    expect(t).toMatchObject({ title: 'Bel Femke over capaciteit', due: '2026-10-31', tasklist: 'L-mine' });
+    expect((await p.listTasks()).map((x) => x.title)).toContain('Bel Femke over capaciteit');
     // Zonder datum en naar een gekozen lijst.
     const t2 = await p.addTask({ title: 'Notitie zonder datum', list: 'L-feen' });
     expect(t2).toMatchObject({ due: null, tasklist: 'L-feen' });

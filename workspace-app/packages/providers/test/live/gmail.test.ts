@@ -20,7 +20,7 @@ const m1 = {
   payload: {
     mimeType: 'multipart/mixed',
     headers: hdr({
-      From: '"Marie-José" <marie-jose@feenstra.example>',
+      From: '"Femke" <femke@feenstra.example>',
       To: 'Robert Verveen <robert@homezero.nl>',
       Cc: 'lisanne@homezero.nl',
       Subject: 'ZSB-flow: personen en warmwatervraag',
@@ -30,7 +30,7 @@ const m1 = {
     parts: [
       {
         mimeType: 'text/plain',
-        body: { data: b64('Hoi Robert,\n\nKunnen we de ZSB-flow aanpassen?\n\nGroet, Marie-José') },
+        body: { data: b64('Hoi Robert,\n\nKunnen we de ZSB-flow aanpassen?\n\nGroet, Femke') },
       },
       { mimeType: 'application/pdf', filename: 'flow.pdf', body: { attachmentId: 'a1', size: 1000 } },
     ],
@@ -45,7 +45,7 @@ const m2 = {
   payload: {
     mimeType: 'text/html',
     headers: hdr({
-      From: 'Marie-José <marie-jose@feenstra.example>',
+      From: 'Femke <femke@feenstra.example>',
       To: 'robert@homezero.nl',
       Subject: 'Re: ZSB-flow: personen en warmwatervraag',
       // Zomertijd voorbij: 30 oktober is CET. De Date-header is leidend, niet internalDate.
@@ -124,8 +124,8 @@ describe('Gmail live (HZW-031)', () => {
     expect(a).toMatchObject({
       id: 'ml:th1',
       title: 'ZSB-flow: personen en warmwatervraag',
-      fromName: 'Marie-José',
-      from: 'marie-jose@feenstra.example',
+      fromName: 'Femke',
+      from: 'femke@feenstra.example',
       time: '2026-10-30T09:12',
       unread: true,
       direct: true,
@@ -145,7 +145,7 @@ describe('Gmail live (HZW-031)', () => {
     expect(() => ConversationDetail.shape.mail.parse(t)).not.toThrow();
     expect(t.subject).toBe('ZSB-flow: personen en warmwatervraag');
     expect(t.msgs[0]).toMatchObject({
-      fromName: 'Marie-José',
+      fromName: 'Femke',
       to: ['robert@homezero.nl'],
       cc: ['lisanne@homezero.nl'],
       time: '2026-10-29T16:05',
@@ -177,7 +177,7 @@ describe('Gmail live (HZW-031)', () => {
     const msg = (d.body as { message: { threadId: string; raw: string } }).message;
     expect(msg.threadId).toBe('th1');
     const raw = Buffer.from(msg.raw, 'base64url').toString('utf8');
-    expect(raw).toContain('To: marie-jose@feenstra.example');
+    expect(raw).toContain('To: femke@feenstra.example');
     expect(raw).toContain('Subject: Re: ZSB-flow: personen en warmwatervraag');
     expect(raw).toContain('In-Reply-To: <m2@feenstra.example>');
     expect(raw).toContain('References: <m1@feenstra.example> <m2@feenstra.example>');

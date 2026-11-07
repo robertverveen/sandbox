@@ -210,7 +210,7 @@ describe('plan: export naar rijen (zonder database)', () => {
     expect(dc3).toMatchObject({
       stroom: 'mijn',
       wat: 'Rekenvoorbeeld thuisbatterij naar Feenstra sturen',
-      aan: 'Marie-José',
+      aan: 'Femke',
       org: 'Feenstra',
       deadline: '2026-10-29',
       srcKey: 'sl_CFE_1761650000.000100',

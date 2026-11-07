@@ -10,7 +10,7 @@ const url =
 describe('voorbeeldjob: tel open partneracties', () => {
   it('telt per eigenaar en over datum (op DEMO_CTX)', async () => {
     const r = await telActies(createProviders({}).providers.context, { tot: '2026-10-30' });
-    expect(r).toEqual({ open: 4, overDatum: 1, perEigenaar: { Robert: 3, 'Marie-José': 1 } });
+    expect(r).toEqual({ open: 4, overDatum: 1, perEigenaar: { Robert: 3, 'Femke': 1 } });
   });
 });
 

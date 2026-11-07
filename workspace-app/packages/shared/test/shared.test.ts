@@ -79,7 +79,7 @@ describe('Dagstart-logica', () => {
     task('telaat', '2026-10-28'),
     task('backlog', null, { backlog: true }),
     meeting('m1', '2026-10-30T10:00', '2026-10-30T11:00', { external: true }),
-    meeting('m8', '2026-11-02T14:15', '2026-11-02T15:00', { needsAction: true, organizerName: 'Bjorn' }),
+    meeting('m8', '2026-11-02T14:15', '2026-11-02T15:00', { needsAction: true, organizerName: 'Joost' }),
     {
       id: 's1',
       type: 'slack',
@@ -114,7 +114,7 @@ describe('Dagstart-logica', () => {
       ['invite', 'm8'],
       ['reply', 'e1'],
     ]);
-    expect(box[3]!.why).toBe('Uitnodiging van Bjorn · Maandag 14:15');
+    expect(box[3]!.why).toBe('Uitnodiging van Joost · Maandag 14:15');
     expect(box[2]!.why).toBe('Extern · Vandaag 10:00 · nog geen prep gepland');
     expect(box[0]!.why).toBe('Noemt je in #x-hz · Anna · Gisteren 09:12');
   });

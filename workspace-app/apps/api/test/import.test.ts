@@ -106,7 +106,7 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     // uit Inhalen (itemToCommit) naar wachten op: wel zichtbaar, met de bewijsregel nog in de rij (zie db-test)
     expect(commits.find((c) => c.id === 'cm:inbox1')).toMatchObject({ stroom: 'aan_mij', aan: 'Emiel' });
     const dc3 = commits.find((c) => c.id === 'cm:dc3')!;
-    expect(dc3).toMatchObject({ stroom: 'mijn', status: 'te_laat', aan: 'Marie-José', deadline: '2026-10-29' });
+    expect(dc3).toMatchObject({ stroom: 'mijn', status: 'te_laat', aan: 'Femke', deadline: '2026-10-29' });
     expect(dc3.entities).toContain('feenstra');
     expect(commits.find((c) => c.id === 'cm:q1')).toMatchObject({ stroom: 'aan_mij', reminder: '2026-11-03' });
     expect(commits.find((c) => c.id === 'cm:dc4')).toMatchObject({ plan: '2026-11-02', moved: 1 });

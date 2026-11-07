@@ -203,7 +203,7 @@ describe('dubbele events', () => {
     server.use(
       http.get(`${SLACK_BASE}/auth.test`, () => HttpResponse.json({ ok: true, user_id: 'UME', team_id: 'T' })),
       http.get(`${SLACK_BASE}/users.list`, () =>
-        HttpResponse.json({ ok: true, members: [{ id: 'UMJ', real_name: 'Marie-José' }] }),
+        HttpResponse.json({ ok: true, members: [{ id: 'UMJ', real_name: 'Femke' }] }),
       ),
       http.get(`${SLACK_BASE}/users.conversations`, () =>
         HttpResponse.json({ ok: true, channels: [{ id: 'CFEEN', name: 'feenstra-hz', is_channel: true }] }),

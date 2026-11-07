@@ -6,7 +6,7 @@
       "dc3": {
         "wat": "Rekenvoorbeeld thuisbatterij naar Feenstra sturen",
         "stroom": "mijn",
-        "aan": "Marie-José",
+        "aan": "Femke",
         "org": "Feenstra",
         "deadline": "2026-10-29",
         "status": "open",
@@ -584,7 +584,7 @@
         "bijgewerkt": "2026-10-30 08:00",
         "kern": "Installateur van warmtepompen en zonnepanelen (voorbeeld). Gebruikt Pico voor leadopvolging en offertes.",
         "stand": ["2026-10-29 (Slack): leads van gisteravond stonden niet in de planning; sync opgelost."],
-        "contacten": ["Marie-José - Feenstra, widgets en flows"],
+        "contacten": ["Femke - Feenstra, widgets en flows"],
         "meetings": [
           {
             "bestand": "2026-10-29-werksessie-zsb-flow-robert.md",
@@ -681,7 +681,7 @@
             "state": "open",
             "tekst": "Capaciteit terugmelden",
             "voorstel": true,
-            "eigenaar": "Marie-José",
+            "eigenaar": "Femke",
             "datum": "2026-11-06",
             "ligt": "bij-hen",
             "sinds": "2026-10-29",
