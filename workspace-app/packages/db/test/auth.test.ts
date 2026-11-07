@@ -229,11 +229,18 @@ describe('auth_upsert_user: geen rol van buiten, alleen toegestane domeinen (000
 
   it('een gewone request-transactie maakt geen admin buiten het domein en geen sessie voor zo iemand', async () => {
     // De aanval uit ronde 1: auth_upsert_user('evil@example.com', 'x', 'admin') en dan auth_create_session.
-    const e1 = await errOf(asRequest((tx) => tx.execute(sql`select * from auth_upsert_user('evil@example.com', 'x', 'admin')`)));
+    const e1 = await errOf(
+      asRequest((tx) => tx.execute(sql`select * from auth_upsert_user('evil@example.com', 'x', 'admin')`)),
+    );
     expect(codeOf(e1)).toBe('42883'); // die functie (met rol) bestaat niet meer
     const e2 = await errOf(asRequest((tx) => tx.execute(sql`select * from auth_upsert_user('evil@example.com', 'x')`)));
     expect(codeOf(e2)).toBe('42501');
-    for (const evil of ['evil@homezero.nl.example.com', 'evil@example.com', 'x@sub.homezero.nl', 'evil@homezero.nl@x.com'])
+    for (const evil of [
+      'evil@homezero.nl.example.com',
+      'evil@example.com',
+      'x@sub.homezero.nl',
+      'evil@homezero.nl@x.com',
+    ])
       expect(codeOf(await errOf(upsertUser(db, evil, 'x'))), evil).not.toBeUndefined();
     const n = await owner.db.execute<{ n: number }>(
       sql`select count(*)::int as n from users where email not like '%@homezero.nl'`,
@@ -255,7 +262,9 @@ describe('auth_upsert_user: geen rol van buiten, alleen toegestane domeinen (000
   it('de app kan de domeinlijst niet lezen of uitbreiden', async () => {
     const e1 = await errOf(asRequest((tx) => tx.execute(sql`select * from auth_domains`)));
     expect(codeOf(e1)).toBe('42501');
-    const e2 = await errOf(asRequest((tx) => tx.execute(sql`insert into auth_domains (domain) values ('example.com')`)));
+    const e2 = await errOf(
+      asRequest((tx) => tx.execute(sql`insert into auth_domains (domain) values ('example.com')`)),
+    );
     expect(codeOf(e2)).toBe('42501');
     const e3 = await errOf(asRequest((tx) => tx.execute(sql`select auth_domain_allowed('x@example.com')`)));
     expect(codeOf(e3)).toBe('42501');
@@ -308,8 +317,21 @@ describe('contextindex: schrijven alleen als hz_indexer, niet via app.purpose (0
   });
   beforeAll(async () => {
     await upsertContextIndex(db, [
-      { id: 'partners/zonnig/brief.md', kind: 'partner', slug: 'zonnig', path: 'partners/zonnig/brief.md', title: 'Zonnig (voorbeeld)', geheimVoor: ['zonnig'] },
-      { id: 'partners/regen/brief.md', kind: 'partner', slug: 'regen', path: 'partners/regen/brief.md', title: 'Regen (voorbeeld)' },
+      {
+        id: 'partners/zonnig/brief.md',
+        kind: 'partner',
+        slug: 'zonnig',
+        path: 'partners/zonnig/brief.md',
+        title: 'Zonnig (voorbeeld)',
+        geheimVoor: ['zonnig'],
+      },
+      {
+        id: 'partners/regen/brief.md',
+        kind: 'partner',
+        slug: 'regen',
+        path: 'partners/regen/brief.md',
+        title: 'Regen (voorbeeld)',
+      },
     ]);
   });
 
@@ -388,7 +410,16 @@ describe('contextindex: schrijven alleen als hz_indexer, niet via app.purpose (0
       ]);
       // Zelfde rijen nog een keer: niets gewijzigd
       const again = await upsertContextIndex(ix.db, [
-        { id: 'partners/zon/brief.md', kind: 'partner', slug: 'zon', path: 'partners/zon/brief.md', title: 'Zonnig (voorbeeld)', body: 'warmtepompen', geheimVoor: ['zonnig'], commit: 'abc' },
+        {
+          id: 'partners/zon/brief.md',
+          kind: 'partner',
+          slug: 'zon',
+          path: 'partners/zon/brief.md',
+          title: 'Zonnig (voorbeeld)',
+          body: 'warmtepompen',
+          geheimVoor: ['zonnig'],
+          commit: 'abc',
+        },
       ]);
       expect(again).toBe(0);
       for (const bad of [
@@ -397,7 +428,9 @@ describe('contextindex: schrijven alleen als hz_indexer, niet via app.purpose (0
         row('partners/x/ADMIN.md', { path: 'partners/x/ADMIN.md' }),
       ]) {
         const e = await errOf(
-          withIndexer(ix.db, (tx) => tx.execute(sql`select * from context_index_upsert(${JSON.stringify([bad])}::jsonb)`)),
+          withIndexer(ix.db, (tx) =>
+            tx.execute(sql`select * from context_index_upsert(${JSON.stringify([bad])}::jsonb)`),
+          ),
         );
         expect(e?.cause?.message ?? e?.message, bad.id).toMatch(/admin\.md/);
       }
@@ -415,7 +448,9 @@ describe('contextindex: schrijven alleen als hz_indexer, niet via app.purpose (0
     } finally {
       await ix.close();
     }
-    const n = await owner.db.execute<{ n: number }>(sql`select count(*)::int as n from context_index where path ilike '%admin.md'`);
+    const n = await owner.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from context_index where path ilike '%admin.md'`,
+    );
     expect(n.rows[0]!.n).toBe(0);
   });
 });

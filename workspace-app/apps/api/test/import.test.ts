@@ -134,7 +134,11 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     const dg1 = t.weekdoelen.find((w) => w.legacyId === 'dg1')!;
     const res = await robert.req('PATCH', `/api/weekdoelen/${dg1.id}`, { health: 'rood', note: 'vast' });
     expect(res.status).toBe(200);
-    const want = { health: 'rood', lastCheck: expect.any(String), checks: expect.arrayContaining([expect.objectContaining({ h: 'rood', note: 'vast' })]) };
+    const want = {
+      health: 'rood',
+      lastCheck: expect.any(String),
+      checks: expect.arrayContaining([expect.objectContaining({ h: 'rood', note: 'vast' })]),
+    };
 
     const same = await reimport(cols);
     expect(same.klopt).toBe(true);

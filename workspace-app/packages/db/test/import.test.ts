@@ -412,7 +412,9 @@ describe('import in Postgres (RLS, als hz_app)', () => {
         tx.select().from(trackerItems).where(eq(trackerItems.legacyId, 'dc3')),
       );
       expect(dc3).toMatchObject({ status: 'klaar', wat: 'Rekenvoorbeeld thuisbatterij naar Feenstra sturen' });
-      const b1 = await withUser(db, robert, (tx) => tx.select().from(trackerItems).where(eq(trackerItems.legacyId, 'b1')));
+      const b1 = await withUser(db, robert, (tx) =>
+        tx.select().from(trackerItems).where(eq(trackerItems.legacyId, 'b1')),
+      );
       expect(b1).toEqual([]);
       expect((await listPins(db, robert)).map((x) => x.q)).toEqual(['feenstra, offerte']);
     }

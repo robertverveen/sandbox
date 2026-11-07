@@ -933,7 +933,8 @@ export async function applyImport(
   const waarschuwingen = [...plan.waarschuwingen];
   const ctxSkip = doContext
     ? undefined
-    : (opts.contextOvergeslagen ?? 'contextindex overgeslagen (--zonder-context); de indexjob van de contextlaag vult hem');
+    : (opts.contextOvergeslagen ??
+      'contextindex overgeslagen (--zonder-context); de indexjob van de contextlaag vult hem');
   if (ctxSkip && Object.keys(plan.voor).some((c) => CONTEXT_COLS.has(c))) waarschuwingen.push(ctxSkip);
   const klopt = Object.values(res).every((r) => r.klopt) && Object.values(verantwoord).every((v) => v.klopt);
   return {

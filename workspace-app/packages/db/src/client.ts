@@ -126,6 +126,17 @@ export async function assertBossLogin(client: Pick<pg.ClientBase, 'query'>, sche
   return c;
 }
 
+/** assertBossLogin op een eigen, korte verbinding naar `url` (de worker vóór pg-boss start). */
+export async function assertBossLoginAt(url: string, schema: string) {
+  const c = new pg.Client({ connectionString: url });
+  await c.connect();
+  try {
+    return await assertBossLogin(c, schema);
+  } finally {
+    await c.end();
+  }
+}
+
 export interface CreateDbOptions {
   /** Omgeving voor de productiecontrole (standaard process.env). */
   env?: Record<string, string | undefined>;

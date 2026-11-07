@@ -1,7 +1,8 @@
 /**
  * Start de worker: `pnpm --filter @hz/worker dev`.
  * - DATABASE_URL: app-tabellen via createDb() als hz_app (productie: de app-login, sql/app-login.sql);
- * - HZ_BOSS_DATABASE_URL: pg-boss in een eigen schema met een eigen login (productie verplicht; lokaal = DATABASE_URL).
+ * - HZ_BOSS_DATABASE_URL: pg-boss in een eigen schema met een eigen login hz_boss (sql/boss-login.sql; productie
+ *   verplicht en nooit de migratierol: de worker weigert dan te starten; lokaal = DATABASE_URL).
  */
 import { createProviders } from '@hz/providers';
 import { DEFAULT_DATABASE_URL, ensureDatabase } from '@hz/db';
@@ -14,7 +15,15 @@ if (!bossUrl) {
   process.exit(1);
 }
 if (process.env.NODE_ENV !== 'production') await ensureDatabase(url);
-const w = await startWorker({ connectionString: bossUrl, databaseUrl: url, bundle: createProviders(process.env) });
+const w = await startWorker({
+  connectionString: bossUrl,
+  databaseUrl: url,
+  schema: process.env.HZ_BOSS_SCHEMA ?? 'pgboss',
+  bundle: createProviders(process.env),
+}).catch((e: Error) => {
+  console.error(`[worker] start geweigerd: ${e.message}`);
+  process.exit(1);
+});
 await w.send({});
 console.log('[worker] gestart; voorbeeldjob context.tel-acties verstuurd');
 const stop = async () => {
