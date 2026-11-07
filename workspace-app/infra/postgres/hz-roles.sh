@@ -30,17 +30,23 @@ done
 [[ "$db" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "ongeldige databasenaam: $db" >&2; exit 2; }
 [[ -f "$sqldir/bootstrap-roles.sql" ]] || { echo "bootstrap-roles.sql niet gevonden in $sqldir" >&2; exit 2; }
 
+# psql als superuser op database $1: via HZ_PSQL_ADMIN_URL (database daarin vervangen) of de lokale socket.
 psql_admin() {
+  local target="$1"
+  shift
   export PGOPTIONS="${PGOPTIONS:-} -c client_min_messages=warning"
   if [[ -n "${HZ_PSQL_ADMIN_URL:-}" ]]; then
-    psql "$HZ_PSQL_ADMIN_URL" -X -q -v ON_ERROR_STOP=1 "$@"
+    local base="${HZ_PSQL_ADMIN_URL%%\?*}" query=""
+    [[ "$HZ_PSQL_ADMIN_URL" == *\?* ]] && query="?${HZ_PSQL_ADMIN_URL#*\?}"
+    [[ "$base" =~ ^(postgres(ql)?://[^/]*) ]] || { echo "HZ_PSQL_ADMIN_URL ongeldig" >&2; exit 2; }
+    psql "${BASH_REMATCH[1]}/$target$query" -X -q -v ON_ERROR_STOP=1 "$@"
   else
-    psql --username "${POSTGRES_USER:-postgres}" -X -q -v ON_ERROR_STOP=1 "$@"
+    psql --username "${POSTGRES_USER:-postgres}" --dbname "$target" -X -q -v ON_ERROR_STOP=1 "$@"
   fi
 }
 
 # 1. Migratierol, eigenaar van de database (mag schema's maken: public-tabellen en pgboss).
-psql_admin -d "$db" -v role="$migrator" -v pw="$HZ_PG_MIGRATOR_PASSWORD" -v db="$db" <<'SQL'
+psql_admin "$db" -v role="$migrator" -v pw="$HZ_PG_MIGRATOR_PASSWORD" -v db="$db" <<'SQL'
 SELECT format('CREATE ROLE %I LOGIN', :'role') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'role') \gexec
 SELECT format('ALTER ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', :'role', :'pw') \gexec
 SELECT format('ALTER DATABASE %I OWNER TO %I', :'db', :'role') \gexec
@@ -49,13 +55,13 @@ SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'db') \gexec
 SQL
 
 # 2. Runtime-rol hz_app (zelfde script als lokaal en in CI).
-psql_admin -d "$db" -v migrator="$migrator" -f "$sqldir/bootstrap-roles.sql" >/dev/null
+psql_admin "$db" -v migrator="$migrator" -f "$sqldir/bootstrap-roles.sql" >/dev/null
 
 # 3. App-login: lid van alleen hz_app, NOINHERIT, eigenaar van niets.
 if [[ -f "$sqldir/app-login.sql" ]]; then
-  psql_admin -d "$db" -v login="$app_login" -v password="$HZ_PG_APP_PASSWORD" -f "$sqldir/app-login.sql" >/dev/null
+  psql_admin "$db" -v login="$app_login" -v password="$HZ_PG_APP_PASSWORD" -f "$sqldir/app-login.sql" >/dev/null
 else
-  psql_admin -d "$db" -v role="$app_login" -v pw="$HZ_PG_APP_PASSWORD" <<'SQL'
+  psql_admin "$db" -v role="$app_login" -v pw="$HZ_PG_APP_PASSWORD" <<'SQL'
 SELECT format('CREATE ROLE %I LOGIN IN ROLE hz_app', :'role') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'role') \gexec
 SELECT format('ALTER ROLE %I LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', :'role', :'pw') \gexec
 SELECT format('GRANT hz_app TO %I', :'role') \gexec
@@ -63,14 +69,14 @@ SQL
 fi
 
 # 4. Back-uprol: leest alles (ook door RLS heen), schrijft niets.
-psql_admin -d "$db" -v role="$backup" -v pw="$HZ_PG_BACKUP_PASSWORD" <<'SQL'
+psql_admin "$db" -v role="$backup" -v pw="$HZ_PG_BACKUP_PASSWORD" <<'SQL'
 SELECT format('CREATE ROLE %I LOGIN', :'role') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'role') \gexec
 SELECT format('ALTER ROLE %I LOGIN BYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', :'role', :'pw') \gexec
 SELECT format('GRANT pg_read_all_data TO %I', :'role') \gexec
 SQL
 
 # 5. Wie mag verbinden.
-psql_admin -d "$db" -v db="$db" -v m="$migrator" -v a="$app_login" -v b="$backup" <<'SQL'
+psql_admin "$db" -v db="$db" -v m="$migrator" -v a="$app_login" -v b="$backup" <<'SQL'
 SELECT format('GRANT CONNECT, TEMPORARY ON DATABASE %I TO %I, %I, %I', :'db', :'m', :'a', :'b') \gexec
 SQL
 

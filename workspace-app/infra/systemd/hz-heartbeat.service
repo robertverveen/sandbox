@@ -1,0 +1,11 @@
+[Unit]
+Description=HomeZero Workspace: uptime-hartslag naar de uptime-dienst (HZW-007)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+ExecStart=/opt/hz/bin/hz-run heartbeat.sh
+TimeoutStartSec=2min

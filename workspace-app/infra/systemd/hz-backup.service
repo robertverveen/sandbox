@@ -1,0 +1,13 @@
+[Unit]
+Description=HomeZero Workspace: back-up van de database naar de Storage Box (HZW-008)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+ExecStart=/opt/hz/bin/hz-run backup.sh --label nightly
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h

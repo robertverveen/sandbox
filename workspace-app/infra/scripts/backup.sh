@@ -80,7 +80,7 @@ sftp_parts() {
   [[ -n "$rpath" ]] || rpath=.
 }
 sftp_batch() {
-  sftp -b - -P "$port" -i "$ssh_key" -o BatchMode=yes -o StrictHostKeyChecking=yes "$remote" >/dev/null
+  sftp -b - -P "$port" -i "$ssh_key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$remote" >/dev/null
 }
 
 store() {
@@ -103,7 +103,7 @@ EOF
 list_remote() {
   if [[ "$target" == sftp://* ]]; then
     sftp_parts
-    printf 'ls -1 %s\n' "$rpath" | sftp -b - -P "$port" -i "$ssh_key" -o BatchMode=yes "$remote" 2>/dev/null |
+    printf 'ls -1 %s\n' "$rpath" | sftp -b - -P "$port" -i "$ssh_key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$remote" 2>/dev/null |
       grep -v '^sftp>' | sed 's#.*/##'
   else
     ls -1 "$target"

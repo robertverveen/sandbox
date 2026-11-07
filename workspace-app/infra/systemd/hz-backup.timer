@@ -1,0 +1,10 @@
+[Unit]
+Description=HomeZero Workspace: nachtelijke back-up om 02:30 (HZW-008)
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Europe/Amsterdam
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

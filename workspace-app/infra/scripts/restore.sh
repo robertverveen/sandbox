@@ -64,12 +64,12 @@ fetch() {
     rpath="${rpath#/}"
     local key="${HZ_BACKUP_SSH_KEY:-$HOME/.ssh/hz_backup_ed25519}"
     if [[ "$name" == latest ]]; then
-      name="$(printf 'ls -1 %s\n' "${rpath:-.}" | sftp -b - -P "$port" -i "$key" -o BatchMode=yes "$remote" 2>/dev/null |
+      name="$(printf 'ls -1 %s\n' "${rpath:-.}" | sftp -b - -P "$port" -i "$key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$remote" 2>/dev/null |
         grep -v '^sftp>' | sed 's#.*/##' | grep -E "^$prefix-.*\.dump\.age$" | sort | tail -n1)"
       [[ -n "$name" ]] || die "geen back-ups gevonden"
     fi
     printf 'get %s/%s %s/\nget %s/%s.sha256 %s/\n' "${rpath:-.}" "$name" "$work" "${rpath:-.}" "$name" "$work" |
-      sftp -b - -P "$port" -i "$key" -o BatchMode=yes "$remote" >/dev/null || die "ophalen van $name mislukt"
+      sftp -b - -P "$port" -i "$key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$remote" >/dev/null || die "ophalen van $name mislukt"
   elif [[ -n "$target" && ! -f "$name" ]]; then
     if [[ "$name" == latest ]]; then
       name="$(find "$target" -maxdepth 1 -name "$prefix-*.dump.age" -printf '%f\n' | sort | tail -n1)"

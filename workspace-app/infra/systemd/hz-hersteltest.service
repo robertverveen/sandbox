@@ -1,0 +1,12 @@
+[Unit]
+Description=HomeZero Workspace: hersteltest van de nieuwste back-up in een lege database (HZW-008)
+After=docker.service network-online.target hz-backup.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+ExecStart=/opt/hz/bin/hz-run hersteltest.sh latest
+Nice=10
+TimeoutStartSec=2h
