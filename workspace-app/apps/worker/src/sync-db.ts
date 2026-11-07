@@ -75,6 +75,20 @@ export function createSyncDeps(o: SyncRuntimeOptions): SyncDeps {
   };
 }
 
+/**
+ * Eén gedeelde Google-koppeling ('google', incrementele toestemming) wordt per bron gesynchroniseerd op basis van de
+ * verleende scopes; andere koppelingen zijn één bron.
+ */
+export function expandConnection(c: { provider: string; account: string | null; scopes?: string[] | null }) {
+  if (c.provider !== 'google') return [{ provider: c.provider, account: c.account }];
+  const sc = (c.scopes ?? []).join(' ');
+  const out: Array<{ provider: string; account: string | null }> = [];
+  if (/auth\/calendar/.test(sc)) out.push({ provider: 'calendar', account: c.account });
+  if (/auth\/tasks/.test(sc)) out.push({ provider: 'google_tasks', account: c.account });
+  if (/auth\/gmail/.test(sc)) out.push({ provider: 'gmail', account: c.account });
+  return out;
+}
+
 /** Planner: planningsrijen bijwerken uit de koppelingen en wat aan de beurt is als job versturen. */
 export async function planSync(db: Db, boss: Pick<PgBoss, 'send'>, now?: Date) {
   for (const userId of await syncUsers(db)) {
@@ -82,9 +96,7 @@ export async function planSync(db: Db, boss: Pick<PgBoss, 'send'>, now?: Date) {
     await ensureSyncJobs(
       db,
       userId,
-      conns
-        .filter((c) => c.status === 'connected')
-        .map((c) => ({ provider: c.provider === 'google' ? 'calendar' : c.provider, account: c.account })),
+      conns.filter((c) => c.status === 'connected').flatMap((c) => expandConnection(c)),
     );
   }
   const due = await dueSyncJobs(db, now ?? new Date());

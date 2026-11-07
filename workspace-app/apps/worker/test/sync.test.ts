@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { SyncJobRow, SyncOutcome } from '@hz/db';
 import { createProviders, MemorySyncStore, GOOGLE_TASKS_BASE, SLACK_BASE, type LiveCredentials } from '@hz/providers';
 import { backoffMs, INVALIDATE, POLL_MS, runSync, type SyncDeps, type SyncRepo } from '../src/sync';
+import { expandConnection } from '../src/sync-db';
 
 const seen: Array<{ method: string; url: string }> = [];
 const server = setupServer();
@@ -179,6 +180,19 @@ describe('terugval en herhaalpogingen', () => {
     expect(+o.nextRunAt - +now).toBe(864e5);
     expect(repo.reauth).toEqual([`${U}|slack`]);
     expect(repo.notified).toEqual([{ userId: U, keys: ['connections'] }]);
+  });
+});
+
+describe('planning per bron', () => {
+  it('één gedeelde Google-koppeling wordt per verleende scope een eigen sync', () => {
+    expect(
+      expandConnection({
+        provider: 'google',
+        account: 'robert@homezero.nl',
+        scopes: ['https://www.googleapis.com/auth/tasks', 'https://www.googleapis.com/auth/calendar.readonly'],
+      }).map((x) => x.provider),
+    ).toEqual(['calendar', 'google_tasks']);
+    expect(expandConnection({ provider: 'slack', account: 'U1' })).toEqual([{ provider: 'slack', account: 'U1' }]);
   });
 });
 

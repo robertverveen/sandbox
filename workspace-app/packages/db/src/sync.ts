@@ -124,9 +124,9 @@ export async function syncUsers(db: Db): Promise<string[]> {
 /** Gekoppelde bronnen van één collega (eigen transactie, RLS). */
 export async function connectedProviders(db: Db, userId: string) {
   const r = await withUser(db, userId, (tx) =>
-    tx.execute(sql`select provider, status, account from connections where token_ciphertext is not null`),
+    tx.execute(sql`select provider, status, account, scopes from connections where token_ciphertext is not null`),
   );
-  return rows<{ provider: string; status: string; account: string | null }>(r);
+  return rows<{ provider: string; status: string; account: string | null; scopes: string[] | null }>(r);
 }
 
 /** Zorg dat er een planningsrij is per gekoppelde bron; ontkoppelde bronnen gaan eruit. */
