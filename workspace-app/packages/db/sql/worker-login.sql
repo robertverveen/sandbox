@@ -1,9 +1,11 @@
 -- Eenmalig, door een databasebeheerder (superuser of CREATEROLE), na bootstrap-roles.sql.
 -- Maakt de login waarmee de worker app-tabellen gebruikt (DATABASE_URL van de worker, stuk E2, migratie 0010):
 -- LOGIN, NOINHERIT, lid van hz_app (werken onder RLS met withUser) en hz_worker (alleen: system_active_user_ids(),
--- de id's van actieve collega's om per collega een job te plannen). Eigenaar van niets, geen superuser, geen BYPASSRLS.
--- De api gebruikt een andere login (sql/app-login.sql, alleen hz_app): een request kan dus geen gebruikers-id's
--- opvragen.
+-- de id's van actieve collega's om per collega een job te plannen; en namens een collega werken, zie hieronder).
+-- Eigenaar van niets, geen superuser, geen BYPASSRLS.
+-- Sinds 0011 kan deze login ook namens een collega werken: zonder sessie telt app.user_id alleen voor een login die
+-- lid is van hz_worker. Zet hem dus alleen in de omgeving van de worker en het importscript. De api gebruikt een
+-- andere login (sql/app-login.sql, alleen hz_app): voor die login telt alleen een geldige sessie (app.session).
 --
 --   lokaal:    sudo -u postgres psql -v login=hz_worker_login -v password=hz_worker_login -f packages/db/sql/worker-login.sql
 --   CI:        psql -h localhost -U postgres -v login=hz_worker_login -v password=hz_worker_login -f packages/db/sql/worker-login.sql

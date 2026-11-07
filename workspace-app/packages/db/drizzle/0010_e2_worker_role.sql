@@ -1,9 +1,15 @@
 -- Worker-rol, sessielimiet en opruimen in de contextindex (stuk E2, HZW-020/021, criticus ronde 2). Handgeschreven.
 --
--- 1. system_active_user_ids() gaf elke hz_app-transactie (dus elke request) alle gebruikers-id's. Met zo'n id kan
---    een request zelf app.user_id zetten. Nu mag alleen de rol hz_worker (NOLOGIN, aangemaakt door
---    sql/bootstrap-roles.sql) de functie uitvoeren. De worker verbindt met een eigen login die lid is van hz_app en
---    hz_worker (sql/worker-login.sql); de login van de api (hz_app_login) is alleen lid van hz_app.
+-- 1. system_active_user_ids() gaf elke hz_app-transactie (dus elke request) alle gebruikers-id's. Nu mag alleen de
+--    rol hz_worker (NOLOGIN, aangemaakt door sql/bootstrap-roles.sql) de functie uitvoeren. De worker verbindt met een
+--    eigen login die lid is van hz_app en hz_worker (sql/worker-login.sql); de login van de api (hz_app_login) is
+--    alleen lid van hz_app.
+--    Correctie (criticus ronde 3): dit alleen hield een request niet tegen. Via auth_user_by_email() en
+--    auth_upsert_user() kreeg elke hz_app-transactie nog steeds het id van een collega bij een raadbaar e-mailadres,
+--    en met set_config('app.user_id', ...) zag hij daarna diens rijen; auth_create_session() maakte zelfs een sessie.
+--    RLS met een GUC beschermt tegen een vergeten filter, niet tegen willekeurige SQL als hz_app. Migratie 0011 sluit
+--    dit: de auth_*-functies zijn alleen van hz_auth, en app_user_id() volgt uit een geldige sessie (app.session);
+--    app.user_id telt alleen nog voor een login in hz_worker.
 -- 2. auth_touch_session en auth_create_session: de verloopdatum ligt in de toekomst en hoogstens 30 dagen na nu.
 --    Een request (of een fout in de auth-bibliotheek) kan een sessie dus niet voor jaren verlengen.
 -- 3. context_index_delete_id(id): één indexrij weghalen (een actie die uit acties.md verdween terwijl het bestand

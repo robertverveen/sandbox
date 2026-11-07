@@ -55,7 +55,7 @@ export interface AppLoginCheck {
   bypassRls: boolean;
   /** Tabellen, views en sequences waarvan de login eigenaar is, direct of via lidmaatschap (SET ROLE). */
   ownedRelations: number;
-  /** Bijzondere rollen waar de login lid van is (hz_worker, hz_indexer); de api-login hoort bij geen van beide. */
+  /** Bijzondere rollen waar de login lid van is (hz_worker, hz_indexer, hz_auth); de api-login hoort bij geen ervan. */
   memberOf: string[];
 }
 
@@ -120,8 +120,9 @@ export class UnsafeAppLoginError extends Error {
 
 /**
  * Gooit UnsafeAppLoginError als de login van deze verbinding RLS zou kunnen omzeilen, of lid is van een bijzondere
- * rol (hz_worker, hz_indexer) die niet in `allowRoles` staat. Zo weigert de api in productie een login waarmee een
- * request alle gebruikers-id's zou kunnen opvragen (hz_worker) of de gedeelde index zou kunnen wijzigen (hz_indexer).
+ * rol (hz_worker, hz_indexer, hz_auth) die niet in `allowRoles` staat. Zo weigert de api in productie een login waarmee
+ * een request namens een collega zou kunnen werken (hz_worker), sessies zou kunnen maken (hz_auth) of de gedeelde index
+ * zou kunnen wijzigen (hz_indexer).
  */
 export async function assertAppLogin(client: Pick<pg.ClientBase, 'query'>, opts: { allowRoles?: string[] } = {}) {
   const c = await checkAppLogin(client);
