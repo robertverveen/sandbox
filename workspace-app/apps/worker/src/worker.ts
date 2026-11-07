@@ -4,13 +4,17 @@
  */
 import PgBoss from 'pg-boss';
 import type { ProviderBundle } from '@hz/providers';
+import { createDb } from '@hz/db';
 import { QUEUES, telActies, type TelActiesInput } from './jobs';
+import { createSyncDeps, registerSync, type SyncRuntimeOptions } from './sync-db';
 
 export interface WorkerOptions {
   connectionString: string;
   schema?: string;
   bundle: ProviderBundle;
   log?: (msg: string) => void;
+  /** Sync-motor (HZW-036) aan: hoofdsleutel voor tokens en omgeving (HZ_LIVE_*, OAuth-clients). */
+  sync?: Omit<SyncRuntimeOptions, 'db'> & { cron?: string | null };
 }
 
 export async function startWorker(opts: WorkerOptions) {
@@ -33,9 +37,23 @@ export async function startWorker(opts: WorkerOptions) {
     }
     return results.length === 1 ? results[0] : results;
   });
+  let syncStop: (() => Promise<void>) | null = null;
+  if (opts.sync) {
+    const { db, close } = createDb(opts.connectionString, 4);
+    const deps = createSyncDeps({ ...opts.sync, db, log: opts.sync.log ?? log });
+    const r = await registerSync(boss, deps, db, opts.connectionString, { cron: opts.sync.cron });
+    syncStop = async () => {
+      await r.stop();
+      await close();
+    };
+    log('sync-motor gestart');
+  }
   return {
     boss,
     send: (input: TelActiesInput = {}) => boss.send(QUEUES.telActies, input),
-    stop: () => boss.stop({ graceful: true, wait: true }),
+    stop: async () => {
+      await boss.stop({ graceful: true, wait: true });
+      await syncStop?.();
+    },
   };
 }

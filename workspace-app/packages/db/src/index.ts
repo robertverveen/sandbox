@@ -4,3 +4,4 @@ export * from './client';
 export * from './crypto';
 export * from './migrate';
 export * from './repo';
+export * from './sync';
