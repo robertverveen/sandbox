@@ -1,0 +1,359 @@
+[
+ {
+  "id": "HZW-001",
+  "wat": "Repo homezero-workspace met monorepo-opzet (web, api, worker, packages), TypeScript strict, lint, format, testframework, README met lokaal starten",
+  "zelftest": "CI draait lint, typecheck en een voorbeeldtest groen",
+  "goedkeuring": "Repo-structuur en README zijn helder",
+  "dep": "—"
+ },
+ {
+  "id": "HZW-002",
+  "wat": "Hetzner Cloud-server (CX32, Ubuntu 24.04, Falkenstein of Neurenberg), SSH alleen met sleutel, firewall 22/80/443, automatische beveiligingsupdates, Docker",
+  "zelftest": "Script checkt open poorten, SSH-instellingen en updates; resultaat in het issue",
+  "goedkeuring": "Toegang werkt, wachtwoordlogin staat uit",
+  "dep": "001"
+ },
+ {
+  "id": "HZW-003",
+  "wat": "DNS: homezero.verveen.me en *.test.homezero.verveen.me naar de server; reverse proxy (Caddy of Coolify) met automatische TLS",
+  "zelftest": "curl-test op https en certificaat, http stuurt door naar https",
+  "goedkeuring": "Beide adressen openen met slotje",
+  "dep": "002"
+ },
+ {
+  "id": "HZW-004",
+  "wat": "CI/CD met GitHub Actions: build images naar GHCR, deploy naar test bij merge, naar productie bij een goedgekeurde release",
+  "zelftest": "Pipeline-run met deploy en health-check /api/health groen",
+  "goedkeuring": "Een release naar productie werkt met één klik",
+  "dep": "003"
+ },
+ {
+  "id": "HZW-005",
+  "wat": "Preview-omgeving per pull request op pr-&lt;nr&gt;.test.homezero.verveen.me, automatisch opgeruimd na merge",
+  "zelftest": "PR opent, preview komt op, sluit, preview verdwijnt",
+  "goedkeuring": "Reviewer kan een story op de preview bekijken",
+  "dep": "004"
+ },
+ {
+  "id": "HZW-006",
+  "wat": "Secrets en configuratie: alles via omgevingsvariabelen, versleuteld in de repo (sops/age) of in de proxy-tool; een aparte sleutel voor tokenversleuteling",
+  "zelftest": "Test dat de app weigert te starten zonder verplichte secrets",
+  "goedkeuring": "Geen secret staat leesbaar in Git",
+  "dep": "004"
+ },
+ {
+  "id": "HZW-007",
+  "wat": "Monitoring en logs: health-checks, uptime-melding (naar Slack-DM of mail), foutregistratie (Sentry of GlitchTip), gestructureerde logs zonder persoonsgegevens",
+  "zelftest": "Kunstmatige fout komt aan in foutregistratie; uptime-melding getest",
+  "goedkeuring": "Melding komt bij Robert binnen",
+  "dep": "004"
+ },
+ {
+  "id": "HZW-008",
+  "wat": "Back-ups: nachtelijke database-dump naar Hetzner Storage Box, 30 dagen bewaren, versleuteld",
+  "zelftest": "Herstel-test op een lege database met telling van rijen",
+  "goedkeuring": "Herstel-procedure staat in het runbook en is één keer gedaan",
+  "dep": "007"
+ },
+ {
+  "id": "HZW-010",
+  "wat": "Inloggen met Google (OpenID Connect): alleen geverifieerde @homezero.nl-adressen, gecontroleerd op de server (claim hd en e-mail), anders een nette weigerpagina",
+  "zelftest": "E2E met nep-OIDC: @homezero.nl mag, @gmail.com en ongeverifieerd worden geweigerd",
+  "goedkeuring": "Robert logt in; een privé-account wordt geweigerd",
+  "dep": "006"
+ },
+ {
+  "id": "HZW-011",
+  "wat": "Sessies: veilige cookie (HttpOnly, Secure, SameSite=Lax), 30 dagen geldig met verlenging, uitloggen overal",
+  "zelftest": "Tests voor verlopen, ingetrokken en gestolen sessie (andere user-agent)",
+  "goedkeuring": "Uitloggen werkt op alle apparaten",
+  "dep": "010"
+ },
+ {
+  "id": "HZW-012",
+  "wat": "Teamleden en rollen: eerste login maakt het profiel; Robert is admin; admin ziet wie er is en kan iemand blokkeren",
+  "zelftest": "API-tests voor rollen; gewone gebruiker kan niet bij adminroutes",
+  "goedkeuring": "Ledenlijst klopt",
+  "dep": "010"
+ },
+ {
+  "id": "HZW-013",
+  "wat": "Onboarding-wizard (zie de sectie Onboarding): welkom, Google-rechten, Slack, Jira, agenda-lagen, weekritme, toetsenbord-tour; overslaan en later afmaken kan",
+  "zelftest": "Playwright doorloopt de wizard met nep-koppelingen, ook overslaan en hervatten",
+  "goedkeuring": "Een collega (niet Robert) doorloopt hem zonder uitleg",
+  "dep": "012, 030–034"
+ },
+ {
+  "id": "HZW-014",
+  "wat": "Instellingen → Koppelingen: status per bron, opnieuw verbinden, rechten bekijken, intrekken, eigen gegevens wissen",
+  "zelftest": "Tests voor intrekken (token weg, data weg) en opnieuw verbinden",
+  "goedkeuring": "Intrekken haalt de app echt uit Google en Slack",
+  "dep": "013"
+ },
+ {
+  "id": "HZW-020",
+  "wat": "Database (Postgres) met migraties: gebruikers, koppelingen (tokens versleuteld), itemstatus (gelezen, beantwoord door, gepland), tracker, weekdoelen, vastgezette zoekopdrachten, voorkeuren, auditlog. Elke rij hoort bij één gebruiker",
+  "zelftest": "Migratietests; test dat gebruiker A nooit rijen van B ziet (rij-beveiliging of query-guard)",
+  "goedkeuring": "Datamodel-schets klopt met het prototype",
+  "dep": "001"
+ },
+ {
+  "id": "HZW-021",
+  "wat": "Import uit het prototype: tracker, itemstatus en briefings uit de artifact-opslag naar de database van Robert",
+  "zelftest": "Import is idempotent; aantallen voor en na kloppen",
+  "goedkeuring": "Robert ziet zijn tracker terug",
+  "dep": "020"
+ },
+ {
+  "id": "HZW-030",
+  "wat": "Google Agenda: agenda's, afspraken per periode, reageren op uitnodigingen, vrije tijden met collega's, afspraak maken; tijden altijd Europe/Amsterdam",
+  "zelftest": "Contracttests tegen opgenomen Google-antwoorden; tijdzone-tests rond zomertijd",
+  "goedkeuring": "Week van Robert klopt met Google Agenda, inclusief Lou en vakanties",
+  "dep": "013"
+ },
+ {
+  "id": "HZW-031",
+  "wat": "Gmail: threads, volledige thread, gelezen en ongelezen zetten, antwoorden met handtekening; datums uit headers",
+  "zelftest": "Contracttests; gelezen zetten is terug te draaien",
+  "goedkeuring": "Mailthread oogt als in Gmail; antwoord komt aan",
+  "dep": "013"
+ },
+ {
+  "id": "HZW-032",
+  "wat": "Google Taken: lijsten, taken toevoegen, verplaatsen, afvinken, Backlog-lijst",
+  "zelftest": "Contracttests; snel-toevoegen-test",
+  "goedkeuring": "Taak uit de app staat goed in Google Taken",
+  "dep": "013"
+ },
+ {
+  "id": "HZW-033",
+  "wat": "Slack-app (intern) met user token: kanalen, DM's, geschiedenis, threads, zoeken, versturen, reacties, eigen workspace-emoji en echt gelezen zetten (conversations.mark)",
+  "zelftest": "Contracttests; test dat gelezen in de app ook gelezen is in Slack",
+  "goedkeuring": "Bericht gelezen in de app is gelezen op Slack-mobiel",
+  "dep": "013"
+ },
+ {
+  "id": "HZW-034",
+  "wat": "Jira (Atlassian OAuth 3LO): lopende sprint van HOM, storypoints, Tester-veld",
+  "zelftest": "Contracttests",
+  "goedkeuring": "Sprint-tab klopt met Jira",
+  "dep": "013"
+ },
+ {
+  "id": "HZW-035",
+  "wat": "Meetings uit de contextlaag: `meetings/` per partner lezen; live Wispr alleen voor meetings na de laatste nachtrun van de gebruiker (tijdstip uit `_systeem/routines/&lt;voornaam&gt;.md`)",
+  "zelftest": "Meeting van gisteren zichtbaar, ook als de nachtdienst hem nog niet had",
+  "goedkeuring": "Opnames van deze week staan erin",
+  "dep": "013"
+ },
+ {
+  "id": "HZW-036",
+  "wat": "Sync-motor: achtergrondjobs per gebruiker, push waar het kan (Gmail via Pub/Sub, Agenda-webhooks, Slack Events), anders pollen; limieten en terugval bij fouten",
+  "zelftest": "Tests voor herhaalpogingen, rate limits en dubbele events",
+  "goedkeuring": "Wijziging in Gmail staat binnen 1 minuut in de app",
+  "dep": "030–034"
+ },
+ {
+  "id": "HZW-037",
+  "wat": "Spike (max 1 dag): kunnen Slack-to-do's met de user token in de tracker? Slack Lists (lezen/aanmaken, lists:read/lists:write), herinneringen (reminders.list/add), bewaarde items onder Later. Uitkomst: per soort wel/niet, scopes, rate limits, advies.",
+  "zelftest": "Proefscript tegen de HomeZero-workspace met een testlijst en een testherinnering; uitkomst als notitie in de repo",
+  "goedkeuring": "Robert besluit op basis van de notitie of er een bouwstory komt",
+  "dep": "033"
+ },
+ {
+  "id": "HZW-040",
+  "wat": "App-schil: zijbalk met vijf onderdelen en vastgezette views, ⌘K-basis, toetsenbordmodel (j/k, g-sneltoetsen, ?), HomeZero-huisstijl uit het design system, licht en donker, mobiel",
+  "zelftest": "Screenshots licht/donker, desktop/mobiel; toegankelijkheidscheck (axe) zonder ernstige fouten",
+  "goedkeuring": "Voelt als het prototype",
+  "dep": "012"
+ },
+ {
+  "id": "HZW-041",
+  "wat": "Dagstart: viltkop, één samenvattende regel, Vandaag, agenda van vandaag, ‘Om te beslissen’, chips voor sprint en weekdoelen",
+  "zelftest": "E2E met testdata; geen horizontale scroll op 400 px",
+  "goedkeuring": "Rustig en klopt met de echte dag",
+  "dep": "040, 036"
+ },
+ {
+  "id": "HZW-042",
+  "wat": "Planning: kolommen 1–5 met maximaal 10 per dag, snel toevoegen bij Vandaag en Morgen naar Google Taken, Sprint-tab",
+  "zelftest": "E2E: toevoegen, verplaatsen, afvinken synchroniseert",
+  "goedkeuring": "Taak toevoegen voelt direct",
+  "dep": "041, 032, 034"
+ },
+ {
+  "id": "HZW-043",
+  "wat": "Agenda: alle agenda's in één week, kleuren en lagen, Lou en collega's alleen hier, plannen met collega's",
+  "zelftest": "E2E; tijdzonetests",
+  "goedkeuring": "Kleuren en tijden kloppen",
+  "dep": "030"
+ },
+ {
+  "id": "HZW-044",
+  "wat": "Tracker: leest `acties.md` van alle partners (filter op eigenaar) en de Persoonlijk-repo (`taken.md`, `wachten-op.md`); de database bewaart alleen leesstatus, planning en weekscore; dubbelingen gemarkeerd op `id` of bronlink; weekdoelen en roadmap",
+  "zelftest": "E2E per stroom",
+  "goedkeuring": "Wachten op komt uit `wachten-op.md`, niet uit de database",
+  "dep": "020"
+ },
+ {
+  "id": "HZW-045",
+  "wat": "Gesprekken: alle mail, DM's en kanalen volledig, threads, antwoorden, @-tags, emoji (ook eigen workspace-emoji als plaatje)",
+  "zelftest": "E2E met nepbronnen; tags worden echte Slack-tags",
+  "goedkeuring": "Gesprek lezen en reageren zonder Slack te openen",
+  "dep": "031, 033"
+ },
+ {
+  "id": "HZW-046",
+  "wat": "Inhalen: kaart per gesprek, ←/→, ongedaan, taak maken, reageren, reactie telt als gelezen, beantwoord door collega",
+  "zelftest": "E2E voor elke toets",
+  "goedkeuring": "Ochtend inhalen kost minder dan 10 minuten",
+  "dep": "045"
+ },
+ {
+  "id": "HZW-047",
+  "wat": "Plansessie: pijltjes, hele context per kaart, weekritme (zondag-prep, vrijdag-check-in in eigen Slack-format)",
+  "zelftest": "E2E inclusief het vrijdagbericht-format",
+  "goedkeuring": "Weekafsluiting plaatsen werkt",
+  "dep": "044, 046"
+ },
+ {
+  "id": "HZW-048",
+  "wat": "Zoeken: organisaties herkennen, komma-verfijning, lijst/tijdlijn/Gantt, kanalen en DM's, vastzetten",
+  "zelftest": "E2E en tests voor de zoekparser",
+  "goedkeuring": "‘Solarwatt, berekening, timeline’ geeft het juiste beeld",
+  "dep": "045, 061"
+ },
+ {
+  "id": "HZW-050",
+  "wat": "Claude via de server (Anthropic API): Vraag Claude, breder zoeken, toezeggingen uit mail en meetings; budget per gebruiker, prompt caching, geen sleutel in de browser",
+  "zelftest": "Tests met nep-API; budgetgrens werkt",
+  "goedkeuring": "Antwoorden zijn bruikbaar en noemen hun bron",
+  "dep": "036"
+ },
+ {
+  "id": "HZW-051",
+  "wat": "Recap met Claude: klant-recap starten vanuit een meeting; klant-recap schrijft zelf in de laag, de app toont de status",
+  "zelftest": "E2E met nep-sessie",
+  "goedkeuring": "Recap komt in #04-klanten zoals nu",
+  "dep": "050"
+ },
+ {
+  "id": "HZW-052",
+  "wat": "Eigen MCP-server van de workspace met OAuth 2.1 (zoals Standupy): Claude kan tracker, weekdoelen en briefing lezen en schrijven namens de ingelogde collega",
+  "zelftest": "MCP-contracttests; token van A kan niet bij B",
+  "goedkeuring": "Ochtendbriefing schrijft direct in de app",
+  "dep": "020, 010"
+ },
+ {
+  "id": "HZW-053",
+  "wat": "Routines aansluiten: ochtendbriefing en weekprep lezen eerst de contextlaag (sinds 5 nov) en schrijven hun uitkomst via de MCP-server; de app leest die uitkomst; daarna Telegram vervangen door een push (E7)",
+  "zelftest": "Proefrun van beide routines tegen test",
+  "goedkeuring": "Twee weken dubbel geland zonder verschil",
+  "dep": "052"
+ },
+ {
+  "id": "HZW-060",
+  "wat": "Contextlaag koppelen: HomeZeroTech/HomeZero-context lezen en de Persoonlijk-repo van de ingelogde collega lezen en schrijven (GitHub App per collega of fine-grained token); index met frontmatter, koppen per sectie en actieregels als rijen, bijgewerkt bij elke push",
+  "zelftest": "Index-test op een testrepo met het echte schema; webhook-test",
+  "goedkeuring": "Alle partners uit het register zijn vindbaar",
+  "dep": "036"
+ },
+ {
+  "id": "HZW-061",
+  "wat": "Organisaties uit partners/_register.md (slug, naam, aliassen, e-maildomeinen, Slack-kanaal, fase, accountmanager). Partnerpagina: Kern, Stand, Contacten, open acties (bij-ons/bij-hen), laatste 3 meetings, log.md als tijdlijn; admin.md alleen voor de rol uit C3",
+  "zelftest": "Tests voor slug-, alias- en domeinherkenning",
+  "goedkeuring": "Feenstra, TonZon en Solarwatt worden herkend",
+  "dep": "060"
+ },
+ {
+  "id": "HZW-062",
+  "wat": "Wegschrijven na een klantsessie: meetingbestand volgens het schema (met meeting_id) plus actieregels in acties.md, contextcheck, dan committen of PR volgens B1; twijfel wordt een regel in aangehouden.md",
+  "zelftest": "Tests: schema van bestand en regels klopt; check-exit 1 of 2 blokkeert",
+  "goedkeuring": "Eerste meeting-wegschrijving staat goed in de repo",
+  "dep": "060, B1"
+ },
+ {
+  "id": "HZW-063",
+  "wat": "Context voor Claude: per vraag de register-regel, brief.md, open acties en laatste meeting; nooit admin.md in een tekst die naar een partner kan; geheim_voor als harde filter",
+  "zelftest": "Test op tokenbudget per vraag en op de filters",
+  "goedkeuring": "Antwoorden worden beter, niet trager",
+  "dep": "050, 060"
+ },
+ {
+  "id": "HZW-064",
+  "wat": "Versheid en over-datum: banner als _systeem/status.md ouder is dan 36 uur; eigen sectie uit _systeem/over-datum.md; (voorstel)-datums apart van bevestigde datums",
+  "zelftest": "Test met een oude status-regel en een voorstel-datum",
+  "goedkeuring": "Banner verschijnt echt bij een gemiste nacht",
+  "dep": "060"
+ },
+ {
+  "id": "HZW-065",
+  "wat": "Acties bijwerken vanuit de app: afvinken ([x] … [klaar:: ]), schrappen ([-] … [geschrapt:: ]), datum bevestigen of wijzigen, alleen door een mens; contextcheck voor de push, nooit regels van anderen overschrijven",
+  "zelftest": "Test op het schema van de regel; check-exit 1 of 2 blokkeert",
+  "goedkeuring": "Afvinken in de app staat dezelfde minuut in de repo",
+  "dep": "060, B1"
+ },
+ {
+  "id": "HZW-066",
+  "wat": "Persoonlijk-repo per collega: taken.md, wachten-op.md (reminder na 3 werkdagen, sectie ‘Bespreken bij eerstvolgend contactmoment’) en aangehouden.md met knoppen deel/privé",
+  "zelftest": "Tests: privé blijft privé; deel/privé komt als tekst achter de regel",
+  "goedkeuring": "Robert verwerkt zijn aangehouden-regels in de app",
+  "dep": "060"
+ },
+ {
+  "id": "HZW-067",
+  "wat": "Meetingprep: bij een afspraak een agenda-voorstel met de vorige sessie (meeting_id = agenda-event-id), open acties met status en updates uit Slack en mail sinds die sessie; delen als concept",
+  "zelftest": "E2E met testrepo en nepbronnen",
+  "goedkeuring": "Agenda voor een echte partnermeeting is bruikbaar zonder aanpassen",
+  "dep": "061, 045"
+ },
+ {
+  "id": "HZW-068",
+  "wat": "Uitgaande teksten filteren: elk concept naar een partner gaat door een filter op admin.md, intern oordeel en geheim_voor",
+  "zelftest": "Tests met een geheim_voor-partner en MRR in de context",
+  "goedkeuring": "Tweede reviewer tekent af",
+  "dep": "063"
+ },
+ {
+  "id": "HZW-069",
+  "wat": "Takenlijst per collega: Google Taken waar gekoppeld (bij Robert leidend), anders taken.md; nieuwe regels uit taken.md voorstellen als Google Taak",
+  "zelftest": "Tests voor beide varianten",
+  "goedkeuring": "Een collega zonder Google Taken kan plannen",
+  "dep": "032, 066"
+ },
+ {
+  "id": "HZW-070",
+  "wat": "Installeerbare webapp (PWA) met Inhalen en Dagstart op de telefoon",
+  "zelftest": "Lighthouse PWA-check; E2E op mobiel formaat",
+  "goedkeuring": "Werkt prettig op iPhone",
+  "dep": "046"
+ },
+ {
+  "id": "HZW-071",
+  "wat": "Pushmelding in de ochtend met de briefing; Telegram mag uit na twee weken dubbel",
+  "zelftest": "Test met nep-push-service",
+  "goedkeuring": "Melding komt op tijd binnen",
+  "dep": "053, 070"
+ },
+ {
+  "id": "HZW-080",
+  "wat": "Beveiliging: CSP, rate limiting, CSRF-bescherming, afhankelijkheden-scan in CI, auditlog van gevoelige acties",
+  "zelftest": "Security-tests in CI; ZAP-baseline-scan op test",
+  "goedkeuring": "Tweede reviewer tekent af",
+  "dep": "040"
+ },
+ {
+  "id": "HZW-081",
+  "wat": "Privacy (AVG): wat we bewaren en hoe lang, verwijderen bij uitdienst, verwerkingsregister-tekst",
+  "zelftest": "Test: account verwijderen wist alle rijen en tokens",
+  "goedkeuring": "Rens of Mike akkoord vanuit legal",
+  "dep": "020"
+ },
+ {
+  "id": "HZW-082",
+  "wat": "Verhuizen: runbook en een proefverhuizing naar een tweede server en een tweede domein",
+  "zelftest": "Proefverhuizing met herstel uit back-up",
+  "goedkeuring": "Draait op het nieuwe adres zonder codewijziging",
+  "dep": "008"
+ }
+]
