@@ -520,7 +520,12 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
         used[`${f}/${job}`] = new Set(found);
       }
     expect(Object.fromEntries(Object.entries(used).map(([k, v]) => [k, [...v].sort()]))).toEqual({
-      'workspace-deploy.yml/deploy': ['HZ_DEPLOY_SSH_KEY_PROD', 'HZ_DEPLOY_SSH_KEY_TEST', 'TS_OAUTH_CLIENT_ID', 'TS_OAUTH_SECRET'],
+      'workspace-deploy.yml/deploy': [
+        'HZ_DEPLOY_SSH_KEY_PROD',
+        'HZ_DEPLOY_SSH_KEY_TEST',
+        'TS_OAUTH_CLIENT_ID',
+        'TS_OAUTH_SECRET',
+      ],
       'workspace-preview.yml/up': ['HZ_PREVIEW_SSH_KEY', 'TS_OAUTH_CLIENT_ID', 'TS_OAUTH_SECRET'],
       'workspace-preview.yml/down': ['HZ_PREVIEW_SSH_KEY', 'TS_OAUTH_CLIENT_ID', 'TS_OAUTH_SECRET'],
       'workspace-server-check.yml/check': ['HZ_DEPLOY_SSH_KEY_TEST', 'TS_OAUTH_CLIENT_ID', 'TS_OAUTH_SECRET'],
@@ -547,7 +552,9 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
             const use = run.indexOf(`tar -xzf "${file}"`);
             expect(check, `${f}: ${file} zonder sha256-controle`).toBeGreaterThan(m.index!);
             expect(use, `${f}: ${file} gebruikt vóór de controle`).toBeGreaterThan(check);
-            expect(run).toMatch(new RegExp(`echo "\\$\\{\\w+_SHA256\\}  ${file.replace(/\$/g, '\\$')}" \\| sha256sum -c -`));
+            expect(run).toMatch(
+              new RegExp(`echo "\\$\\{\\w+_SHA256\\}  ${file.replace(/\$/g, '\\$')}" \\| sha256sum -c -`),
+            );
           }
         }
     expect(downloads).toBe(3); // caddy (app, infra) en actionlint (infra)

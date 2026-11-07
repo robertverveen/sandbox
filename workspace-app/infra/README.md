@@ -20,7 +20,10 @@ Stories: HZW-002 (server), 003 (DNS en TLS), 004 (CI/CD), 005 (preview per PR), 
 | Geheugen- en CPU-limieten | `mem_limit` en `cpus` op elke service (instelbaar met `HZ_MEM_*`/`HZ_CPUS_*` in `hz.env`; previews kleiner, maximaal 3). Samen hooguit 5760 MiB voor productie, test, GlitchTip en router; de voorcheck vergelijkt dat met het vrije geheugen. |
 | Aansluiten op de proxy die er al draait | Geen eigen proxy op 80/443. Eén **router** (Caddy, zonder TLS, zonder publieke poort) verdeelt onze domeinen over de instanties. De bestaande proxy krijgt alleen een site-blok (Caddy, `scripts/proxy-snippet.sh caddy`) of leest labels van de router (Traefik, ook de proxy van Coolify). Alleen de router doet mee in het netwerk van de proxy (of luistert op 127.0.0.1 als de proxy op de host draait). |
 | Beheer alleen via Tailscale, publiek alleen 443 | De servercontrole eist dat sshd alleen op het tailnet-adres luistert (of dat ufw 22 alleen op `tailscale0` toelaat), alleen met sleutel. Publiek alleen 443 (de proxy; 80 mag alleen doorsturen). De workspace publiceert zelf niets buiten 127.0.0.1. |
-| Uitrol nooit via publieke SSH | GitHub Actions wordt een tijdelijke, getagde Tailscale-node (`tailscale/github-action`, `tag:ci`, ephemeral, OAuth-client). `scripts/ci-ssh.sh` weigert elk doel dat niet naar een tailnet-adres wijst. De ACL (`tailscale/acl.hujson`) laat `tag:ci` alleen bij poort 22 van de server; op de server mag die sleutel alleen `hz-ssh-dispatch`. |
+| Uitrol nooit via publieke SSH | GitHub Actions wordt een tijdelijke, getagde Tailscale-node (`tailscale/github-action`, `tag:ci`, ephemeral, OAuth-client). `scripts/ci-ssh.sh` weigert elk doel dat niet naar een tailnet-adres wijst. De ACL (`tailscale/acl.hujson`) laat `tag:ci` alleen bij poort 22 van de server; op de server mag elke sleutel alleen `hz-ssh-dispatch` met zijn eigen rol. |
+| Productie alleen na goedkeuring, ook niet via een pull request (HZW-004) | Drie CI-sleutels, elk een environment-secret (nooit repo-secret, die kan elke PR-workflow lezen): `test` (alleen `main`), `production` (required reviewer), `preview`. Op de server een vaste rol per sleutel in `authorized_keys`: `deploy prod` alleen een v-tag, met de images (per digest) die bij die commit op test groen waren; `deploy test` alleen een sha-tag; PR-tags alleen voor `preview up`. Zie `scripts/hz-ssh-dispatch.sh`. |
+| Tags in de registry zijn overschrijfbaar | Een PR-workflow mag packages schrijven (voor zijn preview) en kan dus elke tag overschrijven. De server draait daarom test en productie per digest: de digests komen uit de build-job van de run op `main` en liggen daarna vast (`/srv/hz-workspace/images/<tag>.env`); een tag met andere digests wordt geweigerd. |
+| Previews raken de secrets van productie niet | `preview.sh` komt uit de bundel die op test draait (main), nooit uit het PR-image, en draait als gebruiker `hz-preview` (alleen `docker`, niet de groep `hz-workspace`, dus `etc/age.key` is onleesbaar). Van de PR draaien alleen de containers: read-only, `cap_drop: ALL`, geen mounts van de server, geen Docker-socket. |
 | Automatische beveiligingsupdates | De servercontrole eist `unattended-upgrades` aan. |
 
 ## Keuze: Compose + router achter de bestaande proxy, niet Coolify (plaat keuze 01, H4)
@@ -60,8 +63,10 @@ Bestaande Hetzner-server (in Roberts tailnet)          publiek alleen 443 (de pr
   `hz_backup` (BYPASSRLS, alleen lezen: een dump als eigenaar faalt door FORCE RLS).
 - De uitrolbundel (deze map plus de rollen-SQL) reist mee in het api-image; compose, router, scripts en voorcheck
   horen dus altijd bij dezelfde versie van de app.
-- `hz-workspace` zit in de groep `docker` (nodig voor Compose). Docker-toegang is op elke server root-gelijk; daarom
-  kan de CI-sleutel alleen `hz-ssh-dispatch` draaien en staan de vaste scripts in een map van root.
+- `hz-workspace` en `hz-preview` zitten in de groep `docker` (nodig voor Compose). Docker-toegang is op elke server
+  root-gelijk; daarom kan elke CI-sleutel alleen `hz-ssh-dispatch` met een vaste rol draaien, staan de vaste scripts
+  in een map van root, en voert de server nooit een script uit een PR-image uit. Wie de previewsleutel heeft, kan dus
+  alleen previews starten en opruimen.
 
 ## Mappen
 

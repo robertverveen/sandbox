@@ -47,20 +47,35 @@ Alles via Tailscale, vanaf een laptop in het tailnet met deze repo. Elke stap is
    `HZ_PROXY_CONFIG` wijst naar de configuratie van de proxy (map of bestand). Draai opnieuw tot alles OK is, op
    hooguit `WAARSCHUWING aangesloten` na (dat komt in stap 9). Rood bij een botsing: niets doen, eerst oplossen
    (bijv. een ander domein of een andere routerpoort).
-2. **CI-sleutel** (eenmalig, op de laptop): `ssh-keygen -t ed25519 -N '' -C hz-workspace-ci -f hz_deploy`.
-   De privésleutel gaat als GitHub-secret `HZ_DEPLOY_SSH_KEY` (stap 6), daarna weg van de laptop.
+2. **CI-sleutels** (eenmalig, op de laptop): drie sleutels, elk met één doel. Op de server mag elke sleutel alleen
+   `hz-ssh-dispatch` met zijn eigen rol; samen gebruiken weigert `server-setup.sh`.
+   ```bash
+   for r in test prod preview; do ssh-keygen -t ed25519 -N '' -C hz-workspace-ci-$r -f hz_ci_$r; done
+   ```
+   | Sleutel | Mag op de server | GitHub-secret (stap 6), alleen in environment |
+   |---|---|---|
+   | `hz_ci_test` | `deploy test sha-...`, `rollback test`, `status`, `check`, `voorcheck` (gebruiker `hz-workspace`) | `HZ_DEPLOY_SSH_KEY_TEST` in `test` |
+   | `hz_ci_prod` | `deploy prod v...` (alleen wat op test groen was), `rollback prod`, `status`, `check`, `voorcheck` | `HZ_DEPLOY_SSH_KEY_PROD` in `production` |
+   | `hz_ci_preview` | `preview up/down` (gebruiker `hz-preview`, geen toegang tot de age-sleutel) | `HZ_PREVIEW_SSH_KEY` in `preview` |
+
+   De privésleutels gaan als environment-secret naar GitHub (stap 6), daarna weg van de laptop. Nooit als
+   repo-secret: die kan elke workflow van een pull request lezen.
 3. **Gebruiker, map, scripts, timers**: eerst droog, dan echt (stopt zelf als de voorcheck rood is):
    ```bash
-   scp hz_deploy.pub <jij>@<server>:/tmp/hz-workspace-setup/
+   scp hz_ci_test.pub hz_ci_prod.pub hz_ci_preview.pub <jij>@<server>:/tmp/hz-workspace-setup/
    ssh <jij>@<server> sudo bash /tmp/hz-workspace-setup/scripts/server-setup.sh \
      --domain homezero.verveen.me --acme-email robert@homezero.nl --registry ghcr.io/homezerotech \
      --proxy caddy --proxy-network <netwerk> --proxy-config /etc/caddy \
-     --deploy-key /tmp/hz-workspace-setup/hz_deploy.pub --dry-run
+     --deploy-key-test /tmp/hz-workspace-setup/hz_ci_test.pub --deploy-key-prod /tmp/hz-workspace-setup/hz_ci_prod.pub \
+     --preview-key /tmp/hz-workspace-setup/hz_ci_preview.pub --dry-run
    ```
-   Klopt het, dan zonder `--dry-run`. Dat maakt gebruiker `hz-workspace`, `/srv/hz-workspace`, de vaste scripts,
-   `hz.env`, de sudo-regel voor de servercontrole, de CI-sleutel (alleen `hz-ssh-dispatch`), de units
-   `hz-workspace-*` en het netwerk `hz-workspace-net`. sshd, ufw, de proxy en de andere projecten blijven
-   ongemoeid. Heeft sshd `AllowUsers`, dan meldt het script dat `hz-workspace` erbij moet; dat doet een mens.
+   Klopt het, dan zonder `--dry-run`. Dat maakt de gebruikers `hz-workspace` (uitrol) en `hz-preview` (previews;
+   alleen in de groep `docker`, niet in `hz-workspace`, dus geen toegang tot `etc/age.key`), `/srv/hz-workspace`, de
+   vaste scripts, `hz.env`, de sudo-regel voor de servercontrole, de drie CI-sleutels (elk alleen
+   `hz-ssh-dispatch <rol>`), de units `hz-workspace-*` en het netwerk `hz-workspace-net`. sshd, ufw, de proxy en de
+   andere projecten blijven ongemoeid. Heeft sshd `AllowUsers`, dan meldt het script dat `hz-workspace` en
+   `hz-preview` erbij moeten; dat doet een mens. Een sleutel vervangen: hetzelfde commando met alleen die ene
+   `--...-key`; de andere sleutels blijven staan.
    Daarna `rm -rf /tmp/hz-workspace-setup`.
 4. **Sleutels van de server**: `ssh <jij>@<server> sudo cat /srv/hz-workspace/log/sleutels.txt`.
    - age-sleutel: regel erbij in `infra/secrets/recipients.txt`, dan
@@ -72,13 +87,22 @@ Alles via Tailscale, vanaf een laptop in het tailnet met deze repo. Elke stap is
      tests en weigert een policy waarin `tag:ci` meer mag. Staat er nog `{"src": ["*"], "dst": ["*:*"]}`, vervang
      dan `"*"` in `src` door `"autogroup:member"`, anders mag `tag:ci` alles.
    - Settings, OAuth clients (of Trust credentials): nieuwe client met scope **Auth Keys: write** en tag `tag:ci`.
-     Client-ID en geheim gaan als GitHub-secrets `TS_OAUTH_CLIENT_ID` en `TS_OAUTH_SECRET`. De action maakt per job
-     een tijdelijke (ephemeral) node die na de job verdwijnt.
-6. **GitHub** (repo, Settings): Variables `HZ_DEPLOY_HOST=<server>` (tailnet-naam; `ci-ssh.sh` weigert een publiek
-   adres), `HZ_DOMAIN`, `HZ_TEST_DOMAIN`. Secrets `HZ_DEPLOY_SSH_KEY`, `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` en
-   `HZ_DEPLOY_KNOWN_HOSTS` = uitvoer van `ssh-keyscan -t ed25519 <server>` vanaf een apparaat in het tailnet (met
-   precies de naam uit `HZ_DEPLOY_HOST`). Environments `test`, `preview` en `production` (production: required
-   reviewer). Packages `hz-api`, `hz-worker`, `hz-web`: Manage Actions access, deze repo, Read (na de eerste build).
+     Client-ID en geheim gaan als environment-secrets `TS_OAUTH_CLIENT_ID` en `TS_OAUTH_SECRET` in `test`,
+     `production` en `preview` (stap 6; mag per environment een eigen client zijn, dan is er één apart in te
+     trekken). De action maakt per job een tijdelijke (ephemeral) node die na de job verdwijnt.
+6. **GitHub** (repo, Settings):
+   - Variables (repo): `HZ_DEPLOY_HOST=<server>` (tailnet-naam; `ci-ssh.sh` weigert een publiek adres), `HZ_DOMAIN`,
+     `HZ_TEST_DOMAIN`. Secret (repo, niet geheim maar vast): `HZ_DEPLOY_KNOWN_HOSTS` = uitvoer van
+     `ssh-keyscan -t ed25519 <server>` vanaf een apparaat in het tailnet (met precies de naam uit `HZ_DEPLOY_HOST`).
+   - Environment `production`: Required reviewers Robert; Deployment branches and tags: `main` en tags `v*`.
+     Secrets `HZ_DEPLOY_SSH_KEY_PROD` (privé uit `hz_ci_prod`), `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`.
+   - Environment `test`: Deployment branches: alleen `main`. Secrets `HZ_DEPLOY_SSH_KEY_TEST` (privé uit
+     `hz_ci_test`), `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`. (Ook de wekelijkse servercontrole gebruikt deze.)
+   - Environment `preview`: geen regels (elke PR uit deze repo). Secrets `HZ_PREVIEW_SSH_KEY` (privé uit
+     `hz_ci_preview`), `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`.
+   - Controle: Settings, Secrets and variables, Actions, tabblad Repository secrets toont alleen
+     `HZ_DEPLOY_KNOWN_HOSTS`; geen `HZ_DEPLOY_SSH_KEY*`, `HZ_PREVIEW_SSH_KEY` of `TS_OAUTH_*` op repo-niveau.
+   - Packages `hz-api`, `hz-worker`, `hz-web`: Manage Actions access, deze repo, Read (na de eerste build).
 7. **DNS** (A en AAAA naar het publieke adres van de server, hetzelfde als de andere projecten):
    `homezero.verveen.me`, `test.homezero.verveen.me`, `*.test.homezero.verveen.me`, `fouten.homezero.verveen.me`.
 8. **Secrets vullen**: `secrets.sh gen prod`, `gen test`, `gen server`, dan de waarden van mensen met `set` (zie
@@ -105,19 +129,23 @@ Alles via Tailscale, vanaf een laptop in het tailnet met deze repo. Elke stap is
 ## 3. Uitrollen
 
 - **Test**: elke merge naar `main` met wijzigingen in `workspace-app/` bouwt de images (`sha-<commit>`) en rolt ze uit
-  naar test. Niets te doen.
+  naar test, met de digests uit de build-job. De server legt die vast in `/srv/hz-workspace/images/<tag>.env` en
+  draait vanaf dan alleen die images (een overschreven tag in de registry verandert niets). Niets te doen.
 - **Productie**: GitHub, Releases, nieuwe release `vX.Y.Z` op een commit die al op test stond, Publish. De workflow
   zet de releasetag op dezelfde images en wacht op goedkeuring: Review deployments, `production`, Approve (één klik).
-  Vóór de migraties maakt de server een back-up (`pre-deploy`).
+  De server neemt de images die bij die commit op test groen waren (`deploy prod vX.Y.Z sha-<commit>`); stond die
+  commit niet groen op test, dan weigert hij. Vóór de migraties maakt de server een back-up (`pre-deploy`).
 - **Hoe de runner binnenkomt**: als tijdelijke Tailscale-node met `tag:ci`; `ci-ssh.sh` verbindt alleen met een
-  tailnet-adres; op de server mag de sleutel alleen `hz-ssh-dispatch` (deploy, rollback, preview, status, check,
-  voorcheck). Nooit publieke SSH.
+  tailnet-adres; op de server mag elke sleutel alleen `hz-ssh-dispatch` met zijn eigen rol (§2 stap 2). Nooit
+  publieke SSH.
 - **Wat gebeurt er op de server**: `deploy.sh` draait de voorcheck (rood = stoppen, niets gewijzigd), ontsleutelt de
   secrets naar `/run/hz-workspace` (tmpfs), controleert de verplichte sleutels, werkt de router bij (herladen zonder
   onderbreking) en het site-blok, draait migraties, vervangt de containers, wacht tot ze gezond zijn en doet een
   health-check via https. Mislukt dat, dan gaat de vorige versie terug. De bestaande proxy herlaadt hij nooit zelf;
   verandert het site-blok (alleen bij een ander domein), dan zegt de log dat en volgt stap 9 van §2.
-- **Terugzetten**: Actions, `workspace-deploy`, Run workflow, omgeving en de vorige tag (zie `deploys.log`).
+- **Terugzetten**: Actions, `workspace-deploy`, Run workflow, omgeving en de vorige tag (zie `deploys.log`): bij
+  productie een `vX.Y.Z` die er eerder stond, bij test een `sha-...` die er eerder stond. Een nieuwe release kan zo
+  niet naar productie; die gaat alleen via Releases (met goedkeuring).
 - **Migraties gaan alleen vooruit.** Schrijf ze uitbreidend: eerst kolom of tabel erbij (oude code blijft werken),
   pas een release later iets weghalen. Dan is terugzetten van de code altijd veilig. Moet de database zelf terug:
   §6, "Echt herstel".
@@ -130,8 +158,11 @@ Alles via Tailscale, vanaf een laptop in het tailnet met deze repo. Elke stap is
 - PR gesloten of gemerged: de preview gaat weg (containers, database, certificaat-aanmelding) en de PR-images uit de
   registry.
 - Maximaal 3 tegelijk (`HZ_PREVIEW_MAX`), met kleinere limieten; de oudste gaat eruit.
+- Wat draait er: preview.sh komt uit de bundel die op test staat (code van main) en draait als `hz-preview`; van de
+  pull request start de server alleen de images, als containers (read-only, zonder rechten, zonder mounts van de
+  server). Nog nooit naar test uitgerold? Dan weigert de server een preview tot de eerste uitrol naar test.
 - Handmatig opruimen op de server:
-  `sudo -u hz-workspace /srv/hz-workspace/env/test/bundle/infra/scripts/preview.sh down <nr>`.
+  `sudo -u hz-preview /srv/hz-workspace/env/test/bundle/infra/scripts/preview.sh down <nr>`.
 - Previewwachtwoord wijzigen: `docker run --rm caddy:2.10.2-alpine caddy hash-password` en de hash met
   `printf '%s\n' '<hash>' | infra/scripts/secrets.sh set server HZ_PREVIEW_HASH`, PR, merge, uitrol test.
 
@@ -202,7 +233,7 @@ Alles via Tailscale, vanaf een laptop in het tailnet met deze repo. Elke stap is
 1. Health en `docker ps` (§1). Eén container ziek: `docker logs <naam> --since 30m`, daarna `docker restart <naam>`.
 2. Net uitgerold? Terugzetten (§3).
 3. Database start niet: `docker logs hz-workspace-prod-db-1`; schijf vol? `df -h`. Elke uitrol ruimt onze eigen oude
-   images op (`ghcr.io/homezerotech/hz-*`, behalve de huidige, vorige en preview-tags). Nooit `docker system prune` of
+   images op (`ghcr.io/homezerotech/hz-*`, behalve de digests van de huidige en vorige versie en de preview-tags). Nooit `docker system prune` of
    `docker image prune -a`: dat raakt de andere projecten.
 4. Certificaat of 502: `infra/scripts/tls-check.sh <domein>`; logs van de proxy (niet van ons) en van
    `hz-workspace-router-router-1`; staat het site-blok nog in de proxy (`voorcheck aangesloten`)?
@@ -231,7 +262,7 @@ rijen, API groen op een ander domein). Echte proef of verhuizing:
 2. Cloud-init (optie, niet de hoofdroute):
    ```bash
    node infra/cloud-init/render.mjs --domain proef.homezero.nl --acme-email robert@homezero.nl \
-     --registry ghcr.io/homezerotech --admin-keys ~/.ssh/id_ed25519.pub --deploy-key hz_deploy.pub \
+     --registry ghcr.io/homezerotech --admin-keys ~/.ssh/id_ed25519.pub --deploy-key hz_ci_prod.pub \
      --tailscale-authkey-file ts.key --hostname hz-workspace-2 --out user-data.yaml
    HCLOUD_TOKEN=… infra/scripts/hetzner-create.sh --name hz-workspace-2 --user-data user-data.yaml \
      --ssh-key ~/.ssh/id_ed25519.pub --dry-run      # controleren, dan zonder --dry-run
@@ -241,8 +272,10 @@ rijen, API groen op een ander domein). Echte proef of verhuizing:
    `user-data.yaml` weg.
 3. Oude server: app stilzetten (`docker stop hz-workspace-prod-web-1 hz-workspace-prod-api-1 hz-workspace-prod-worker-1`)
    en `sudo -u hz-workspace /srv/hz-workspace/bin/hz-run backup.sh --label verhuizing`.
-4. Nieuwe server: `sleutels.txt` (§2 stap 4), `HZ_DEPLOY_HOST` op de nieuwe tailnet-naam, ACL-host bijwerken,
-   eerste uitrol naar prod met dezelfde tag (Actions, Run workflow, omgeving `production`, tag). Dan app stil,
+4. Nieuwe server: `sleutels.txt` (§2 stap 4), `HZ_DEPLOY_HOST` op de nieuwe tailnet-naam, ACL-host bijwerken.
+   De vastgelegde images meenemen (alleen digests, niet geheim): `/srv/hz-workspace/images/` van de oude naar de
+   nieuwe server kopiëren (eigenaar `hz-workspace`). Dan de eerste uitrol naar prod met dezelfde tag (Actions, Run
+   workflow, omgeving `production`, tag). Dan app stil,
    herstel uit het back-updoel (§6, "Echt herstel", stap 2-4).
 5. DNS naar het nieuwe adres; `infra/scripts/tls-check.sh <domein>` groen; inloggen en Dagstart openen.
 6. Oude server: workspace weghalen (§11), de andere projecten blijven daar.
@@ -258,4 +291,4 @@ domein vanzelf; de OAuth-apps moeten de nieuwe URL's kennen (via Chrome, zie HUM
    (`docker compose ls --filter name=hz-workspace-pr`). Volumes pas weg (`down -v`) na een laatste back-up.
 3. `systemctl disable --now hz-workspace-backup.timer hz-workspace-heartbeat.timer hz-workspace-hersteltest.timer`,
    units, `/etc/sudoers.d/hz-workspace`, `/etc/tmpfiles.d/hz-workspace.conf` weg; `docker network rm hz-workspace-net`.
-4. `userdel hz-workspace` en `/srv/hz-workspace` weg (na de laatste back-up).
+4. `userdel hz-workspace`, `userdel hz-preview` en `/srv/hz-workspace` weg (na de laatste back-up).
