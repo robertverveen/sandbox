@@ -199,7 +199,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           # Environment-secrets van test of production (niet op repo-niveau).
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}

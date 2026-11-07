@@ -84,7 +84,7 @@ jobs:
         with:
           sparse-checkout: workspace-app/infra/scripts
       - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
@@ -140,7 +140,7 @@ jobs:
         with:
           sparse-checkout: workspace-app/infra/scripts
       - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
