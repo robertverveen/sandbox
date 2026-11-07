@@ -2,7 +2,6 @@
  * De sync-motor op Postgres: planning (sync_jobs), events, tokens (connections, versleuteld) en cursors
  * (sync_state). Elke collega onder RLS; de planner ziet alleen planning ('system').
  */
-import { createHmac } from 'node:crypto';
 import pg from 'pg';
 import type PgBoss from 'pg-boss';
 import {
@@ -13,6 +12,7 @@ import {
   dueSyncJobs,
   ensureSyncJobs,
   finishSync,
+  hookToken,
   getSyncJob,
   markSyncRunning,
   notifyUser,
@@ -43,8 +43,7 @@ export function dbSyncRepo(db: Db, masterKey: Buffer): SyncRepo {
 }
 
 /** HMAC voor Agenda-kanalen: de webhook controleert X-Goog-Channel-Token hiermee. */
-export const channelToken = (secret: string) => (channelId: string) =>
-  createHmac('sha256', secret).update(`calendar:${channelId}`).digest('base64url');
+export const channelToken = (secret: string) => (channelId: string) => hookToken(secret, `calendar:${channelId}`);
 
 export interface SyncRuntimeOptions {
   db: Db;

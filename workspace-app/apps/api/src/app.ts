@@ -20,7 +20,9 @@ import {
 } from '@hz/shared';
 import { ctxAge, freeSlots, localISO, orgFromText, orgIndex, ymd } from '@hz/shared/logic';
 import { planRepoWrite, RepoWriteError } from '@hz/context';
-import type { ProviderBundle } from '@hz/providers';
+import { LiveSlack, withHumanAction, withUserScope, type ProviderBundle } from '@hz/providers';
+import { requestSync, syncStatus, wipeSyncData } from '@hz/db';
+import { registerSyncHooks, type SyncHookOptions } from './sync-hooks';
 import type { Config } from './config';
 import { EventBus } from './events';
 import { catchCount, collect, firstName, myPartnerActies, slimContext, type Ctx } from './services';
@@ -38,6 +40,8 @@ export interface AppDeps {
   bus?: EventBus;
   /** Ping-interval voor SSE (ms); korter in tests. */
   ssePingMs?: number;
+  /** Sync-motor (stuk E3): database voor planning en webhooks, en de geheimen om webhooks te controleren. */
+  sync?: SyncHookOptions;
 }
 
 type Input<N extends RouteName> = {
@@ -95,8 +99,11 @@ export function createApp(deps: AppDeps) {
     if (!user || !token) return c.json({ error: 'unauthenticated', message: 'Log in om verder te gaan.' }, 401);
     c.set('user', user);
     c.set('token', token);
-    return next();
+    // Per request: voor welke collega werken de live providers (eigen token en cursors). Een POST/PUT/PATCH/DELETE
+    // van een ingelogde collega is een klik van een mens; alleen dan mogen providers versturen of uitnodigen.
+    return withUserScope(user.id, () => (c.req.method === 'GET' ? next() : withHumanAction(user.id, next)));
   });
+  registerSyncHooks(app, deps.sync ?? { db: null });
 
   const sessionInfo = (user: User): SessionInfo => ({
     user,
@@ -503,9 +510,41 @@ export function createApp(deps: AppDeps) {
   });
   on('disconnect', async ({ params }, _c, ctx) => {
     await store.setConnection(ctx.user.id, params.provider, { status: 'disconnected' });
+    // Ontkoppelen wist ook planning, cursors en metadata van die bron (stuk E3).
+    if (deps.sync?.db) await wipeSyncData(deps.sync.db, ctx.user.id, params.provider);
     await store.audit(ctx.user.id, 'connection.disconnect', params.provider);
     bus.invalidate(ctx.user.id, 'connections', 'items', 'dagstart');
     return { ok: true as const };
+  });
+
+  /* ---------- Sync (stuk E3) ---------- */
+  on('syncStatus', async (_i, _c, ctx) => {
+    const db = deps.sync?.db;
+    if (!db) return { jobs: [] };
+    const jobs = await syncStatus(db, ctx.user.id);
+    return {
+      jobs: jobs.map((j) => ({
+        provider: j.provider,
+        status: j.status,
+        failures: j.failures,
+        nextRunAt: j.nextRunAt.toISOString(),
+        lastOkAt: j.lastOkAt?.toISOString() ?? null,
+        lastChanged: j.lastChanged,
+        lastError: j.lastError,
+        push: !!(j.push && (j.push.channels || j.push.gmailExpiration)) || j.provider === 'slack',
+      })),
+    };
+  });
+  on('syncNow', async ({ params }, _c, ctx) => {
+    const db = deps.sync?.db;
+    if (!db) return { ok: true as const, queued: false };
+    await requestSync(db, ctx.user.id, params.provider);
+    await store.audit(ctx.user.id, 'sync.now', params.provider);
+    return { ok: true as const, queued: true };
+  });
+  on('slackEmoji', async () => {
+    const s = bundle.providers.slack;
+    return { emoji: s instanceof LiveSlack ? await s.customEmoji() : {} };
   });
 
   /* ---------- Claude (nep in fixture-modus) ---------- */

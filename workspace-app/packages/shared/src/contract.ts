@@ -138,6 +138,19 @@ const SlugParam = z.object({ slug: z.string().min(1) });
 const ProviderParam = z.object({ provider: ProviderName });
 const RangeQuery = z.object({ from: IsoDate.optional(), to: IsoDate.optional() });
 
+/** Sync-stand van één bron (HZW-036). */
+export const SyncJob = z.object({
+  provider: z.string(),
+  status: z.enum(['idle', 'running', 'backoff', 'error', 'needs_reauth', 'disconnected']),
+  failures: z.number().int().nonnegative(),
+  nextRunAt: z.string(),
+  lastOkAt: z.string().nullable(),
+  lastChanged: z.number().int().nonnegative(),
+  lastError: z.string().nullable(),
+  push: z.boolean(),
+});
+export type SyncJob = z.infer<typeof SyncJob>;
+
 export const routes = {
   health: def({
     method: 'GET',
@@ -488,6 +501,53 @@ export const routes = {
     body: z.object({ q: z.string().min(1).max(4000) }),
     response: AskResponse,
     owner: 'claude',
+  }),
+  /* ---------- Koppelingen en sync (stuk E3, HZW-030 t/m 037) ---------- */
+  syncStatus: def({
+    method: 'GET',
+    path: '/api/sync/status',
+    doc: 'Sync-stand per gekoppelde bron: laatste geslaagde run, volgende run, fouten (geen inhoud).',
+    response: z.object({ jobs: z.array(SyncJob) }),
+    owner: 'koppelingen',
+  }),
+  syncNow: def({
+    method: 'POST',
+    path: '/api/sync/:provider',
+    doc: 'Bron nu synchroniseren (knop "Nu bijwerken"); de worker pakt het binnen seconden op.',
+    params: z.object({ provider: ProviderName }),
+    response: z.object({ ok: z.literal(true), queued: z.boolean() }),
+    owner: 'koppelingen',
+  }),
+  slackEmoji: def({
+    method: 'GET',
+    path: '/api/slack/emoji',
+    doc: 'Eigen workspace-emoji (naam -> plaatje of alias:naam).',
+    response: z.object({ emoji: z.record(z.string(), z.string()) }),
+    owner: 'koppelingen',
+  }),
+  hookSlack: def({
+    method: 'POST',
+    path: '/api/hooks/slack',
+    doc: 'Slack Events API (handtekening met signing secret, url_verification, dubbele events genegeerd).',
+    response: z.unknown(),
+    auth: false,
+    owner: 'koppelingen',
+  }),
+  hookCalendar: def({
+    method: 'POST',
+    path: '/api/hooks/google/calendar',
+    doc: 'Google Agenda push-kanaal (events.watch); controleert X-Goog-Channel-Token.',
+    response: z.unknown(),
+    auth: false,
+    owner: 'koppelingen',
+  }),
+  hookGmail: def({
+    method: 'POST',
+    path: '/api/hooks/google/gmail',
+    doc: 'Gmail-push via Pub/Sub (users.watch); controleert het hook-token.',
+    response: z.unknown(),
+    auth: false,
+    owner: 'koppelingen',
   }),
   events: def({
     method: 'GET',

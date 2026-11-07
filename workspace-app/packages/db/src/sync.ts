@@ -7,6 +7,7 @@
  * - sync_events: push-events ontdubbelen (Slack event_id, Gmail messageId, Agenda kanaal + berichtnummer).
  * - pg_notify('hz_events', …): de worker meldt nieuwe data; de API zet dat om in SSE `invalidate`.
  */
+import { createHmac } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { withPurpose, withUser, type Db } from './client';
 import { sealToken } from './crypto';
@@ -283,4 +284,9 @@ export async function notifyUser(db: Db, userId: string, keys: string[]) {
 /** Webhook -> worker: deze run nu graag. */
 export async function notifySync(db: Db, userId: string, provider: string) {
   await db.execute(sql`select pg_notify(${SYNC_CHANNEL}, ${JSON.stringify({ userId, provider })})`);
+}
+
+/** Token voor een webhook (Agenda-kanaal, Gmail Pub/Sub): HMAC van het doel met HZ_HOOK_SECRET. */
+export function hookToken(secret: string, scope: string): string {
+  return createHmac('sha256', secret).update(`hz-hook:${scope}`).digest('base64url');
 }
