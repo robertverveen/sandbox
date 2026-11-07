@@ -5,18 +5,21 @@
  */
 import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { inject } from 'vitest';
 
 export const INFRA = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const APP = resolve(INFRA, '..');
-export const ROOT = resolve(APP, '..');
+/** Git-root: de app zelf (eigen repo) of de map erboven (sandbox met workspace-app/). */
+export const ROOT = existsSync(join(APP, '.github/workflows')) ? APP : resolve(APP, '..');
+/** Pad van de app vanaf de git-root, met slash ('' in een eigen repo, 'workspace-app/' in de sandbox). */
+export const APP_PREFIX = relative(ROOT, APP) ? `${relative(ROOT, APP)}/` : '';
 export const SCRIPTS = join(INFRA, 'scripts');
 
 export function tmp(prefix = 'hz-e0-'): string {

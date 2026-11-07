@@ -4,7 +4,7 @@
 #   workspace-app/tools/lead/naar-eigen-repo.sh <doelmap> [git-url-van-de-nieuwe-repo]
 # Wat het doet:
 #   1. haalt workspace-app/ met zijn geschiedenis los (git subtree split) naar een nieuwe map;
-#   2. zet de CI-workflow in de hoofdmap en haalt de verwijzing naar workspace-app/ weg;
+#   2. zet alle workflows (workspace-*.yml) in de hoofdmap en haalt de verwijzing naar workspace-app/ weg;
 #   3. kopieert het prototype (de lat) en de architectuurplaat naar docs/prototype/;
 #   4. vervangt de absolute cloudpaden in BRIEF.md en README door paden in de repo of omgevingsvariabelen;
 #   5. commit, en pusht naar de nieuwe repo als je een URL meegeeft.
@@ -24,15 +24,18 @@ git init -q -b main "$OUT"
 git -C "$OUT" pull -q "$SRC" export/workspace-app
 git -C "$SRC" branch -D export/workspace-app >/dev/null
 
-echo "2/5 CI-workflow naar de hoofdmap"
+echo "2/5 workflows naar de hoofdmap (zelfde namen, zonder workspace-app/)"
 mkdir -p "$OUT/.github/workflows"
-sed -e '/^defaults:/,/^$/d' \
-    -e "s#paths: \['workspace-app/\*\*', '.github/workflows/workspace-app.yml'\]#paths-ignore: ['docs/**', '*.md']#" \
-    -e 's#workspace-app/package.json#package.json#; s#workspace-app/pnpm-lock.yaml#pnpm-lock.yaml#' \
-    -e 's#^name: workspace-app#name: ci#' \
-    -e 's#^\# CI van de HomeZero Workspace-app (HZW-001).*#\# CI van de HomeZero Workspace (HZW-001).#' \
-    "$SRC/.github/workflows/workspace-app.yml" > "$OUT/.github/workflows/ci.yml"
-grep -q 'workspace-app/' "$OUT/.github/workflows/ci.yml" && { echo "Let op: ci.yml noemt nog workspace-app/; controleer het bestand." >&2; }
+for wf in "$SRC"/.github/workflows/workspace-*.yml; do
+  sed -e 's#working-directory: workspace-app$#working-directory: .#' \
+      -e 's#context: workspace-app$#context: .#' \
+      -e 's#^\# CI van de HomeZero Workspace-app (HZW-001).*#\# CI van de HomeZero Workspace (HZW-001).#' \
+      -e 's#workspace-app/##g' \
+      "$wf" > "$OUT/.github/workflows/$(basename "$wf")"
+done
+if grep -n 'workspace-app[^.]' "$OUT"/.github/workflows/*.yml | grep -v '^\S*:[0-9]*:\s*#'; then
+  echo "Let op: hierboven noemt een workflow nog workspace-app; controleer het." >&2
+fi
 
 echo "3/5 prototype en plaat naar docs/prototype/"
 mkdir -p "$OUT/docs/prototype"
@@ -40,8 +43,8 @@ cp "$SRC/workspace-prototype/index.html" "$SRC/workspace-prototype/architectuur.
 [ -d "$SRC/workspace-prototype/tools" ] && cp -r "$SRC/workspace-prototype/tools" "$OUT/docs/prototype/"
 sed -i.bak "s#resolve(root, '../workspace-prototype/index.html')#resolve(root, 'docs/prototype/index.html')#; s#standaard ../workspace-prototype/index.html naast deze repo#standaard docs/prototype/index.html#" "$OUT/tools/bar/bar.mjs" && rm -f "$OUT/tools/bar/bar.mjs.bak"
 
-echo "4/5 paden in BRIEF.md, README.md en HUMAN_INPUT.md"
-for f in BRIEF.md README.md HUMAN_INPUT.md; do
+echo "4/5 paden in BRIEF.md, README.md, HUMAN_INPUT.md en de infra-documentatie"
+for f in BRIEF.md README.md HUMAN_INPUT.md infra/README.md infra/RUNBOOK.md; do
   [ -f "$OUT/$f" ] || continue
   sed -i.bak \
     -e 's#/home/user/sandbox/workspace-prototype/#docs/prototype/#g' \

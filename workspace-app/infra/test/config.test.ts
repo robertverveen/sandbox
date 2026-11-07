@@ -15,7 +15,7 @@ import { parse } from 'yaml';
 import { renderCloudInit, SETUP_FILES } from '../cloud-init/render.mjs';
 import { buildCsp, inlineScriptHashes } from '../docker/web-csp.mjs';
 import { findAll, parseCaddyfile, site, type Node } from './caddyfile';
-import { APP, INFRA, ROOT, sshPublicKey, tmp } from './helpers';
+import { APP, APP_PREFIX, INFRA, ROOT, sshPublicKey, tmp } from './helpers';
 
 const read = (p: string) => readFileSync(join(INFRA, p), 'utf8');
 const schema = (f: string) => JSON.parse(readFileSync(join(INFRA, 'test/schemas', f), 'utf8'));
@@ -459,6 +459,9 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
   it('uitrol: images naar GHCR, test bij merge op main, productie bij een release met goedkeuring, health-check', () => {
     const d = wf('workspace-deploy.yml');
     expect(d.on.push.branches).toEqual(['main']);
+    // Uit tot de server bestaat: zonder HZ_DEPLOY_HOST slaat de hele uitrol zich over (nieuwe repo blijft groen).
+    expect(d.jobs.meta.if).toBe("vars.HZ_DEPLOY_HOST != ''");
+    expect(wf('workspace-server-check.yml').jobs.check.if).toBe("vars.HZ_DEPLOY_HOST != ''");
     expect(d.on.release.types).toEqual(['published']);
     const build = d.jobs.build;
     const pushes = build.steps.filter((s: { uses?: string }) => s.uses?.startsWith('docker/build-push-action'));
@@ -466,7 +469,7 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
     for (const p of pushes) {
       expect(p.with.push).toBe(true);
       expect(p.with.tags).toContain(`/hz-${p.id}:\${{ needs.meta.outputs.sha_tag }}`);
-      expect(p.with.file).toBe(`workspace-app/infra/docker/${p.id}.Dockerfile`);
+      expect(p.with.file).toBe(`${APP_PREFIX}infra/docker/${p.id}.Dockerfile`);
     }
     // De digests uit deze run gaan mee naar de server (die legt ze vast; tags in de registry zijn overschrijfbaar).
     expect(build.outputs.digests).toBe('${{ steps.d.outputs.digests }}');
@@ -501,7 +504,9 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
   it('preview: bouwt en start per PR, link in de PR, ruimt op bij sluiten/mergen, nooit voor forks', () => {
     const p = wf('workspace-preview.yml');
     expect(p.on.pull_request.types).toEqual(['opened', 'synchronize', 'reopened', 'closed']);
-    expect(p.jobs.meta.if).toBe('github.event.pull_request.head.repo.full_name == github.repository');
+    expect(p.jobs.meta.if).toBe(
+      "github.event.pull_request.head.repo.full_name == github.repository && vars.HZ_DEPLOY_HOST != ''",
+    );
     expect(JSON.stringify(p.jobs.up.steps)).toContain('preview up \\"$PR\\" \\"$TAG\\"');
     expect(JSON.stringify(p.jobs.up.steps)).toContain('gh pr comment');
     expect(p.jobs.down.if).toBe("github.event.action == 'closed'");

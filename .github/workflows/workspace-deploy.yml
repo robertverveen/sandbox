@@ -45,6 +45,8 @@ defaults:
 
 jobs:
   meta:
+    # Uit tot de server bestaat (HUMAN_INPUT deel 1 zet de variabele HZ_DEPLOY_HOST): zo blijft een nieuwe repo groen.
+    if: vars.HZ_DEPLOY_HOST != ''
     runs-on: ubuntu-24.04
     outputs:
       registry: ${{ steps.m.outputs.registry }}
