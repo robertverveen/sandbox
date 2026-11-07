@@ -796,6 +796,9 @@ body:not(.kbd-mode) .hintbar { display: none; }
 .ct-compose { padding: 10px 16px 6px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
 .ct-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); padding: 0 8px; }
 .ct-plan { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 16px 14px; }
+.ct-follow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 0 16px 12px; }
+.ct-follow.hint { margin: 0 12px 12px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, #f9b20b 14%, transparent); }
+.ct-follow .sub { margin-right: 4px; }
 .ct-plan .sub { font-size: 12px; margin-right: 2px; }
 .ct-plan .btn .kbd { margin-right: 4px; }
 .ct-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -1948,17 +1951,18 @@ async function planItem(it, n) {
   toast(`${ic('meeting')} ${n === 5 ? 'Naar de backlog' : `Gepland: ${BUCKETS[n].toLowerCase()} (${fmtDate(date)} · ${loadOf(date)}/${DAY_CAP})`}`);
   render();
 }
-async function makeWaiting(it) {
+async function makeWaiting(it, o = {}) {
   if (!['slack', 'mail', 'rec'].includes(it.type)) return toast('Wachten op maak je van een bericht of mail');
-  await itemToCommit(it, { stroom: 'aan_mij', wat: `${it.fromName || 'Iemand'}: ${short(it.title, 100)}`, reminder: ymd(addWorkdays(S.clock, 3)) });
-  if (it.type === 'mail') await markRead(it); else setState(stateKey(it), { read: true });
+  const who = o.who || it.fromName || 'Iemand';
+  await itemToCommit(it, { stroom: 'aan_mij', aan: who, wat: o.about ? `Antwoord van ${who} op: ${short(o.about, 110)}` : `${who}: ${short(it.title, 100)}`, reminder: ymd(addWorkdays(S.clock, 3)) });
+  if (!o.noRead) { if (it.type === 'mail') await markRead(it); else setState(stateKey(it), { read: true }); }
   toast(`${ic('commit')} In Wachten op · reminder ${fmtDate(ymd(addWorkdays(S.clock, 3)))}${hasPersRepo() ? ' · gaat naar wachten-op.md' : ''}`);
 }
-async function makeBespreken(it) {
+async function makeBespreken(it, o = {}) {
   if (!['slack', 'mail', 'rec', 'commit'].includes(it.type)) return toast('Bespreken maak je van een bericht, mail of toezegging');
   if (it.type === 'commit') { await commitSave(it.docId, { stroom: 'bespreken' }); return toast('Verplaatst naar Bespreken bij contact'); }
   await itemToCommit(it, { stroom: 'bespreken', wat: short(it.title, 140) });
-  setState(stateKey(it), { read: true });
+  if (!o.noRead) setState(stateKey(it), { read: true });
   toast(`${ic('commit')} Op de lijst voor het volgende contact${orgNameOf(it) ? ' met ' + esc(orgNameOf(it)) : ''}`);
 }
 async function makeCommit(it) {
@@ -3538,6 +3542,27 @@ function catchCur() {
   while (C.i < C.q.length) { const g = groups.find(x => x.key === C.q[C.i]); if (g) { C.cur = g; return g; } C.i++; }
   C.cur = null; return null;
 }
+// Wie reageerde als laatste, en op wie wacht je dan? Voor de knop Wachten op in Inhalen.
+function catchMsgs(g) {
+  if (g.key.startsWith('ml:')) { const me = LV.selfEmail || 'robert@homezero.nl'; return (CV.conv[g.key]?.mail?.msgs || []).map(m => ({ me: emailOf(m.from || '') === me, fromName: m.fromName || m.from || '', text: m.text || m.body || '' })); }
+  const ch = g.key.slice(3), t = catchTarget(g);
+  return t.kind === 'thread' ? (CV.thread[ch + '|' + t.ts]?.msgs || []) : (CV.conv[g.key]?.msgs || []);
+}
+function catchFollow(g) {
+  const ms = catchMsgs(g), last = ms[ms.length - 1];
+  const mineLast = !!last?.me || !!S.catch?.sent?.[g.key];
+  const mine = [...ms].reverse().find(m => m.me);
+  let who = '';
+  const id = ((mineLast && mine?.text) || '').match(/<@(U\w+)/)?.[1];
+  if (id) who = slackPeople().find(p => p.id === id)?.name || LV.slackUsers?.[id] || '';
+  if (!who) who = [...ms].reverse().find(m => !m.me)?.fromName || g.last.fromName || '';
+  return { mineLast, who, first: String(who).split(/\s+/)[0], about: mineLast && mine?.text ? plainSlack(mine.text) : '' };
+}
+const plainSlack = t => String(t || '').replace(/<@(U\w+)(\|[^>]+)?>/g, (m, id) => '@' + (slackPeople().find(p => p.id === id)?.name || LV.slackUsers?.[id] || 'iemand').split(/\s+/)[0]).replace(/<([^|>]+)\|([^>]+)>/g, '$2').replace(/\s+/g, ' ').trim();
+function catchFollowHTML(g) {
+  const f = catchFollow(g);
+  return `<div class="ct-follow${f.mineLast ? ' hint' : ''}">${f.mineLast ? `<span class="sub"><b>Jij reageerde als laatste.</b> Wachten op antwoord${f.first ? ' van ' + esc(f.first) : ''}?</span>` : '<span class="sub">Opvolgen</span>'}<button class="btn sm${f.mineLast ? ' primary' : ''}" data-action="ct-wait"><span class="kbd">w</span>Wachten op${f.first ? ' ' + esc(f.first) : ''}</button><button class="btn sm" data-action="ct-bespreek"><span class="kbd">b</span>Bespreken bij contact</button></div>`;
+}
 function catchTarget(g) {
   // Antwoorden: in de thread als het laatste bericht in een thread staat, anders in het gesprek zelf
   if (g.key.startsWith('ml:')) return { kind: 'mail' };
@@ -3580,6 +3605,7 @@ function renderCatch(full) {
   if (!full && existing && existing.dataset.key === g.key) {
     const b = document.getElementById('ct-body'); if (b) { const st = b.scrollTop, atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 40; b.innerHTML = catchBodyHTML(g); b.scrollTop = st; if (!b.dataset.scrolled || atEnd) catchScroll(b); }
     const t = ov.querySelector('.ct-top'); if (t) t.outerHTML = top;
+    const fo = ov.querySelector('.ct-follow'); if (fo) fo.outerHTML = catchFollowHTML(g);
     return;
   }
   const tg = catchTarget(g), isMail = tg.kind === 'mail';
@@ -3594,9 +3620,9 @@ function renderCatch(full) {
       <div class="ct-body" id="ct-body">${catchBodyHTML(g)}</div>
       <form class="ct-compose" id="ct-compose"><div class="composer-box"><textarea id="ct-input" rows="1" placeholder="${esc(placeholder)}">${esc(CV.drafts[g.key] || '')}</textarea><button class="send-btn" type="submit" aria-label="Verstuur">${ic('arrow')}</button></div>
         <div class="ct-meta">${isMail && others ? `<label><input type="checkbox" id="ct-all"${CV.replyAll[g.key] ? ' checked' : ''}> Allen beantwoorden</label>` : ''}<span><span class="kbd">r</span> typen · <span class="kbd">↵</span> versturen · <span class="kbd">@</span> taggen · <span class="kbd">:</span> emoji · <span class="kbd">⇧↵</span> nieuwe regel</span></div></form>
-      <div class="ct-plan"><span class="sub">Taak maken</span>${[1, 2, 3, 4, 5].map(n => `<button class="btn sm" data-action="ct-plan" data-n="${n}" title="${BUCKETS[n]}"><span class="kbd">${n}</span>${BUCKETS[n]}</button>`).join('')}${!isMail && MODE.live ? '' : ''}</div>${isMail ? '' : `<div class="ct-plan ct-reacts"><span class="sub">Reageer en klaar</span>${QUICK_REACTS.map(([n, e]) => `<button class="btn sm emo" data-action="ct-emoji" data-e="${n}" title=":${n}:">${e}</button>`).join('')}<span class="sub" style="margin-left:4px"><span class="kbd">⇧E</span> = ✅</span></div>`}
+      <div class="ct-plan"><span class="sub">Taak maken</span>${[1, 2, 3, 4, 5].map(n => `<button class="btn sm" data-action="ct-plan" data-n="${n}" title="${BUCKETS[n]}"><span class="kbd">${n}</span>${BUCKETS[n]}</button>`).join('')}${!isMail && MODE.live ? '' : ''}</div>${catchFollowHTML(g)}${isMail ? '' : `<div class="ct-plan ct-reacts"><span class="sub">Reageer en klaar</span>${QUICK_REACTS.map(([n, e]) => `<button class="btn sm emo" data-action="ct-emoji" data-e="${n}" title=":${n}:">${e}</button>`).join('')}<span class="sub" style="margin-left:4px"><span class="kbd">⇧E</span> = ✅</span></div>`}
     </div>
-    ${C.sent?.[g.key] ? '<div class="ct-sent">Verstuurd. Lees na of reageer nog, en ga door met <span class="kbd">→</span></div>' : ''}
+    ${C.sent?.[g.key] ? '<div class="ct-sent">Verstuurd. Wachten op antwoord? <span class="kbd">w</span> · anders door met <span class="kbd">→</span></div>' : ''}
     <div class="ct-actions"><button class="ct-btn" data-action="ct-keep">Ongelezen laten <span class="kbd">←</span></button><button class="ct-btn primary" data-action="ct-read">Gelezen <span class="kbd inv">→</span></button></div>
   </div></div>`;
   const b = document.getElementById('ct-body'); if (b) catchScroll(b);
@@ -3675,6 +3701,8 @@ async function catchKey(k, ev) {
   if (k === 'E') { const pr = catchMarkRead(g); if (g.key.startsWith('sl:')) reactTo(g.last.channelId, g.last.ts, 'white_check_mark'); return pr; }
   if (k === 'ArrowLeft' || k === 'u') { CV.kept.add(g.key); const at = S.catch.q.indexOf(g.key); S.catch.hist.push({ i: at, key: g.key, keep: true }); return catchAnimate('left', () => { S.catch.i = at + 1; renderCatch(true); }); }
   if (k === 'r') { ev.preventDefault(); return document.getElementById('ct-input')?.focus(); }
+  if (k === 'w') { const f = catchFollow(g); await makeWaiting(g.last, { who: f.who, about: f.about, noRead: true }); return catchMarkRead(g); }
+  if (k === 'b') { await makeBespreken(g.last, { noRead: true }); return catchMarkRead(g); }
   if (k === 'o') { const u = g.last.url; if (u) { try { window.open(u, '_blank', 'noopener'); } catch {} } return; }
   if (/^[1-5]$/.test(k)) {
     const n = +k; const it = g.last;
@@ -4668,7 +4696,7 @@ document.addEventListener('keydown', async ev => {
     if (ev.target.id === 'ct-input' && acKey(ev)) return;
     if (ev.target.id === 'ct-input') { if (k === 'Enter' && !ev.shiftKey) { ev.preventDefault(); catchSend(); } else if (k === 'Escape') { ev.preventDefault(); ev.target.blur(); } return; }
     if (typing(document.activeElement) || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Backspace', 'Enter', 'e', 'E', 'u', 'r', 'z', 'o', 'j', 'k', '1', '2', '3', '4', '5'].includes(k)) { ev.preventDefault(); catchKey(k, ev); }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Backspace', 'Enter', 'e', 'E', 'u', 'r', 'w', 'b', 'z', 'o', 'j', 'k', '1', '2', '3', '4', '5'].includes(k)) { ev.preventDefault(); catchKey(k, ev); }
     return;
   }
   if (ev.target.id === 'cv-input' && acKey(ev)) return;
@@ -4754,6 +4782,8 @@ document.addEventListener('click', ev => {
     if (act === 'ct-react') return catchKey('E', ev);
     if (act === 'ct-emoji') { const g = catchCur(); if (g && !S.catch.animating) { const pr = catchMarkRead(g); reactTo(g.last.channelId, g.last.ts, a.dataset.e); return pr; } return; }
     if (act === 'ct-plan') return catchKey(a.dataset.n, ev);
+    if (act === 'ct-wait') return catchKey('w', ev);
+    if (act === 'ct-bespreek') return catchKey('b', ev);
     if (act === 'cv-more') { CV.more[a.dataset.g] = true; return renderConvList(); }
     if (act === 'cv-back') { CV.mobileList = true; return render(); }
     if (act === 'conv-more') return loadConv(a.dataset.conv, { more: true });
