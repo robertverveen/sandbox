@@ -1,5 +1,5 @@
 {
- "updated": "7 nov 2026, 13:45",
+ "updated": "7 nov 2026, 14:20",
  "status": "Fundament staat, golf A bouwt",
  "pieces": [
   {
@@ -122,19 +122,20 @@
  ],
  "human": [
   {
-   "wat": "Deel 1 - Claude regelt via Chrome (11 stappen)",
-   "waarom": "Server, back-ups, DNS, Coolify, Google Cloud, Slack-app, Atlassian, GitHub App, Anthropic-sleutel, meldingen, controle. Jij bent alleen ingelogd en zegt ja bij kosten of rechten. Nodig: een sessie in de desktopapp met Claude in Chrome."
+   "wat": "Deel 1 - Claude regelt via Chrome, lokaal in de desktopapp (12 stappen)",
+   "waarom": "Eerst kijken op je bestaande server (niets wijzigen), dan de workspace naast je andere projecten zetten, back-ups, DNS, uitrol, Google Cloud, Slack-app (jij keurt goed als admin), Atlassian, GitHub App, Anthropic-sleutel, meldingen. Startinstructie en plakopdracht in HUMAN_INPUT.md."
   },
   {
-   "wat": "Deel 2 - alleen jij of een ander (6 punten, deels alleen bij vastlopen)",
-   "waarom": "Workspace- of Slack-beheerder als apps afgeschermd zijn, een collega die de onboarding doorloopt, een tweede reviewer, akkoord van Rens of Mike, en twee weken dubbel landen."
+   "wat": "Deel 2 - alleen jij of een ander (4 punten)",
+   "waarom": "Workspace-beheerder alleen als Google afschermt, een collega die de onboarding doorloopt, een tweede reviewer, en twee weken dubbel landen (loopt vanzelf)."
   },
   {
    "wat": "Deel 3 - testronde, 8 scenario's, ongeveer 40 minuten",
-   "waarom": "T1 inloggen, T2 koppelen (alleen Google en Slack), T3 Dagstart naast je echte dag, T4 Inhalen en gelezen in Slack, T5 taak naar Google Taken en repo, T6 zoeken, T7 /klant-recap en MCP, T8 iPhone en meldingen. Volledig stappenplan in HUMAN_INPUT.md."
+   "waarom": "T1 inloggen t/m T8 iPhone en meldingen. Volledig stappenplan in HUMAN_INPUT.md."
   }
  ],
  "log": [
+  "Hosting: bestaande Hetzner-server in je eigen tailnet, naast je andere projecten; privacytekst v1 door AI op basis van de privacyverklaring van HomeZero.",
   "Testronde herschreven: setup gaat via Claude in Chrome, jij test alleen 8 kritieke scenario's.",
   "Fundament gewonnen in ronde 2: 160 unit-tests en 17 e2e-tests groen, criticus koos het onze blind (Dagstart gelijk in licht, beter in donker en in de help).",
   "Lead: echt partnercontact uit testdata gehaald vóór de push; vier commits samengevoegd zodat het niet in de geschiedenis staat.",

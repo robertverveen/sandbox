@@ -49,15 +49,18 @@ Deel 1 draai je **lokaal in de Claude-desktopapp**. Claude in Chrome werkt in jo
    - Atlassian
    - GitHub
    - Hetzner
-   - Tailscale (HomeZero-tailnet)
+   - Tailscale
    - de DNS-beheerder van verveen.me
-5. Zet Tailscale aan op je laptop, zodat Claude via SSH bij de server kan zodra die in het tailnet zit.
+5. Zet Tailscale aan op je laptop, zoals je gewend bent.
+6. Zoek de map op je laptop met je notities over Tailscale en de Hetzner-server, en vul hem in de opdracht hieronder in.
 
 **Plak dan deze opdracht:**
 
 ```
 Voer deel 1 uit van workspace-app/HUMAN_INPUT.md in deze repo.
-Lees eerst workspace-app/HUMAN_INPUT.md (tabel "Waar staat wat") en het runbook dat daar genoemd wordt.
+Lees eerst workspace-app/HUMAN_INPUT.md (tabel "Waar staat wat"), het runbook dat daar genoemd wordt,
+en mijn notities over Tailscale en de Hetzner-server in: <MAP MET JE NOTITIES>.
+De workspace komt op mijn bestaande server, naast mijn andere projecten; die mogen niet geraakt worden.
 Gebruik Claude in Chrome met mijn ingelogde accounts; serverbeheer alleen via Tailscale.
 Vraag mij alleen bij kosten of een toestemmingsscherm.
 Secrets nooit in Git of in de chat: rechtstreeks in de secret-opslag (Coolify).
@@ -81,11 +84,11 @@ Werk je liever in een cloudsessie: start die op de repo `robertverveen/sandbox`,
 
 | # | Wat Claude doet | Jij doet | Stories | Status |
 |---|---|---|---|---|
-| C0 | **Tailscale.** In de Tailscale-console: tags `tag:server` en `tag:ci`, een herbruikbare auth-key voor de server, een OAuth-client voor GitHub Actions, en ACL's zodat alleen jij en beheerders bij SSH en het Coolify-dashboard kunnen. | Niets | HZW-002, 004 | ⏳ |
-| C1 | **Server.** Hetzner Cloud: server CX32 aanmaken met de cloud-init uit `infra/`. De server meldt zich zelf aan bij het tailnet. Publieke firewall alleen 80/443; SSH alleen via Tailscale, met sleutel, wachtwoordlogin uit. | "Ja" bij de kosten die Hetzner toont | HZW-002 | ⏳ |
-| C2 | **Back-ups.** Hetzner Storage Box bestellen, sub-account voor back-ups, sleutel in de secret-opslag. Daarna één keer back-up en herstel draaien. | "Ja" bij de kosten | HZW-008 | ⏳ |
+| C0 | **Eerst kijken, niets wijzigen.** Je notities op je laptop over Tailscale en de Hetzner-server lezen. Via Tailscale op de server kijken wat er draait: reverse proxy, poorten, Docker-netwerken, mappen, vrij geheugen en schijf. Daarna een kort plan: waar de workspace naast je andere projecten komt en wat er niet mag botsen. | Akkoord op dat plan (één zin) | HZW-002 | ⏳ |
+| C1 | **Server klaarmaken.** Op je bestaande server: eigen gebruiker en map, eigen compose-project, netwerk, Postgres en limieten. Aansluiten op de reverse proxy die er al draait. Eerst de voorcheck (droog), pas dan uitrollen. Je andere projecten blijven ongemoeid. Beheer alleen via Tailscale, publiek alleen 443. | Niets | HZW-002 | ⏳ |
+| C2 | **Back-ups.** Aansluiten op de back-up die je server al heeft. Is die er niet, dan een Hetzner Storage Box met eigen sub-account. Daarna één keer back-up en herstel van de workspace-database draaien. | "Ja" bij de kosten, alleen als er een Storage Box bij moet | HZW-008 | ⏳ |
 | C3 | **DNS.** Records voor `homezero.verveen.me` en `*.test.homezero.verveen.me` (previews) naar de server, bij de DNS-beheerder van verveen.me. Controle: beide openen met slotje. | Niets | HZW-003 | ⏳ |
-| C4 | **Coolify.** Openen via het tailnet en koppelen aan de GitHub-repo, met productie en preview per PR. Secrets zetten: `HZ_TOKEN_KEY` (Claude maakt hem aan), database-wachtwoorden en de sleutels uit C5-C9. De databaserollen `hz_app` en `hz_app_login` maakt het uitrolscript zelf. | Niets | HZW-004, 005, 006, 020 | ⏳ |
+| C4 | **Uitrol.** Productie en preview per PR inrichten op de manier die bij je server past: Coolify als dat er al draait, anders Compose met de proxy die er staat. Secrets zetten: `HZ_TOKEN_KEY` (Claude maakt hem aan), database-wachtwoorden en de sleutels uit C5-C9. De databaserollen `hz_app` en `hz_app_login` maakt het uitrolscript zelf. | Niets | HZW-004, 005, 006, 020 | ⏳ |
 | C5 | **Google Cloud.** Project "HomeZero Workspace" aanmaken. Toestemmingsscherm op **Intern**, zodat alleen @homezero.nl erin kan. Web-client met de redirect-URL's. Agenda-, Taken- en Gmail-API aanzetten. | "Ja" op het toestemmingsscherm. Kun je geen project maken, zie D1. | HZW-010, 030, 031, 032 | ⏳ |
 | C6 | **Slack.** Interne app aanmaken uit het manifest in de repo, met user-token-scopes. Installeren en als admin goedkeuren in HomeZero, met jouw account. | "Toestaan" klikken | HZW-033 | ⏳ |
 | C7 | **Atlassian.** 3LO-app in de developer console, alleen leesrechten, callback-URL. | Niets | HZW-034 | ⏳ |
@@ -101,8 +104,7 @@ Werk je liever in een cloudsessie: start die op de repo `robertverveen/sandbox`,
 | D1 | Alleen nodig als C5 vastloopt: als Google Workspace-beheerder het interne OAuth-project toestaan (Admin console, Beveiliging, API-beheer) | Beheerder Google Workspace | HZW-010 | ⏳ |
 | D2 | Een collega (niet jij) doorloopt de onboarding zonder uitleg en meldt waar hij of zij twijfelde (5 minuten) | Een collega | HZW-013 | ⏳ |
 | D3 | Tweede reviewer tekent af op de beveiligingsstories (checklist in `docs/security-review.md`) | Een tweede reviewer | HZW-080, 081 en de MCP-story | ⏳ |
-| D4 | Akkoord op de privacytekst (AVG): welke gegevens van collega's de app bewaart (mail, Slack, agenda, taken), hoe lang, wat er gebeurt bij uitdienst, en de tekst voor het verwerkingsregister. Claude schrijft hem in `docs/privacy.md`. | Volgens het bouwplan Rens of Mike; besluit jij dit zelf, dan wordt het jij | HZW-081 | ⏳ |
-| D5 | Twee weken dubbel landen: de nachtroutine schrijft naast de artifact-database ook in de app. Daarna één blik op het verschilrapport. | Niemand (loopt vanzelf); jij leest het rapport | HZW-06x | ⏳ |
+| D4 | Twee weken dubbel landen: de nachtroutine schrijft naast de artifact-database ook in de app. Daarna één blik op het verschilrapport. | Niemand (loopt vanzelf); jij leest het rapport | HZW-06x | ⏳ |
 
 ## Deel 3 - De testronde (ongeveer 40 minuten)
 

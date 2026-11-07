@@ -8,9 +8,9 @@
  },
  {
   "id": "HZW-002",
-  "wat": "Hetzner Cloud-server (CX32, Ubuntu 24.04, Falkenstein of Neurenberg) in het tailnet van HomeZero: SSH en het Coolify-dashboard alleen via Tailscale (geen publieke poort 22 of 8000), publieke firewall alleen 80/443 voor de app, automatische beveiligingsupdates, Docker",
-  "zelftest": "Script checkt vanaf buiten dat alleen 80/443 open zijn, vanuit het tailnet dat SSH met sleutel werkt (wachtwoordlogin uit), en dat updates aan staan; resultaat in het issue",
-  "goedkeuring": "Toegang werkt, wachtwoordlogin staat uit",
+  "wat": "De bestaande Hetzner-server van Robert (al in zijn tailnet, met andere projecten erop) klaarmaken voor de workspace: eigen geïsoleerde stack (eigen gebruiker, map, compose-project, Docker-netwerk, Postgres-volume, geheugen- en CPU-limieten), aansluiten op de reverse proxy die er al draait, beheer alleen via Tailscale, publiek alleen 443, automatische beveiligingsupdates. Geen nieuwe server; cloud-init voor een eigen server alleen als optie voor HZW-082",
+  "zelftest": "Voorcheck-script: botst niets met de bestaande projecten (poorten, netwerknamen, mappen, domeinen), alleen 443 publiek voor de app, SSH alleen via het tailnet met sleutel, updates aan; draait droog zonder iets te wijzigen",
+  "goedkeuring": "Workspace draait naast de andere projecten, die ongemoeid blijven",
   "dep": "001"
  },
  {
@@ -22,7 +22,7 @@
  },
  {
   "id": "HZW-004",
-  "wat": "CI/CD met GitHub Actions: build images naar GHCR, deploy naar test bij merge, naar productie bij een goedgekeurde release; de runner komt via een tijdelijke Tailscale-node (tag:ci, OAuth-client als secret) bij de server, nooit via publieke SSH",
+  "wat": "CI/CD met GitHub Actions: build images naar GHCR, deploy naar test bij merge, naar productie bij een goedgekeurde release; de server haalt de nieuwe versie op (pull) of de runner komt via een tijdelijke Tailscale-node binnen, nooit via publieke SSH",
   "zelftest": "Pipeline-run met deploy en health-check /api/health groen",
   "goedkeuring": "Een release naar productie werkt met één klik",
   "dep": "003"
@@ -346,7 +346,7 @@
   "id": "HZW-081",
   "wat": "Privacy (AVG): wat we bewaren en hoe lang, verwijderen bij uitdienst, verwerkingsregister-tekst",
   "zelftest": "Test: account verwijderen wist alle rijen en tokens",
-  "goedkeuring": "Rens of Mike akkoord vanuit legal",
+  "goedkeuring": "Robert akkoord op de eerste versie (door AI geschreven op basis van de privacyverklaring van HomeZero)",
   "dep": "020"
  },
  {
