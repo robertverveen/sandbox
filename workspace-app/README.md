@@ -12,6 +12,7 @@ databases maken). Docker is niet nodig. Eenmalig per Postgres-server maakt een b
 
 ```bash
 sudo -u postgres psql -v migrator=hz_dev -f packages/db/sql/bootstrap-roles.sql   # eenmalig, als beheerder
+sudo -u postgres psql -v login=hz_app_login -v password=hz_app_login -f packages/db/sql/app-login.sql   # idem (tests)
 pnpm install
 pnpm dev            # API op :8700 en web op :5700  ->  http://127.0.0.1:5700
 ```
@@ -28,10 +29,11 @@ staan in `.env.example`.
 | `pnpm dev` | API (tsx watch) en web (Vite) samen; `pnpm dev -- --worker` start ook de worker |
 | `pnpm build` | bundels van api en worker (`dist/`) en de web-app (`apps/web/dist/`) |
 | `pnpm typecheck` | `tsc --noEmit` in elk pakket (strict) |
-| `pnpm test` | vitest in elk pakket (database-tests maken eigen, verse databases `hz_fundament_test_*`) |
+| `pnpm test` | vitest in elk pakket (database-tests maken eigen, verse databases `hz_fundament_test_*` en `hz_e2_test_*`; namen te kiezen met `HZ_TEST_DATABASE_URL*`) |
 | `pnpm test:e2e` | Playwright tegen de echte app (eigen poorten 8780/8781) |
 | `pnpm lint`, `pnpm format` | ESLint en Prettier |
 | `pnpm db:migrate` | migraties op `hz_fundament` (of `DATABASE_URL`) |
+| `pnpm --filter @hz/db import:prototype -- --export <pad> --email <collega>` | import uit het prototype (HZW-021), zie [Import](#import-uit-het-prototype) |
 | `pnpm bar` | de lat: screenshots van het prototype in `.local/bar/` |
 | `pnpm shot` | dezelfde schermen van onze app in `.local/ours/` |
 | `node tools/compare.mjs [--blind]` | lat en onze app naast elkaar in `.local/compare/index.html` |
@@ -59,43 +61,128 @@ HZ_STORE=db DATABASE_URL=postgres://hz_dev:hz_dev@localhost:5432/hz_fundament pn
 
 ## Database en rij-beveiliging
 
-Twee rollen (HZW-020):
+Drie rollen (HZW-020):
 
 | Rol | Wat | Rechten |
 |---|---|---|
-| `hz_dev` (migratierol; productie: eigen migratie-login) | draait `pnpm db:migrate`, eigenaar van alle tabellen | LOGIN, CREATEDB, geen superuser, geen BYPASSRLS |
+| `hz_dev` (migratierol; productie: eigen migratie-login) | draait `pnpm db:migrate`, eigenaar van alle tabellen en van de SECURITY DEFINER-functies | LOGIN, CREATEDB, geen superuser, geen BYPASSRLS |
 | `hz_app` (runtime-rol) | waar elke app-query als draait | NOLOGIN, NOBYPASSRLS, eigenaar van niets; alleen SELECT/INSERT/UPDATE/DELETE |
+| `hz_app_login` (app-login; productie: zelfde naam, eigen wachtwoord) | de login van `DATABASE_URL` voor api en worker | LOGIN, NOINHERIT, lid van alleen `hz_app`, eigenaar van niets; zonder `SET ROLE hz_app` geen enkel tabelrecht |
 
 - `packages/db/sql/bootstrap-roles.sql` (eenmalig, beheerder) maakt `hz_app` aan en maakt de migratierol er lid van.
   Migratie `0004_app_role.sql` weigert te draaien zonder die rol, verleent de rechten en zet default privileges.
+- `packages/db/sql/app-login.sql` (eenmalig, beheerder) maakt de app-login aan en controleert dat hij lid is van alleen
+  `hz_app` en nergens eigenaar van is. Lokaal en in CI met wachtwoord `hz_app_login` (alleen voor tests).
 - `createDb()` start elke verbinding als `hz_app` (`-c role=hz_app`); `withUser()`/`withPurpose()` doen daarbovenop per
   transactie `SET LOCAL ROLE hz_app` en `set_config('app.user_id', …, true)` (gelijk aan `SET LOCAL`). Alleen
   `runMigrations()` gebruikt `createOwnerDb()`.
-- Elke tabel heeft `ENABLE` + `FORCE ROW LEVEL SECURITY`. Omdat `hz_app` geen eigenaar is, kan de app RLS niet uitzetten
-  (`NO FORCE`, `DISABLE`, `DROP POLICY` geven `must be owner`) en ziet hij ook zonder FORCE alleen eigen rijen.
-- Test: `packages/db/test/rls.test.ts` (A ziet nooit rijen van B; `current_user` is `hz_app` en geen `relowner` van een
-  tabel; NO FORCE, DISABLE, DROP/ALTER/CREATE POLICY worden geweigerd; ook als de eigenaar FORCE uitzet blijft A blind
-  voor B).
+- In `NODE_ENV=production` controleert `createDb()` elke nieuwe verbinding (`assertAppLogin`): is de login superuser,
+  BYPASSRLS of eigenaar van een tabel (ook via een rol waar hij lid van is), dan faalt elke query met
+  `UnsafeAppLoginError`. De migratierol als `DATABASE_URL` in productie kan dus niet.
+- Elke tabel heeft `ENABLE` + `FORCE ROW LEVEL SECURITY`. Omdat `hz_app` en de app-login geen eigenaar zijn, kan de app
+  RLS niet uitzetten (`NO FORCE`, `DISABLE`, `DROP POLICY` geven `must be owner`), ook niet na `SET ROLE NONE` of
+  `RESET ROLE` in een request (dan heeft de login door NOINHERIT zelfs geen leesrecht).
+- `app.purpose` is een GUC die elke transactie zelf kan zetten. Daarom opent hij niets meer op `users`, `sessions` en
+  `audit_log` (migratie `0006_e2_auth_functions`): die tabellen tonen alleen eigen rijen. Inloggen, een sessie
+  opzoeken en de worker gaan via SECURITY DEFINER-functies (zie [Inloggen en de auth-bibliotheek](#inloggen-en-de-auth-bibliotheek)).
+  Alleen `withPurpose('index')` opent nog iets: schrijven in de gedeelde `context_index`.
+- Tests: `packages/db/test/rls.test.ts` (A ziet nooit rijen van B; `current_user` is `hz_app` en geen `relowner`;
+  NO FORCE, DISABLE, DROP/ALTER/CREATE POLICY geweigerd; ook als de eigenaar FORCE uitzet blijft A blind voor B),
+  `auth.test.ts` (app.purpose opent niets; de functies zoeken precies één sleutel; PUBLIC mag ze niet uitvoeren),
+  `app-login.test.ts` (de app als aparte login: SET ROLE NONE/RESET ROLE, productiecontrole van `createDb()`).
 
 Tabellen en wie ze vult:
 
 | Tabel | Gevuld door | Gelezen door |
 |---|---|---|
-| `users`, `sessions` | dev-login (straks het auth-stuk) | sessie-middleware |
+| `users`, `sessions` | alleen via de functies `auth_*` (dev-login, straks het auth-stuk) | sessie-middleware via `auth_session_by_token` |
 | `connections` | koppelingen (tokens envelope-versleuteld) | providers via `readConnectionToken` |
 | `item_state` | `PUT /api/itemstate/:key`: leesstatus, verwerkt en **de planning** (`plan_date`, `backlog`, `moved`; één plek) | Dagstart, Planning, Inhalen |
-| `weekdoelen`, `briefings` | `/api/weekdoelen`, de MCP-server (briefing van de ochtendroutine) | Dagstart, Tracker |
-| `pins` | `POST /api/pins` (⌘↵ in het palet) | palet, zijbalk (zoek-stuk) |
+| `weekdoelen`, `briefings` | `/api/weekdoelen`, de MCP-server (briefing van de ochtendroutine), de import (`legacy_id`) | Dagstart, Tracker |
+| `tracker_items` | de import uit het prototype (toezeggingen uit `commitments`: Ik beloofde, Eigen voornemen, Wachten op, Bespreken) | Tracker en items (`DbStore.legacyCommits`, zichtbaar zoals `commitVisible()` in het prototype) |
+| `pins` | `POST /api/pins` (⌘↵ in het palet), de import (`_pins`) | palet, zijbalk (zoek-stuk) |
 | `preferences` | `PATCH /api/preferences` (thema; per agenda kleur en overal/alleen in Agenda) | `/api/agenda`, schil |
 | `repo_queue` | `POST /api/repo/queue`: regel volgens `_systeem/schema.md`, status `queued` | schrijfjob van het context-stuk (HZW-060/062: pull --rebase, contextcheck, push, status) |
-| `context_index` | indexjob van het context-stuk (`upsertContextIndex`, `withPurpose('index')`, nooit `admin.md`) | zoek-stuk (`searchContextIndex`) |
+| `context_index` | indexjob van het context-stuk (`upsertContextIndex`, `withPurpose('index')`, nooit `admin.md`); eenmalig ook de import | zoek-stuk (`searchContextIndex`) |
 | `audit_log` | gevoelige acties (inloggen, koppelen, versturen, in de rij zetten) | beheer |
+
+De losse tabel `planning` uit migratie 0000 bestaat niet meer: hij is in `item_state` opgegaan (migratie
+`0003_planning_in_item_state`, kolommen `plan_date`, `backlog`, `moved`).
+
+Geen eigen takenlijst (keuze 10): `tracker_items` bewaart alleen wat al in het prototype stond en nog niet is overgezet
+(`overgezet`, `naar`). Nieuwe taken gaan naar Google Taken of `taken.md`, wachten op en bespreken naar `wachten-op.md`.
+
+### Inloggen en de auth-bibliotheek
+
+De app-rol heeft geen open SELECT op `users` of `sessions`. Een auth-bibliotheek (Better Auth of Auth.js, stuk E1)
+gebruikt in zijn adapter deze SECURITY DEFINER-functies (eigenaar: de migratierol; `EXECUTE` alleen voor `hz_app`;
+vast `search_path`), aan te roepen in een transactie als `hz_app` (bijv. `withPurpose(db, 'auth', …)`):
+
+| Functie | Doet | TS (`@hz/db`) |
+|---|---|---|
+| `auth_user_by_email(email)` | gebruiker bij precies één e-mailadres (hoofdletterongevoelig, geen patroon) | `findUserByEmail` |
+| `auth_upsert_user(email, naam, rol)` | aanmaken als hij niet bestaat (na de checks van de server: `email_verified`, domein, allowlist); bestaande blijft ongewijzigd; auditregel | `upsertUser` |
+| `auth_create_session(user_id, token_hash, user_agent, expires_at)` | sessie voor een bestaande, niet geblokkeerde gebruiker; alleen sha256-hash (64 hex) van het token; auditregel | `createSession` |
+| `auth_session_by_token(token_hash)` | de geldige sessie bij precies één hash (niet ingetrokken, niet verlopen, gebruiker niet geblokkeerd) | `findSession` |
+| `auth_touch_session(token_hash, expires_at?)` | laatst gezien bijwerken, desgewenst verlengen (glijdende sessie) | `touchSession` |
+| `auth_revoke_session(token_hash)` | uitloggen; auditregel | `revokeSession` |
+| `system_active_user_ids()` | worker: alleen de id's van actieve collega's; per id daarna `withUser` | `activeUserIds` |
+
+Voor een adapter: `findOne(session, token)` wordt `auth_session_by_token(sha256(token))`, `create(session)` wordt
+`auth_create_session`, `update(session)` wordt `auth_touch_session`, `delete(session)` wordt `auth_revoke_session`,
+`findOne(user, email)` en `create(user)` worden `auth_user_by_email` en `auth_upsert_user`. Alles wat na het inloggen
+gebeurt (eigen sessies tonen, eigen naam wijzigen) loopt gewoon via `withUser` en RLS. Heeft de bibliotheek extra
+tabellen nodig (OAuth-accounts, verificatietokens), volg dan hetzelfde patroon: RLS op eigen rijen en een
+SECURITY DEFINER-functie per opzoeksleutel, nooit een regel op `app.purpose`.
+
+### Import uit het prototype
+
+`pnpm --filter @hz/db import:prototype` (HZW-021) zet de artifact-opslag van het prototype over naar Postgres voor één
+collega. Draait als `hz_app` met RLS (het script kan alleen rijen van die collega schrijven, plus de gedeelde
+contextindex met purpose `index`), in één transactie per deel.
+
+1. **Export maken (mens).** In Claude (met de artifact-tools) per collectie alle documenten van het prototype-artifact
+   lezen en wegschrijven als `{"collections": {"commitments": {"<id>": {…}}, "itemstate": {…}, "briefings": {…}}}`
+   in een map buiten de repo. Ook goed: een lijst `[{"id": …, "data": {…}}]` per collectie, of een map met per
+   collectie een submap met `<id>.json` (zoals de contextexport). Nooit in Git.
+2. **Proefdraai:** `DATABASE_URL=… pnpm --filter @hz/db import:prototype -- --export <pad> --email robert@homezero.nl --proef`
+   rekent alles door, controleert de aantallen en draait terug.
+3. **Echt:** zonder `--proef`. Exitcode 0 = aantallen kloppen, 1 = kloppen niet, 2 = fout in de invoer. `--json` geeft
+   het verslag als JSON; `--zonder-context` slaat de contextindex over.
+
+| Collectie | Naar | Sleutel (idempotent) |
+|---|---|---|
+| `commitments` stroom `weekdoel`, `roadmap` | `weekdoelen` (velden zonder kolom in `extra`) | `legacy_id` = doc-id |
+| `commitments` stroom `mijn`, `voornemen`, `aan_mij`, `bespreken` (leeg = `mijn`) | `tracker_items` | `legacy_id` = doc-id |
+| `weekdoelen` (optioneel) | `weekdoelen` | `legacy_id` = `weekdoelen:<id>` |
+| `itemstate` | `item_state` (read, processed, skipPrep, answeredBy, plan, backlog, moved; rest in `extra`) | item-sleutel |
+| `itemstate/_pins` | `pins` | zoekopdracht |
+| `processed` (optioneel) | `item_state.processed` | item-sleutel |
+| `briefings` | `briefings` (één per dag; de nieuwste wint) | dag |
+| `context_partners`, `context_acties` | `context_index` (brief, meetings, acties; `geheim_voor` mee; nooit `admin.md`) | pad (`partners/<slug>/brief.md`, `…/meetings/<bestand>`, `…/acties.md#<id>`) |
+| `context_status` | alleen gelezen: commit en exportdatum in het verslag en in `context_index.commit` | - |
+| `context_persoonlijk` | overgeslagen: de app leest de Persoonlijk-repo live per collega | - |
+
+Een tweede run met dezelfde export verandert niets (alles `ongewijzigd`). `item_state`: de nieuwste wint, dus wat de
+collega na de export in de app wijzigde blijft staan. Rijen die de app zelf maakte (zonder `legacy_id`) raakt de import
+nooit. Het verslag telt per collectie docs = gebruikt + overgeslagen (met reden) en per tabel verwacht = nieuw +
+bijgewerkt + ongewijzigd = rijen na afloop; het toont geen inhoud van toezeggingen of briefings.
+Test: `packages/db/test/import.test.ts` (synthetische export `test/fixtures/prototype-export.json`) en
+`apps/api/test/import.test.ts` (na de import ziet Robert zijn tracker terug in de API, een collega niets).
+
+### Worker
+
+pg-boss draait in een eigen schema (`pgboss`) met een eigen verbinding: `HZ_BOSS_DATABASE_URL` (productie verplicht;
+een login die eigenaar is van dat schema, bijv. de migratierol; lokaal valt hij terug op `DATABASE_URL`). App-tabellen
+gaan via `createDb(DATABASE_URL)` als `hz_app` (productie: de app-login); jobs per collega gebruiken
+`activeUserIds()` en daarna `withUser`. `hz_app` heeft geen rechten op het pg-boss-schema. Test:
+`apps/worker/test/app-db.test.ts`.
 
 ## CI
 
 De git-root is de map boven `workspace-app`, dus de workflow staat in `../.github/workflows/workspace-app.yml` (met
 `defaults.run.working-directory: workspace-app` en pnpm uit `package.json`). De Postgres-service draait met superuser
-`postgres`; een stap maakt `hz_dev` aan zonder SUPERUSER en draait `bootstrap-roles.sql`. `packages/db/test/ci.test.ts`
+`postgres`; een stap maakt `hz_dev` aan zonder SUPERUSER en draait `bootstrap-roles.sql` en `app-login.sql`. `packages/db/test/ci.test.ts`
 bewaakt dat.
 
 ## Mapstructuur

@@ -214,3 +214,17 @@ describe('createDb() in NODE_ENV=production', () => {
     }
   });
 });
+
+describe('CI maakt de app-login aan', () => {
+  it('de workflow draait sql/app-login.sql na bootstrap-roles.sql', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { dirname, resolve } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const wf = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../.github/workflows/workspace-app.yml');
+    const text = readFileSync(wf, 'utf8');
+    const boot = text.indexOf('-f packages/db/sql/bootstrap-roles.sql');
+    const login = text.indexOf('-v login=hz_app_login -v password=hz_app_login -f packages/db/sql/app-login.sql');
+    expect(boot).toBeGreaterThan(0);
+    expect(login).toBeGreaterThan(boot);
+  });
+});

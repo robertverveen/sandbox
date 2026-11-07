@@ -38,11 +38,12 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: workspace-app/pnpm-lock.yaml
-      - name: Rollen in Postgres (hz_dev zonder superuser, runtime-rol hz_app)
+      - name: Rollen in Postgres (hz_dev zonder superuser, runtime-rol hz_app, app-login hz_app_login)
         run: |
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE hz_dev LOGIN PASSWORD 'hz_dev' CREATEDB NOSUPERUSER NOCREATEROLE NOBYPASSRLS"
           psql -h localhost -U postgres -v migrator=hz_dev -f packages/db/sql/bootstrap-roles.sql
-          psql -h localhost -U postgres -tAc "select rolname, rolsuper, rolbypassrls from pg_roles where rolname in ('hz_dev', 'hz_app')"
+          psql -h localhost -U postgres -v login=hz_app_login -v password=hz_app_login -f packages/db/sql/app-login.sql
+          psql -h localhost -U postgres -tAc "select rolname, rolsuper, rolbypassrls, rolinherit from pg_roles where rolname in ('hz_dev', 'hz_app', 'hz_app_login')"
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm format:check
