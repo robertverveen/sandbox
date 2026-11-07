@@ -33,6 +33,19 @@ async function consent(page: Page, decision: 'Toestaan' | 'Weigeren' = 'Toestaan
   await page.waitForURL(new RegExp(`^${E1_BASE}`));
 }
 
+/** Alle wizardstappen (zoals ONBOARDING_STEPS in packages/shared) met hun kop. */
+const STEPS = ['welkom', 'google', 'slack', 'jira', 'github', 'agenda', 'weekritme', 'toetsenbord'] as const;
+const STEP_TITLE: Record<(typeof STEPS)[number], RegExp> = {
+  welkom: /^Welkom/,
+  google: /^Google$/,
+  slack: /^Slack$/,
+  jira: /^Jira$/,
+  github: /^GitHub$/,
+  agenda: /^Agenda-lagen$/,
+  weekritme: /^Weekritme$/,
+  toetsenbord: /^Toetsenbord$/,
+};
+
 const card = (page: Page, provider: string) => page.locator(`.conn[data-provider="${provider}"]`);
 
 async function axe(page: Page) {
@@ -235,15 +248,17 @@ test.describe('HZW-013 onboarding-wizard met nep-koppelingen', () => {
     test(`wizard: axe (${scheme}) op elke stap en 400 px zonder horizontale scroll`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
       await googleLogin(page, scheme === 'light' ? /Collega 3/ : /Collega 4/);
-      for (const stap of ['welkom', 'google', 'github', 'agenda', 'weekritme', 'toetsenbord']) {
+      for (const stap of STEPS) {
         await page.goto(`/welkom?stap=${stap}`);
         await expect(page.locator('.ob-page')).toBeVisible();
+        await expect(page.locator('.ob-head h1')).toHaveText(STEP_TITLE[stap]);
         expect(await axe(page), stap).toEqual([]);
       }
       await page.setViewportSize({ width: 400, height: 860 });
-      for (const stap of ['welkom', 'google', 'weekritme']) {
+      for (const stap of STEPS) {
         await page.goto(`/welkom?stap=${stap}`);
         await expect(page.locator('.ob-page')).toBeVisible();
+        await expect(page.locator('.ob-head h1')).toHaveText(STEP_TITLE[stap]);
         await noHorizontalScroll(page);
       }
     });
@@ -306,6 +321,39 @@ test.describe('HZW-014 Instellingen → Koppelingen', () => {
     await expect(slack.locator('.chip.ok')).toHaveText('Gekoppeld');
     const d2 = await page.evaluate(async () => (await fetch('/api/dagstart')).json());
     expect(d2.items.some((i: { type: string }) => i.type === 'slack')).toBe(true);
+  });
+
+  test('Google deelt één client: Gmail intrekken laat Taken gekoppeld, met uitleg; een nieuwe collega ziet niets tot hij koppelt', async ({
+    browser,
+  }) => {
+    // Een collega zonder koppelingen: Dagstart toont geen taken, mail, Slack, Jira of afspraken.
+    const nieuw = await loggedIn(browser, /Lisanne de Vries/);
+    const leeg = await nieuw.page.evaluate(async () => (await fetch('/api/dagstart')).json());
+    const types = new Set((leeg.items as Array<{ type: string }>).map((i) => i.type));
+    for (const t of ['task', 'mail', 'slack', 'jira', 'meeting']) expect(types.has(t), t).toBe(false);
+    await nieuw.page.goto('/instellingen/koppelingen');
+    await expect(card(nieuw.page, 'gmail').locator('.chip').last()).toHaveText('Niet gekoppeld');
+    await nieuw.ctx.close();
+
+    const { ctx, page } = await loggedIn(browser, /Robert Verveen/);
+    await page.goto('/instellingen/koppelingen');
+    for (const p of ['google_tasks', 'gmail']) {
+      const c = card(page, p);
+      if (await c.locator('.chip.ok').count()) continue;
+      await c.getByRole('button', { name: /Verbinden/ }).click();
+      await consent(page);
+      await expect(c.locator('.chip.ok')).toHaveText('Gekoppeld');
+    }
+    const gmail = card(page, 'gmail');
+    await gmail.getByRole('button', { name: 'Intrekken' }).click();
+    await gmail.getByRole('button', { name: 'Ja, intrekken' }).click();
+    await expect(page.locator('.toast')).toContainText('Taken blijft werken');
+    await expect(gmail.locator('.chip').last()).toHaveText('Niet gekoppeld');
+    await expect(card(page, 'google_tasks').locator('.chip.ok')).toHaveText('Gekoppeld');
+    const d = await page.evaluate(async () => (await fetch('/api/dagstart')).json());
+    expect(d.items.some((i: { type: string }) => i.type === 'task')).toBe(true);
+    expect(d.items.some((i: { type: string }) => i.type === 'mail')).toBe(false);
+    await ctx.close();
   });
 
   test('toetsen: j/k over de bronnen, ↵ rechten, ⇧2 Apparaten; ⌘K-commando Koppelingen', async ({ page }) => {

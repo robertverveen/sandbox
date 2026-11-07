@@ -104,9 +104,13 @@ export function ConnectorCard({
     disconnect.mutate(c.provider, {
       onSuccess: (r) => {
         setConfirm(false);
+        // Google trekt per app in: andere Google-bronnen die al niet werkten, vragen nu opnieuw verbinden.
+        const lost = r.needsReauth?.length
+          ? ` ${r.needsReauth.map((p) => PROVIDER_CATALOG[p].label).join(' en ')} vraagt nu opnieuw verbinden.`
+          : '';
         ui.toast(
           r.revokedAtProvider
-            ? `${cat.label} ingetrokken bij de bron; token en eigen gegevens gewist.`
+            ? `${cat.label} ingetrokken bij de bron; token en eigen gegevens gewist.${lost}`
             : (r.note ?? `${cat.label} ontkoppeld.`),
         );
       },

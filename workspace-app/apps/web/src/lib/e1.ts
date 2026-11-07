@@ -41,7 +41,16 @@ export function useDisconnect() {
   return useMutation({
     mutationFn: (provider: ProviderName) => api('disconnect', { params: { provider } }),
     onSuccess: () => {
-      for (const k of ['connections', 'dagstart', 'agenda', 'preferences'])
+      for (const k of [
+        'connections',
+        'dagstart',
+        'agenda',
+        'preferences',
+        'tracker',
+        'tasks',
+        'conversations',
+        'items',
+      ])
         void qc.invalidateQueries({ queryKey: [k] });
     },
   });
