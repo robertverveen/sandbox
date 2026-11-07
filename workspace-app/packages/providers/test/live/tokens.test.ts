@@ -81,6 +81,17 @@ describe('tokens per collega', () => {
     expect(await createUserCredentials({ store, userId: 'u1' }).accessToken('gmail')).toBe('gedeeld');
   });
 
+  it('401 op een Google-bron zonder eigen rij keurt de gedeelde koppeling "google" af (die rij bestaat echt)', async () => {
+    const store = new MemoryTokenStore().set('u1', 'google', { access_token: 'gedeeld' }).set('u1', 'slack', 'xoxp-1');
+    const c = createUserCredentials({ store, userId: 'u1' });
+    await c.rejected!('calendar');
+    await c.rejected!('slack');
+    const own = new MemoryTokenStore().set('u1', 'gmail', { access_token: 'eigen' }).set('u1', 'google', 'x');
+    await createUserCredentials({ store: own, userId: 'u1' }).rejected!('gmail');
+    expect(store.reauth.map((r) => r.provider)).toEqual(['google', 'slack']);
+    expect(own.reauth.map((r) => r.provider)).toEqual(['gmail']);
+  });
+
   it('geweigerd verversen: koppeling op opnieuw koppelen, AuthError', async () => {
     const store = new MemoryTokenStore().set('u1', 'calendar', {
       access_token: 'oud',

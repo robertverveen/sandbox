@@ -13,6 +13,7 @@ import {
   createDb,
   dbSyncStore,
   dbTokenStore,
+  disconnectSource,
   ensureDatabase,
   readConnectionToken,
   getSyncJob,
@@ -197,5 +198,83 @@ describe('sync-motor op Postgres (HZW-036)', () => {
     expect(await syncStatus(db, B)).toEqual([]);
     expect(await dbSyncStore(db, () => B).get('slack:state:CX')).toBeNull();
     expect(await takeSyncEvents(db, B, 'slack')).toEqual([]);
+  });
+});
+
+describe("gedeelde Google-koppeling 'google' (één toestemming voor Agenda en Taken)", () => {
+  const SC = ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/tasks'];
+  let C: string;
+  const fakeBoss = (sent: Array<{ userId: string; provider: string }>) =>
+    ({ send: async (_n: string, data: { userId: string; provider: string }) => (sent.push(data), 'id') }) as never;
+  const jobsOf = async (u: string) => (await syncStatus(db, u)).map((j) => `${j.provider}:${j.status}`).sort();
+  const conn = async (u: string, p: string) =>
+    (
+      await withUser(db, u, (tx) =>
+        tx.execute(
+          sql`select status, scopes, token_ciphertext is not null as has_token from connections where provider = ${p}`,
+        ),
+      )
+    ).rows[0] as { status: string; scopes: string[]; has_token: boolean } | undefined;
+
+  beforeAll(async () => {
+    C = (await upsertUser(db, 'carla@homezero.nl', 'Carla')).id;
+    await saveConnectionToken(
+      db,
+      key,
+      C,
+      'google',
+      JSON.stringify({ access_token: 'ya29.dood', refresh_token: '1//carla' }),
+      {
+        scopes: SC,
+        account: 'carla@homezero.nl',
+      },
+    );
+  });
+
+  it('401 op Taken: de rij die echt bestaat (google) gaat op needs_reauth, en beide Google-runs ook', async () => {
+    await planSync(db, fakeBoss([]));
+    expect(await jobsOf(C)).toEqual(['calendar:idle', 'google_tasks:idle']);
+    await dbSyncStore(db, () => C).set('tasks:updatedMin', '2026-11-01T00:00:00Z');
+    const o = await runSync(createSyncDeps({ db, masterKey: key, env: { HZ_LIVE_TASKS: '1' } }), C, 'google_tasks');
+    expect(o.status).toBe('needs_reauth');
+    expect((await conn(C, 'google'))!.status).toBe('needs_reauth');
+    expect(await conn(C, 'google_tasks')).toBeUndefined();
+    expect(await jobsOf(C)).toEqual(['calendar:needs_reauth', 'google_tasks:needs_reauth']);
+  });
+
+  it('Agenda ontkoppelen: ingetrokken, gedeeld token gewist, geen calendar:*-rijen, planSync maakt geen agenda-job meer', async () => {
+    // Opnieuw gekoppeld (verse toestemming), en er is agenda-data.
+    await saveConnectionToken(
+      db,
+      key,
+      C,
+      'google',
+      JSON.stringify({ access_token: 'ya29.carla', refresh_token: '1//carla' }),
+      {
+        scopes: SC,
+        account: 'carla@homezero.nl',
+      },
+    );
+    await planSync(db, fakeBoss([]));
+    const store = dbSyncStore(db, () => C);
+    await store.set('calendar:sync:carla@homezero.nl', { syncToken: 's1' });
+    await store.set('calendar:list', { at: 1 });
+    const revoked: Array<{ provider: string; token: string }> = [];
+    const r = await disconnectSource(db, key, C, 'calendar', async (provider, token) => {
+      revoked.push({ provider, token });
+      return 'revoked';
+    });
+    expect(revoked).toEqual([
+      { provider: 'calendar', token: JSON.stringify({ access_token: 'ya29.carla', refresh_token: '1//carla' }) },
+    ]);
+    expect(r).toMatchObject({ revoked: 1, cleared: ['google'], needsReauth: ['google_tasks'] });
+    expect(await readConnectionToken(db, key, C, 'google')).toBeNull();
+    expect(await store.get('calendar:sync:carla@homezero.nl')).toBeNull();
+    expect(await store.get('calendar:list')).toBeNull();
+    expect((await conn(C, 'google'))!.scopes).toEqual([SC[1]]);
+    const sent: Array<{ userId: string; provider: string }> = [];
+    await planSync(db, fakeBoss(sent));
+    expect(await jobsOf(C)).toEqual([]);
+    expect(sent.filter((x) => x.userId === C)).toEqual([]);
   });
 });

@@ -20,7 +20,7 @@ import { creds, mockServer } from './msw';
 const SELF = 'robert@homezero.nl';
 const CALS = [
   { id: SELF, summary: SELF, primary: true, backgroundColor: '#039be5', accessRole: 'owner' },
-  { id: 'robertverveen@gmail.com', summary: 'Privé', backgroundColor: '#f4511e', accessRole: 'reader' },
+  { id: 'prive@example.com', summary: 'Privé', backgroundColor: '#f4511e', accessRole: 'reader' },
   { id: 'lou.family@group.calendar.google.com', summary: 'Lou', backgroundColor: '#8e24aa', accessRole: 'reader' },
   { id: 'nl.dutch#holiday@group.v.calendar.google.com', summary: 'Feestdagen in Nederland', accessRole: 'reader' },
 ];
@@ -92,7 +92,7 @@ let state: Record<string, { items: unknown[]; token: string; changes?: unknown[]
 beforeEach(() => {
   state = {
     [SELF]: { items: [feenstra, sunergy, declined, workLoc], token: 'sync-self-1' },
-    'robertverveen@gmail.com': { items: [priveSport, feenstraDup], token: 'sync-prive-1' },
+    'prive@example.com': { items: [priveSport, feenstraDup], token: 'sync-prive-1' },
     'lou.family@group.calendar.google.com': { items: [vakantie], token: 'sync-lou-1' },
     'nl.dutch#holiday@group.v.calendar.google.com': { items: [], token: 'sync-hol-1' },
   };
@@ -130,7 +130,7 @@ describe('Google Agenda live (HZW-030)', () => {
     const cals = await make().listCalendars();
     expect(cals.map((c) => c.id)).toEqual(CALS.map((c) => c.id));
     expect(cals[0]).toMatchObject({ primary: true, backgroundColor: '#039be5' });
-    expect(cals.find((c) => c.id === 'robertverveen@gmail.com')?.summary).toBe('Privé');
+    expect(cals.find((c) => c.id === 'prive@example.com')?.summary).toBe('Privé');
   });
 
   it('afspraken per periode: contractvorm, dubbel weg, afgewezen en werklocatie niet getoond', async () => {

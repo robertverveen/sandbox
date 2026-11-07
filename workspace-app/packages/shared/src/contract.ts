@@ -80,6 +80,19 @@ export const SessionInfo = z.object({
 });
 export type SessionInfo = z.infer<typeof SessionInfo>;
 
+/**
+ * Stand per bron in een antwoord dat meerdere bronnen samenvoegt (stuk E3). Een bron die voor deze collega niet
+ * gekoppeld is (of opnieuw gekoppeld moet worden) komt leeg terug in plaats van de hele route te laten vallen.
+ */
+export const SourceStatus = z.object({
+  provider: ProviderName,
+  status: z.enum(['ok', 'niet gekoppeld', 'opnieuw koppelen', 'fout']),
+  message: z.string().optional(),
+});
+export type SourceStatus = z.infer<typeof SourceStatus>;
+const withSources = <T extends z.ZodRawShape>(o: z.ZodObject<T>) =>
+  o.extend({ sources: z.array(SourceStatus).optional() });
+
 export const SprintInfo = z.object({ sprint: JiraSprint.nullable(), issues: z.array(JiraItem) });
 export type SprintInfo = z.infer<typeof SprintInfo>;
 
@@ -246,7 +259,7 @@ export const routes = {
     method: 'GET',
     path: '/api/tasks',
     doc: 'Google Taken: lijsten en open taken.',
-    response: z.object({ lists: z.array(TaskList), tasks: z.array(TaskItem) }),
+    response: withSources(z.object({ lists: z.array(TaskList), tasks: z.array(TaskItem) })),
     owner: 'planning',
   }),
   addTask: def({
@@ -278,14 +291,14 @@ export const routes = {
     method: 'GET',
     path: '/api/sprint',
     doc: 'Lopende sprint van HOM met storypoints en Tester-veld.',
-    response: SprintInfo,
+    response: withSources(SprintInfo),
     owner: 'planning',
   }),
   tracker: def({
     method: 'GET',
     path: '/api/tracker',
     doc: 'Tracker: taken, wachten op, bespreken, partneracties (eigenaar), weekdoelen.',
-    response: TrackerResponse,
+    response: withSources(TrackerResponse),
     owner: 'tracker',
   }),
   weekdoelen: def({
@@ -319,7 +332,7 @@ export const routes = {
     method: 'GET',
     path: '/api/conversations',
     doc: "Kanalen, DM's en mailthreads.",
-    response: z.object({ conversations: z.array(Conversation) }),
+    response: withSources(z.object({ conversations: z.array(Conversation) })),
     owner: 'gesprekken',
   }),
   conversation: def({
@@ -341,9 +354,18 @@ export const routes = {
   markRead: def({
     method: 'POST',
     path: '/api/conversations/:key/read',
-    doc: 'Gelezen zetten, ook echt in Slack/Gmail (terug te draaien met read=false).',
+    doc:
+      'Gelezen zetten, ook echt in Slack/Gmail (terug te draaien met read=false). Slack: ts = het gelezen bericht; ' +
+      'de leescursor gaat tot dat bericht (nieuwere blijven ongelezen), read=false zet hem op het bericht ervoor. ' +
+      'Zonder ts: het hele gesprek is gelezen (gesprek geopend).',
     params: KeyParam,
-    body: z.object({ read: z.boolean().default(true) }),
+    body: z.object({
+      read: z.boolean().default(true),
+      ts: z
+        .string()
+        .regex(/^\d+\.\d+$/)
+        .optional(),
+    }),
     response: Ok,
     owner: 'gesprekken',
   }),
@@ -402,7 +424,7 @@ export const routes = {
     path: '/api/search',
     doc: "Zoeken met komma-verfijning, organisaties uit het register, kanalen en DM's.",
     query: z.object({ q: z.string().default('') }),
-    response: SearchResponse,
+    response: withSources(SearchResponse),
     owner: 'zoeken',
   }),
   repoQueue: def({

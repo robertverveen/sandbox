@@ -16,17 +16,25 @@ import {
   type RouteName,
   type Routes,
   type SessionInfo,
+  type SourceStatus,
   type User,
 } from '@hz/shared';
 import { ctxAge, freeSlots, localISO, orgFromText, orgIndex, ymd } from '@hz/shared/logic';
 import { planRepoWrite, RepoWriteError } from '@hz/context';
-import { LiveSlack, withHumanAction, withUserScope, type ProviderBundle } from '@hz/providers';
-import { requestSync, syncStatus, wipeSyncData } from '@hz/db';
+import {
+  AuthError,
+  LiveSlack,
+  NotConnectedError,
+  withHumanAction,
+  withUserScope,
+  type ProviderBundle,
+} from '@hz/providers';
+import { GOOGLE_SCOPE, requestSync, syncStatus, wipeSyncData } from '@hz/db';
 import { registerSyncHooks, type SyncHookOptions } from './sync-hooks';
 import type { Config } from './config';
 import { EventBus } from './events';
 import { catchCount, collect, firstName, myPartnerActies, slimContext, type Ctx } from './services';
-import type { AppStore } from './store';
+import type { AppStore, ConnectionState } from './store';
 
 export const VERSION = '0.1.0';
 export const SESSION_COOKIE = 'hz_session';
@@ -56,6 +64,39 @@ type Handler<N extends RouteName> = (
 ) => Promise<z.input<Routes[N]['response']>> | z.input<Routes[N]['response']>;
 
 const PROVIDERS = ProviderNameSchema.options;
+
+/**
+ * Eén bron in een antwoord (stuk E3). Live staat per proces aan, maar elke collega koppelt zelf: wie een bron niet
+ * gekoppeld heeft (NotConnectedError) of opnieuw moet koppelen (AuthError) krijgt die bron leeg terug met een
+ * status, en de rest van het antwoord gewoon. Andere fouten vallen alleen weg waar meerdere bronnen samenkomen
+ * (`soft`); anders gaan ze door naar de foutafhandeling.
+ */
+async function fromSource<T>(
+  sources: SourceStatus[],
+  provider: ProviderName,
+  fallback: T,
+  fn: () => Promise<T>,
+  soft = false,
+): Promise<T> {
+  const note = (s: SourceStatus) => {
+    const i = sources.findIndex((x) => x.provider === provider);
+    if (i < 0) sources.push(s);
+    else if (sources[i]!.status === 'ok') sources[i] = s;
+  };
+  try {
+    const r = await fn();
+    note({ provider, status: 'ok' });
+    return r;
+  } catch (e) {
+    if (e instanceof NotConnectedError) note({ provider, status: 'niet gekoppeld' });
+    else if (e instanceof AuthError) note({ provider, status: 'opnieuw koppelen' });
+    else if (soft) {
+      console.error(`[api] bron ${provider}: ${e instanceof Error ? e.name : 'fout'}`);
+      note({ provider, status: 'fout', message: 'Bron tijdelijk niet bereikbaar' });
+    } else throw e;
+    return fallback;
+  }
+}
 const PROVIDER_OF: Record<ProviderName, keyof ProviderBundle['providers']> = {
   google_tasks: 'tasks',
   calendar: 'calendar',
@@ -75,6 +116,14 @@ export function createApp(deps: AppDeps) {
   app.onError((err, c) => {
     if (err instanceof HTTPException) return c.json({ error: 'http', message: err.message }, err.status);
     if (err instanceof z.ZodError) return c.json({ error: 'invalid', message: z.prettifyError(err) }, 400);
+    // Eén bron die deze collega niet (meer) gekoppeld heeft: duidelijke 409 in plaats van een 500.
+    if (err instanceof NotConnectedError)
+      return c.json(
+        { error: 'not_connected', message: `${err.provider} is niet gekoppeld. Koppel de bron eerst.` },
+        409,
+      );
+    if (err instanceof AuthError)
+      return c.json({ error: 'needs_reauth', message: `${err.provider}: opnieuw koppelen.` }, 409);
     console.error(err);
     return c.json({ error: 'server', message: 'Er ging iets mis op de server.' }, 500);
   });
@@ -101,7 +150,9 @@ export function createApp(deps: AppDeps) {
     c.set('token', token);
     // Per request: voor welke collega werken de live providers (eigen token en cursors). Een POST/PUT/PATCH/DELETE
     // van een ingelogde collega is een klik van een mens; alleen dan mogen providers versturen of uitnodigen.
-    return withUserScope(user.id, () => (c.req.method === 'GET' ? next() : withHumanAction(user.id, next)));
+    return withUserScope(user.id, () => (c.req.method === 'GET' ? next() : withHumanAction(user.id, next)), {
+      name: firstName(user),
+    });
   });
   registerSyncHooks(app, deps.sync ?? { db: null });
 
@@ -188,7 +239,7 @@ export function createApp(deps: AppDeps) {
     const [briefing, weekdoelen, sprint, states] = await Promise.all([
       store.latestBriefing(ctx.user.id),
       store.weekdoelen(ctx.user.id),
-      bundle.providers.jira.activeSprint().catch(() => ({ sprint: null, issues: [] })),
+      bundle.providers.jira.activeSprint().catch(() => ({ sprint: null, issues: [] as never[] })),
       store.itemStates(ctx.user.id),
     ]);
     const decided = Object.fromEntries(
@@ -257,10 +308,12 @@ export function createApp(deps: AppDeps) {
   });
 
   /* ---------- Taken en sprint ---------- */
-  on('tasks', async () => ({
-    lists: await bundle.providers.tasks.listTaskLists(),
-    tasks: await bundle.providers.tasks.listTasks(),
-  }));
+  on('tasks', async () => {
+    const sources: SourceStatus[] = [];
+    const lists = await fromSource(sources, 'google_tasks', [], () => bundle.providers.tasks.listTaskLists());
+    const tasks = await fromSource(sources, 'google_tasks', [], () => bundle.providers.tasks.listTasks());
+    return { lists, tasks, sources };
+  });
   on('addTask', async ({ body }, _c, ctx) => {
     const t = await bundle.providers.tasks.addTask(body);
     bus.invalidate(ctx.user.id, 'tasks', 'items', 'dagstart');
@@ -271,17 +324,31 @@ export function createApp(deps: AppDeps) {
     bus.invalidate(ctx.user.id, 'tasks', 'items', 'dagstart');
     return t;
   });
-  on('sprint', () => bundle.providers.jira.activeSprint());
+  on('sprint', async () => {
+    const sources: SourceStatus[] = [];
+    const r = await fromSource(sources, 'jira', { sprint: null, issues: [] }, () =>
+      bundle.providers.jira.activeSprint(),
+    );
+    return { ...r, sources };
+  });
 
   /* ---------- Tracker en weekdoelen ---------- */
   on('tracker', async (_i, _c, ctx) => {
-    const snap = await bundle.providers.context.snapshot();
+    const sources: SourceStatus[] = [];
+    const [snap, taken, weekdoelen] = await Promise.all([
+      fromSource(sources, 'github', { status: null, partners: {}, acties: {}, pers: null }, () =>
+        bundle.providers.context.snapshot(),
+      ),
+      fromSource(sources, 'google_tasks', [], () => bundle.providers.tasks.listTasks(), true),
+      store.weekdoelen(ctx.user.id),
+    ]);
     return {
       hasPersRepo: !!snap.pers,
-      taken: await bundle.providers.tasks.listTasks(),
+      taken,
       takenMd: snap.pers,
       partneracties: myPartnerActies(snap, ctx.user),
-      weekdoelen: await store.weekdoelen(ctx.user.id),
+      weekdoelen,
+      sources,
     };
   });
   on('weekdoelen', async ({ query }, _c, ctx) => {
@@ -306,12 +373,18 @@ export function createApp(deps: AppDeps) {
     if (!m) throw new HTTPException(400, { message: 'Onbekende gesprekssleutel' });
     return { kind: m[1] as 'sl' | 'ml', id: m[2]! };
   };
-  on('conversations', async () => ({
-    conversations: [
-      ...(await bundle.providers.slack.listConversations()),
-      ...(await bundle.providers.gmail.listConversations()),
-    ],
-  }));
+  /** Slack- en mailgesprekken samen; een bron die deze collega niet gekoppeld heeft komt leeg terug. */
+  const allConversations = async (sources: SourceStatus[]) => {
+    const [sl, ml] = await Promise.all([
+      fromSource(sources, 'slack', [], () => bundle.providers.slack.listConversations(), true),
+      fromSource(sources, 'gmail', [], () => bundle.providers.gmail.listConversations(), true),
+    ]);
+    return [...sl, ...ml];
+  };
+  on('conversations', async () => {
+    const sources: SourceStatus[] = [];
+    return { conversations: await allConversations(sources), sources };
+  });
   on('conversation', async ({ params }) => {
     const { kind, id } = splitKey(params.key);
     if (kind === 'sl') {
@@ -332,8 +405,27 @@ export function createApp(deps: AppDeps) {
   on('markRead', async ({ params, body }, _c, ctx) => {
     const { kind, id } = splitKey(params.key);
     if (kind === 'sl') {
-      const last = (await bundle.providers.slack.history(id)).at(-1);
-      if (last && body.read) await bundle.providers.slack.markRead(id, last.ts);
+      // Slack kent één leescursor per gesprek (conversations.mark): alles tot en met ts is gelezen. Markeer tot het
+      // gelezen bericht, niet tot het nieuwste, anders worden nieuwere ongelezen berichten stil gelezen.
+      const history = await bundle.providers.slack.history(id);
+      if (body.ts && !history.some((m) => m.ts === body.ts))
+        throw new HTTPException(404, { message: 'Onbekend bericht in dit gesprek' });
+      let mark: string | null;
+      if (body.read) mark = body.ts ?? history.at(-1)?.ts ?? null;
+      else {
+        if (!body.ts)
+          throw new HTTPException(400, {
+            message:
+              'Ongelezen zetten in Slack kan alleen vanaf een bericht: geef ts van het eerste ongelezen bericht mee.',
+          });
+        const before = history.filter((m) => parseFloat(m.ts) < parseFloat(body.ts!)).at(-1);
+        if (!before)
+          throw new HTTPException(400, {
+            message: 'Dit is het oudste bericht dat de app ziet; Slack kan de leescursor niet daarvoor zetten.',
+          });
+        mark = before.ts;
+      }
+      if (mark) await bundle.providers.slack.markRead(id, mark);
     } else await bundle.providers.gmail.markRead(id, body.read);
     bus.invalidate(ctx.user.id, 'conversations', 'items', 'dagstart');
     return { ok: true as const };
@@ -403,15 +495,13 @@ export function createApp(deps: AppDeps) {
       const text = hay(`${it.title} ${'body' in it ? (it.body ?? '') : ''}`);
       return keywords.every((k) => text.includes(k)) && (entities.length || keywords.length);
     });
-    const convs = [
-      ...(await bundle.providers.slack.listConversations()),
-      ...(await bundle.providers.gmail.listConversations()),
-    ].filter(
+    const sources: SourceStatus[] = [];
+    const convs = (await allConversations(sources)).filter(
       (c) =>
         (entities.length && entities.some((e) => c.entities.includes(e))) ||
         keywords.some((k) => hay(c.name + ' ' + (c.preview ?? '')).includes(k)),
     );
-    return { q, entities, keywords, mode, items, conversations: convs };
+    return { q, entities, keywords, mode, items, conversations: convs, sources };
   });
 
   /* ---------- Wegschrijven naar de contextlaag (wachtrij) ---------- */
@@ -484,14 +574,21 @@ export function createApp(deps: AppDeps) {
   /* ---------- Koppelingen ---------- */
   const connectionList = async (userId: string): Promise<Connection[]> => {
     const saved = await store.connections(userId);
+    // Google-bronnen zonder eigen rij hangen aan de gedeelde koppeling 'google' (per verleende scope).
+    const shared = (saved as Record<string, ConnectionState | undefined>).google;
     return PROVIDERS.map((p) => {
       const prov = bundle.providers[PROVIDER_OF[p]];
-      const s = saved[p];
+      const own = saved[p];
+      const viaShared =
+        shared &&
+        p in GOOGLE_SCOPE &&
+        (shared.scopes ?? []).some((x) => GOOGLE_SCOPE[p as keyof typeof GOOGLE_SCOPE].test(x));
+      const s = own && (own.status !== 'disconnected' || !viaShared) ? own : viaShared ? shared : own;
       const fixture = prov.mode === 'fixture';
       return {
         provider: p,
         status: s?.status ?? (fixture ? 'connected' : 'disconnected'),
-        scopes: [],
+        scopes: s?.scopes ?? [],
         connectedAt: s?.connectedAt,
         mode: prov.mode,
       };
@@ -510,9 +607,11 @@ export function createApp(deps: AppDeps) {
   });
   on('disconnect', async ({ params }, _c, ctx) => {
     await store.setConnection(ctx.user.id, params.provider, { status: 'disconnected' });
-    // Ontkoppelen wist ook planning, cursors en metadata van die bron (stuk E3).
-    await deps.sync?.revoke?.(ctx.user.id, params.provider);
-    if (deps.sync?.db) await wipeSyncData(deps.sync.db, ctx.user.id, params.provider);
+    // Ontkoppelen trekt het token in en wist planning, cursors en metadata (stuk E3). Een Google-bron op de
+    // gedeelde koppeling 'google' raakt alle Google-bronnen (Google trekt alles tegelijk in); revoke zegt welke.
+    const r = await deps.sync?.revoke?.(ctx.user.id, params.provider);
+    if (deps.sync?.db)
+      for (const p of new Set([params.provider, ...(r?.wiped ?? [])])) await wipeSyncData(deps.sync.db, ctx.user.id, p);
     await store.audit(ctx.user.id, 'connection.disconnect', params.provider);
     bus.invalidate(ctx.user.id, 'connections', 'items', 'dagstart');
     return { ok: true as const };
@@ -532,7 +631,7 @@ export function createApp(deps: AppDeps) {
         lastOkAt: j.lastOkAt?.toISOString() ?? null,
         lastChanged: j.lastChanged,
         lastError: j.lastError,
-        push: !!(j.push && (j.push.channels || j.push.gmailExpiration)) || j.provider === 'slack',
+        push: !!(j.push && (j.push.channels || j.push.gmailExpiration || j.push.slackEvents)),
       })),
     };
   });
@@ -545,7 +644,8 @@ export function createApp(deps: AppDeps) {
   });
   on('slackEmoji', async () => {
     const s = bundle.providers.slack;
-    return { emoji: s instanceof LiveSlack ? await s.customEmoji() : {} };
+    const sources: SourceStatus[] = [];
+    return { emoji: s instanceof LiveSlack ? await fromSource(sources, 'slack', {}, () => s.customEmoji(), true) : {} };
   });
 
   /* ---------- Claude (nep in fixture-modus) ---------- */

@@ -249,3 +249,77 @@ describe('dubbele events', () => {
     expect(seen.every((r) => r.method === 'GET')).toBe(true);
   });
 });
+
+describe('Slack: push alleen als Slack Events echt werkt', () => {
+  const slackOk = () => [
+    http.get(`${SLACK_BASE}/auth.test`, () => HttpResponse.json({ ok: true, user_id: 'UME', team_id: 'T' })),
+    http.get(`${SLACK_BASE}/users.list`, () => HttpResponse.json({ ok: true, members: [] })),
+    http.get(`${SLACK_BASE}/users.conversations`, () =>
+      HttpResponse.json({
+        ok: true,
+        channels: [
+          { id: 'CFEEN', name: 'feenstra-hz', is_channel: true },
+          { id: 'DMJ', is_im: true, user: 'UMJ' },
+        ],
+      }),
+    ),
+    http.get(`${SLACK_BASE}/conversations.info`, ({ request }) =>
+      HttpResponse.json({
+        ok: true,
+        channel: { id: new URL(request.url).searchParams.get('channel'), last_read: '0' },
+      }),
+    ),
+    http.get(`${SLACK_BASE}/conversations.history`, () => HttpResponse.json({ ok: true, messages: [] })),
+  ];
+  const minutes = (o: SyncOutcome) => (+o.nextRunAt - +now) / 60_000;
+
+  it('zonder Events-geheim en zonder ontvangen event: pollen elke 3 minuten (niet 30)', async () => {
+    repo.add(U, 'slack');
+    server.use(...slackOk());
+    const o = await runSync(deps, U, 'slack');
+    expect(o.status).toBe('idle');
+    expect(minutes(o)).toBe(POLL_MS.slack! / 60_000);
+    expect(minutes(o)).toBe(3);
+    // Kanaal-id's als metadata voor de webhook (wie zit in welk kanaal), geen inhoud.
+    expect(repo.jobs.get(`${U}|slack`)!.push).toEqual({ slackChannels: ['CFEEN', 'DMJ'], slackEvents: false });
+  });
+
+  it('met HZ_SLACK_SIGNING_SECRET in de worker: alleen een veiligheidspoll (30 minuten)', async () => {
+    repo.add(U, 'slack');
+    server.use(...slackOk());
+    const o = await runSync({ ...deps, slackEvents: true }, U, 'slack');
+    expect(minutes(o)).toBe(30);
+  });
+
+  it('zonder geheim, maar er kwam al een event binnen: Events werkt, dus 30 minuten', async () => {
+    repo.add(U, 'slack');
+    server.use(...slackOk());
+    repo.record(U, 'slack', 'Ev77', { type: 'message', channel: 'CFEEN', ts: '1793262720.000200' });
+    const o = await runSync(deps, U, 'slack');
+    expect(minutes(o)).toBe(30);
+    expect(repo.jobs.get(`${U}|slack`)!.push.slackEvents).toBe(true);
+    // Ook de run daarna (geen nieuw event) blijft op push: het eerste event is gezien.
+    now = new Date(+now + 30 * 60_000);
+    expect(minutes(await runSync(deps, U, 'slack'))).toBe(30);
+  });
+});
+
+describe('owner per collega in de worker', () => {
+  it('de run draait met de voornaam van die collega in de scope', async () => {
+    const { currentUserName } = await import('@hz/providers');
+    repo.add(U, 'google_tasks');
+    const names: Array<string | undefined> = [];
+    server.use(
+      http.get(`${GOOGLE_TASKS_BASE}/users/@me/lists`, () => {
+        names.push(currentUserName());
+        return HttpResponse.json({ items: [] });
+      }),
+    );
+    const named: SyncRepo = Object.assign(Object.create(repo) as MemoryRepo, {
+      userName: async (u: string) => (u === U ? 'Lisanne' : null),
+    });
+    await runSync({ ...deps, repo: named }, U, 'google_tasks'); // nulpunt (nog geen call)
+    await runSync({ ...deps, repo: named }, U, 'google_tasks');
+    expect(names).toEqual(['Lisanne']);
+  });
+});

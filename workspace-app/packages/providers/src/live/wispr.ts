@@ -11,6 +11,7 @@ import type { RecItem } from '@hz/shared';
 import { amsterdamToInstant, pd, toLocal } from '@hz/shared/logic';
 import { liveWindow, parseHeartbeatLine, type NightRun } from '@hz/context';
 import type { ContextProvider, WisprProvider } from '../types';
+import { isLayerAware } from '../context';
 import { NotConnectedError } from '../types';
 import { HttpClient, ProviderHttpError, type LiveCredentials } from './http';
 
@@ -99,6 +100,8 @@ export class McpHttpClient {
 }
 
 export class LiveWispr implements WisprProvider {
+  static PAGE = 100;
+  static MAX_PAGES = 10;
   readonly mode = 'live' as const;
   readonly mcp: McpHttpClient | null;
   constructor(
@@ -112,8 +115,23 @@ export class LiveWispr implements WisprProvider {
   async listMeetings(since: string): Promise<RecItem[]> {
     if (!this.mcp) throw new NotConnectedError('wispr', 'geen MCP-endpoint (HZ_WISPR_MCP_URL)');
     const iso = /(Z|[+-]\d\d:?\d\d)$/.test(since) ? since : amsterdamToInstant(since).toISOString();
-    const r = await this.mcp.callTool<{ meetings?: WisprMeeting[] }>('search_meetings', { since: iso, limit: 60 });
-    return (r.meetings ?? []).map(mapWispr).filter((m) => m.start >= toWall(iso).slice(0, m.start.length));
+    // search_meetings pagineert (nieuwste eerst): has_more + next_cursor volgen tot het einde (Wispr kapt af op 1000).
+    const all: WisprMeeting[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < LiveWispr.MAX_PAGES; page++) {
+      const r = await this.mcp.callTool<{ meetings?: WisprMeeting[]; has_more?: boolean; next_cursor?: string | null }>(
+        'search_meetings',
+        { since: iso, limit: LiveWispr.PAGE, ...(cursor ? { cursor } : {}) },
+      );
+      all.push(...(r.meetings ?? []));
+      if (!r.has_more || !r.next_cursor || r.next_cursor === cursor) break;
+      cursor = r.next_cursor;
+    }
+    const seen = new Set<string>();
+    return all
+      .filter((m) => !seen.has(m.id) && !!seen.add(m.id))
+      .map(mapWispr)
+      .filter((m) => m.start >= toWall(iso).slice(0, m.start.length));
   }
 }
 
@@ -152,7 +170,13 @@ export async function layerMeetings(context: ContextProvider, owner: string, sin
 }
 
 export interface ContextFirstOptions {
-  owner: string;
+  /** Voornaam van de ingelogde collega (uit de scope), per aanroep: elke collega eigen meetings en eigen nachtrun. */
+  owner: string | (() => string);
+  /**
+   * De collega van wie de snapshot-status is (HZ_OWNER). Alleen voor hem geldt status.nachtdienst; een contextbron
+   * die de heartbeats zelf kan lezen (repo, GitHub) leest `_systeem/routines/<voornaam>.md` van de collega zelf.
+   */
+  statusOwner?: string;
   now: () => Date;
 }
 
@@ -171,15 +195,27 @@ export class ContextFirstWispr implements WisprProvider {
     this.mode = live.mode;
   }
 
-  async listMeetings(since: string): Promise<RecItem[]> {
+  owner(): string {
+    return typeof this.o.owner === 'function' ? this.o.owner() : this.o.owner;
+  }
+
+  /** Nachtruns van de persoonlijke nachtdienst van deze collega (nieuwste eerst). */
+  async nightRuns(owner: string): Promise<NightRun[]> {
+    if (isLayerAware(this.context)) return this.context.nightRuns(owner.toLowerCase());
     const snap = await this.context.snapshot();
-    const run: NightRun | null = snap.status?.nachtdienst ? parseHeartbeatLine(snap.status.nachtdienst) : null;
-    const win = liveWindow(run ? [run] : [], this.o.now());
+    const same = (this.o.statusOwner ?? owner).toLowerCase() === owner.toLowerCase();
+    const run = same && snap.status?.nachtdienst ? parseHeartbeatLine(snap.status.nachtdienst) : null;
+    return run ? [run] : [];
+  }
+
+  async listMeetings(since: string): Promise<RecItem[]> {
+    const owner = this.owner();
+    const win = liveWindow(await this.nightRuns(owner), this.o.now());
     this.lastWindow = { since: win.since, basis: win.basis, missedNight: win.missedNight };
     const askedFrom = amsterdamToInstant(since.length === 10 ? since : since.slice(0, 16));
     const liveFrom = new Date(Math.max(+askedFrom, +win.since));
     const [layer, live] = await Promise.all([
-      layerMeetings(this.context, this.o.owner, since),
+      layerMeetings(this.context, owner, since),
       this.live.listMeetings(toLocal(liveFrom)).catch((e) => {
         if (e instanceof NotConnectedError) return [] as RecItem[];
         throw e;

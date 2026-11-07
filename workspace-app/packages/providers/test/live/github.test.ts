@@ -12,6 +12,7 @@ import {
   GitHubContext,
   UserScopedGitHubContext,
   allowedPath,
+  createProviders,
   currentUserId,
   withUserScope,
 } from '../../src';
@@ -103,6 +104,22 @@ describe('contextlaag via GitHub (lezen)', () => {
     expect(a.pers).not.toBeNull();
     expect(b.pers).toBeNull();
     expect(made).toEqual(['a', 'b']);
+  });
+
+  it("createProviders: owner per ingelogde collega (twee collega's), niet de globale HZ_OWNER", async () => {
+    repos['HomeZeroTech/HomeZero-context']!['_systeem/routines/lisanne.md'] =
+      '---\ntitel: Heartbeat (synthetisch)\n---\n- 2026-11-06 00:20Z | groen | gezien 1\n';
+    const b = createProviders(
+      { HZ_LIVE_GITHUB: '1', HZ_OWNER: 'Robert', HZ_GITHUB_PERSOONLIJK_REPO: 'robert/context-prive' },
+      creds('ghu_test'),
+    );
+    const robert = await withUserScope('u-robert', () => b.providers.context.snapshot(), { name: 'Robert' });
+    const lisanne = await withUserScope('u-lisanne', () => b.providers.context.snapshot(), { name: 'Lisanne' });
+    // Eigen heartbeat (nachtrun-venster) per collega; de Persoonlijk-repo van Robert alleen voor Robert.
+    expect(robert.status?.nachtdienst).toMatch(/^2026-11-04 00:16/);
+    expect(lisanne.status?.nachtdienst).toMatch(/^2026-11-06 00:20Z/);
+    expect(robert.pers).not.toBeNull();
+    expect(lisanne.pers).toBeNull();
   });
 
   it('alleen paden die de app leest', () => {

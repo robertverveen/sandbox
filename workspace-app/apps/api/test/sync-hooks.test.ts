@@ -39,7 +39,27 @@ let robert: string;
 const bus = new EventBus();
 const posted: unknown[] = [];
 const revoked: string[] = [];
+const authLists: Array<{ auth: string | null; body: Record<string, string> }> = [];
 const server = setupServer(
+  // apps.event.authorizations.list: app-level token in de header; twee pagina's (cursor), één bot die niet telt.
+  http.post('https://slack.com/api/apps.event.authorizations.list', async ({ request }) => {
+    const body = Object.fromEntries(new URLSearchParams(await request.text()));
+    authLists.push({ auth: request.headers.get('authorization'), body });
+    if (request.headers.get('authorization') !== 'Bearer xapp-test')
+      return HttpResponse.json({ ok: false, error: 'not_allowed_token_type' });
+    return HttpResponse.json(
+      body.cursor
+        ? { ok: true, authorizations: [{ team_id: 'T', user_id: 'U0LISANNE', is_bot: false }] }
+        : {
+            ok: true,
+            authorizations: [
+              { team_id: 'T', user_id: 'U04L22BRJQ7', is_bot: false },
+              { team_id: 'T', user_id: 'BBOT', is_bot: true },
+            ],
+            response_metadata: { next_cursor: 'p2' },
+          },
+    );
+  }),
   http.get(`${SLACK_BASE}/auth.test`, () => HttpResponse.json({ ok: true, user_id: 'U04L22BRJQ7', team_id: 'T' })),
   http.post(`${SLACK_BASE}/chat.postMessage`, async ({ request }) => {
     posted.push(Object.fromEntries(new URLSearchParams(await request.text())));
@@ -183,6 +203,107 @@ describe('Slack Events (webhook)', () => {
   });
 });
 
+describe("Slack Events met twee collega's in één kanaal", () => {
+  let lisanne: string;
+  const farAway = async (u: string) =>
+    finishSync(
+      db,
+      u,
+      'slack',
+      { status: 'idle', failures: 0, nextRunAt: new Date('2099-01-01T00:00:00Z') },
+      new Date(),
+    );
+  const pushed = async (u: string) => (await getSyncJob(db, u, 'slack'))!.nextRunAt.getFullYear() < 2099;
+  beforeAll(async () => {
+    lisanne = (await upsertUser(db, 'lisanne@homezero.nl', 'Lisanne de Vries')).id;
+    await ensureSyncJobs(db, lisanne, [{ provider: 'slack', account: 'U0LISANNE' }]);
+  });
+
+  it('authorizations noemt alleen Robert, maar Lisanne zit ook in het kanaal: beiden krijgen een run', async () => {
+    // Kanaal-id's per collega komen uit de vorige sync (metadata in sync_jobs.push).
+    for (const u of [robert, lisanne])
+      await finishSync(
+        db,
+        u,
+        'slack',
+        {
+          status: 'idle',
+          failures: 0,
+          nextRunAt: new Date('2099-01-01T00:00:00Z'),
+          push: { slackChannels: ['CGEDEELD', u === robert ? 'DROBERT' : 'DLISANNE'] },
+        },
+        new Date(),
+      );
+    const body = JSON.stringify({
+      type: 'event_callback',
+      event_id: 'EvGedeeld1',
+      event_context: 'EC-gedeeld-1',
+      authorizations: [{ user_id: 'U04L22BRJQ7' }],
+      event: { type: 'message', channel: 'CGEDEELD', ts: '1793262800.000100', user: 'UANNA' },
+    });
+    expect((await req('POST', '/api/hooks/slack', { body, headers: slackSig(body) })).status).toBe(200);
+    expect(await pushed(robert)).toBe(true);
+    expect(await pushed(lisanne)).toBe(true);
+    // Elk een eigen event (ontdubbeld per collega), alleen metadata.
+    const ev = await withPurpose(db, 'system', (tx) =>
+      tx.execute(sql`select user_id from sync_events where event_id like 'EvGedeeld1%' order by user_id`),
+    );
+    expect(ev.rows.map((r) => (r as { user_id: string }).user_id).sort()).toEqual([robert, lisanne].sort());
+  });
+
+  it('een DM van alleen Robert zet geen run klaar voor Lisanne', async () => {
+    await farAway(robert);
+    await farAway(lisanne);
+    const body = JSON.stringify({
+      type: 'event_callback',
+      event_id: 'EvDm1',
+      authorizations: [{ user_id: 'U04L22BRJQ7' }],
+      event: { type: 'message', channel: 'DROBERT', ts: '1793262900.000100', user: 'UANNA' },
+    });
+    expect((await req('POST', '/api/hooks/slack', { body, headers: slackSig(body) })).status).toBe(200);
+    expect(await pushed(robert)).toBe(true);
+    expect(await pushed(lisanne)).toBe(false);
+  });
+
+  it("met app-level token: apps.event.authorizations.list (alle pagina's) vindt ook wie de sync nog niet kent", async () => {
+    await farAway(robert);
+    await farAway(lisanne);
+    // Kanaal nog bij niemand bekend behalve Robert (Lisanne is net lid geworden).
+    await finishSync(
+      db,
+      robert,
+      'slack',
+      { status: 'idle', failures: 0, nextRunAt: new Date('2099-01-01T00:00:00Z'), push: { slackChannels: ['CNIEUW'] } },
+      new Date(),
+    );
+    const { app: withToken } = createApp({
+      config: loadConfig({ NODE_ENV: 'test', HZ_STORE: 'db', DATABASE_URL: URL_ }),
+      bundle: createProviders({}),
+      store,
+      sync: { db, slackSigningSecret: SIGNING, slackAppToken: 'xapp-test' },
+    });
+    const body = JSON.stringify({
+      type: 'event_callback',
+      event_id: 'EvNieuw1',
+      event_context: 'EC-nieuw-1',
+      authorizations: [{ user_id: 'U04L22BRJQ7' }],
+      event: { type: 'message', channel: 'CNIEUW', ts: '1793263000.000100', user: 'UANNA' },
+    });
+    const res = await withToken.request('/api/hooks/slack', {
+      method: 'POST',
+      body,
+      headers: { 'content-type': 'application/json', ...slackSig(body) },
+    });
+    expect(res.status).toBe(200);
+    expect(authLists.map((a) => [a.auth, a.body.event_context, a.body.cursor ?? null])).toEqual([
+      ['Bearer xapp-test', 'EC-nieuw-1', null],
+      ['Bearer xapp-test', 'EC-nieuw-1', 'p2'],
+    ]);
+    expect(await pushed(robert)).toBe(true);
+    expect(await pushed(lisanne)).toBe(true);
+  });
+});
+
 describe('Google-push', () => {
   it('Agenda: alleen met het juiste kanaaltoken; sync-bericht doet niets; wijziging zet een run klaar', async () => {
     const h = (token: string, state = 'exists', n = '2') => ({
@@ -248,6 +369,8 @@ describe('SSE en sync-stand', () => {
     const s = routes.syncStatus.response.parse(await (await req('GET', '/api/sync/status')).json());
     expect(s.jobs.map((j) => j.provider)).toEqual(['calendar', 'gmail', 'slack']);
     expect(s.jobs.find((j) => j.provider === 'calendar')!.push).toBe(true);
+    // Slack telt pas als push als er echt events binnenkomen (zie de worker), niet omdat het Slack is.
+    expect(s.jobs.find((j) => j.provider === 'slack')!.push).toBe(false);
     await finishSync(
       db,
       robert,

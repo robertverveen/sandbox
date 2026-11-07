@@ -85,9 +85,12 @@ export function oauthClientsFromEnv(env: Record<string, string | undefined>): Pa
 }
 
 /** Per request (API) of per job (worker): voor welke collega werken we. */
-const scope = new AsyncLocalStorage<{ userId: string }>();
-export const withUserScope = <T>(userId: string, fn: () => T): T => scope.run({ userId }, fn);
+const scope = new AsyncLocalStorage<{ userId: string; name?: string }>();
+/** `name`: voornaam van de collega (owner in de contextlaag: eigen meetings, eigen nachtrun, eigen acties). */
+export const withUserScope = <T>(userId: string, fn: () => T, meta: { name?: string | null } = {}): T =>
+  scope.run({ userId, name: meta.name ?? undefined }, fn);
 export const currentUserId = (): string | undefined => scope.getStore()?.userId;
+export const currentUserName = (): string | undefined => scope.getStore()?.name;
 
 export interface UserCredentialsOptions {
   store: TokenStore;
@@ -184,7 +187,12 @@ export function createUserCredentials(o: UserCredentialsOptions): LiveCredential
     accessToken: async (provider) => (await stored(provider)).access_token,
     rejected: async (provider) => {
       const userId = typeof o.userId === 'function' ? o.userId() : (o.userId ?? currentUserId());
-      if (userId) await o.store.markReauth?.(userId, provider, '401');
+      if (!userId) return;
+      // Afkeuren raakt de rij die het token echt draagt: zonder eigen rij is dat de gedeelde Google-koppeling.
+      let key = provider;
+      if (OAUTH_FAMILY[provider] === 'google' && !(await o.store.load(userId, provider)))
+        if (await o.store.load(userId, 'google')) key = 'google';
+      await o.store.markReauth?.(userId, key, '401');
     },
   };
 }

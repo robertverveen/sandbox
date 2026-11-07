@@ -16,7 +16,7 @@ import type { ContextSnapshot } from '@hz/shared';
 import { ContextSnapshot as SnapshotSchema } from '@hz/shared';
 import { pd, wall } from '@hz/shared/logic';
 import { lastSuccessfulRun } from '@hz/context';
-import { ExportContext, FixtureContext, RepoContext, isLayerAware } from './context';
+import { ExportContext, FixtureContext, OwnerScopedContext, RepoContext, isLayerAware } from './context';
 import { loadFixtureSet, type FixtureDataset, type FixtureSetName } from './fixtures/dataset';
 import {
   FakeAnthropic,
@@ -43,6 +43,7 @@ import {
   SlackTodos,
   UserScopedGitHubContext,
   currentUserId,
+  currentUserName,
   type LiveCredentials,
   type SyncStore,
 } from './live';
@@ -114,7 +115,10 @@ export function createProviders(
 
   const store = liveOpts.store ?? new MemorySyncStore();
   const fetchImpl = liveOpts.fetchImpl;
-  const owner = env.HZ_OWNER || 'Robert';
+  // Owner = voornaam van de ingelogde collega (scope); HZ_OWNER alleen zonder scope (CLI, tests) en voor de
+  // Persoonlijk-repo op schijf. Zo krijgt elke collega eigen meetings, eigen nachtrun en eigen acties.
+  const defaultOwner = env.HZ_OWNER || 'Robert';
+  const owner = () => currentUserName() || defaultOwner;
   const wallNow = () => new Date();
 
   let context: Providers['context'];
@@ -124,16 +128,27 @@ export function createProviders(
       (userId) =>
         new GitHubContext(creds, {
           repo: env.HZ_GITHUB_CONTEXT_REPO || 'HomeZeroTech/HomeZero-context',
-          persoonlijk: liveOpts.persoonlijkRepoFor?.(userId) ?? env.HZ_GITHUB_PERSOONLIJK_REPO ?? null,
-          owner,
+          persoonlijk:
+            liveOpts.persoonlijkRepoFor?.(userId) ??
+            (owner().toLowerCase() === defaultOwner.toLowerCase() ? (env.HZ_GITHUB_PERSOONLIJK_REPO ?? null) : null),
+          owner: owner(),
           fetchImpl,
         }),
       currentUserId,
     );
   } else if (env.HZ_CONTEXT_EXPORT) context = new ExportContext(env.HZ_CONTEXT_EXPORT);
-  else if (env.HZ_CONTEXT_REPO)
-    context = new RepoContext(env.HZ_CONTEXT_REPO, env.HZ_PERSOONLIJK_REPO || null, env.HZ_OWNER || 'Robert');
-  else context = new FixtureContext(SnapshotSchema.parse(dataset.context) as ContextSnapshot);
+  else if (env.HZ_CONTEXT_REPO) {
+    const repo = env.HZ_CONTEXT_REPO;
+    context = new OwnerScopedContext(
+      (who) =>
+        new RepoContext(
+          repo,
+          who.toLowerCase() === defaultOwner.toLowerCase() ? env.HZ_PERSOONLIJK_REPO || null : null,
+          who,
+        ),
+      owner,
+    );
+  } else context = new FixtureContext(SnapshotSchema.parse(dataset.context) as ContextSnapshot);
 
   const providers: Providers = {
     calendar: pick<Providers['calendar']>(
@@ -180,6 +195,7 @@ export function createProviders(
       () =>
         new ContextFirstWispr(new LiveWispr(creds, { url: env.HZ_WISPR_MCP_URL, fetchImpl }), context, {
           owner,
+          statusOwner: defaultOwner,
           now: wallNow,
         }),
     ),

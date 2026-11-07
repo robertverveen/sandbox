@@ -13,7 +13,9 @@ import {
   ensureSyncJobs,
   finishSync,
   hookToken,
+  hasSyncEvents,
   getSyncJob,
+  userFirstName,
   markSyncRunning,
   notifyUser,
   pruneSyncEvents,
@@ -39,6 +41,8 @@ export function dbSyncRepo(db: Db, masterKey: Buffer): SyncRepo {
     takeEvents: (u, s) => takeSyncEvents(db, u, s),
     notify: (u, keys) => notifyUser(db, u, keys),
     markReauth: (u, p, r) => tokens.markReauth(u, p, r),
+    hasEvents: (u, s) => hasSyncEvents(db, u, s),
+    userName: (u) => userFirstName(db, u),
   };
 }
 
@@ -72,6 +76,7 @@ export function createSyncDeps(o: SyncRuntimeOptions): SyncDeps {
     publicUrl: o.env.HZ_PUBLIC_URL,
     gmailTopic: o.env.HZ_GMAIL_PUBSUB_TOPIC,
     channelToken: o.env.HZ_HOOK_SECRET ? channelToken(o.env.HZ_HOOK_SECRET) : undefined,
+    slackEvents: !!o.env.HZ_SLACK_SIGNING_SECRET,
   };
 }
 

@@ -9,7 +9,17 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Hono } from 'hono';
 import pg from 'pg';
-import { EVENTS_CHANNEL, hookToken, recordSyncEvent, requestSync, userByAccount, userByChannel, type Db } from '@hz/db';
+import {
+  EVENTS_CHANNEL,
+  hookToken,
+  recordSyncEvent,
+  requestSync,
+  userByAccount,
+  userByChannel,
+  usersBySlackChannel,
+  usersWithJob,
+  type Db,
+} from '@hz/db';
 import type { EventBus } from './events';
 
 export interface SyncHookOptions {
@@ -19,8 +29,15 @@ export interface SyncHookOptions {
   /** Geheim voor Agenda- en Gmail-hooktokens (HZ_HOOK_SECRET). */
   hookSecret?: string;
   now?: () => number;
+  /**
+   * App-level token van de Slack-app (xapp-…, scope authorizations:read; HZ_SLACK_APP_TOKEN). Slack zet in een event
+   * maar één collega in `authorizations`; apps.event.authorizations.list geeft alle collega's die het event zien.
+   */
+  slackAppToken?: string;
+  /** Alleen voor tests: fetch vervangen. */
+  fetchImpl?: typeof fetch;
   /** Ontkoppelen: token intrekken bij de bron en uit de database wissen. */
-  revoke?: (userId: string, provider: string) => Promise<void>;
+  revoke?: (userId: string, provider: string) => Promise<{ wiped?: string[] } | void>;
 }
 
 const safeEq = (a: string, b: string) => {
@@ -44,6 +61,43 @@ export function verifySlackSignature(
 }
 
 type Env = { Variables: Record<string, unknown> };
+
+export const SLACK_AUTHORIZATIONS_URL = 'https://slack.com/api/apps.event.authorizations.list';
+
+/**
+ * Alle Slack-gebruikers die dit event zien (apps.event.authorizations.list, gepagineerd). Het app-level token gaat in
+ * de Authorization-header (verplicht volgens de Slack-documentatie). Fout of geen token: lege lijst (terugval).
+ */
+export async function slackEventAuthorizations(
+  appToken: string,
+  eventContext: string,
+  fetchImpl: typeof fetch = (...a) => fetch(...a),
+): Promise<string[]> {
+  const out: string[] = [];
+  let cursor = '';
+  for (let page = 0; page < 10; page++) {
+    const res = await fetchImpl(SLACK_AUTHORIZATIONS_URL, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${appToken}`, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        event_context: eventContext,
+        limit: '100',
+        ...(cursor ? { cursor } : {}),
+      }).toString(),
+    });
+    const j = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      authorizations?: Array<{ user_id?: string; is_bot?: boolean | string }>;
+      response_metadata?: { next_cursor?: string };
+    };
+    if (!j.ok) break;
+    for (const a of j.authorizations ?? [])
+      if (a.user_id && a.is_bot !== true && a.is_bot !== 'true') out.push(a.user_id);
+    cursor = j.response_metadata?.next_cursor ?? '';
+    if (!cursor) break;
+  }
+  return out;
+}
 
 export function registerSyncHooks<E extends Env>(app: Hono<E>, o: SyncHookOptions) {
   const now = o.now ?? Date.now;
@@ -69,8 +123,17 @@ export function registerSyncHooks<E extends Env>(app: Hono<E>, o: SyncHookOption
       type?: string;
       challenge?: string;
       event_id?: string;
+      event_context?: string;
       authorizations?: Array<{ user_id?: string }>;
-      event?: { type?: string; channel?: string; ts?: string; user?: string; subtype?: string; event_ts?: string };
+      event?: {
+        type?: string;
+        channel?: string;
+        ts?: string;
+        user?: string;
+        subtype?: string;
+        event_ts?: string;
+        item?: { channel?: string; ts?: string };
+      };
     };
     try {
       body = JSON.parse(raw);
@@ -80,18 +143,36 @@ export function registerSyncHooks<E extends Env>(app: Hono<E>, o: SyncHookOption
     if (body.type === 'url_verification') return c.json({ challenge: body.challenge ?? '' });
     if (body.type !== 'event_callback' || !body.event_id || !body.event) return c.json({ ok: true });
     const ev = body.event;
-    const accounts = [
-      ...new Set([...(body.authorizations ?? []).map((a) => a.user_id), ev.user].filter(Boolean) as string[]),
-    ];
-    let handled = 0;
+    const channel = ev.channel ?? ev.item?.channel;
+    // Wie ziet dit event? Slack zet maar één installatie in `authorizations` (ook als het kanaal gedeeld is met
+    // meer collega's). Daarom: (1) alle installaties via apps.event.authorizations.list (app-level token),
+    // (2) collega's van wie de laatste sync dit kanaal kent (kanaal-id's als metadata in sync_jobs.push),
+    // (3) kent niemand het kanaal (nieuw gesprek): alle collega's met een Slack-sync; hun run is een goedkope poll.
+    const accounts = new Set(
+      [...(body.authorizations ?? []).map((a) => a.user_id), ev.user].filter(Boolean) as string[],
+    );
+    if (o.slackAppToken && body.event_context)
+      for (const u of await slackEventAuthorizations(o.slackAppToken, body.event_context, o.fetchImpl).catch(
+        () => [] as string[],
+      ))
+        accounts.add(u);
+    const targets = new Set<string>();
     for (const acc of accounts) {
       const userId = await userByAccount(o.db, 'slack', acc);
-      if (!userId) continue;
+      if (userId) targets.add(userId);
+    }
+    if (channel) {
+      const members = await usersBySlackChannel(o.db, channel);
+      for (const u of members) targets.add(u);
+      if (!members.length) for (const j of await usersWithJob(o.db, 'slack')) targets.add(j.userId);
+    }
+    let handled = 0;
+    for (const userId of targets) {
       // Alleen metadata, geen berichttekst.
       const payload = {
         type: ev.type,
-        channel: ev.channel,
-        ts: ev.ts ?? ev.event_ts,
+        channel,
+        ts: ev.ts ?? ev.item?.ts ?? ev.event_ts,
         user: ev.user,
         subtype: ev.subtype,
       };

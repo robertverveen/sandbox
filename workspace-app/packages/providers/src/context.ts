@@ -75,6 +75,41 @@ export class RepoContext implements ContextProvider {
   }
 }
 
+/**
+ * Per collega een eigen kijk op de repo's op schijf (lokaal en in de harness): owner = voornaam uit de scope, zodat
+ * partneracties, heartbeat en meetings van die collega zijn. De Persoonlijk-repo op schijf hoort bij één collega
+ * (HZ_OWNER); anderen zien hem niet.
+ */
+export class OwnerScopedContext implements ContextProvider {
+  readonly mode = 'live' as const;
+  readonly source: ContextProvider['source'];
+  private per = new Map<string, ContextProvider & Partial<LayerAware>>();
+  constructor(
+    readonly make: (owner: string) => ContextProvider & Partial<LayerAware>,
+    readonly owner: () => string,
+  ) {
+    this.source = this.current().source;
+  }
+  private current() {
+    const o = this.owner().toLowerCase();
+    let c = this.per.get(o);
+    if (!c) {
+      c = this.make(this.owner());
+      this.per.set(o, c);
+    }
+    return c;
+  }
+  snapshot() {
+    return this.current().snapshot();
+  }
+  async jiraLayer(): Promise<JiraLayerIssue[]> {
+    return this.current().jiraLayer?.() ?? [];
+  }
+  async nightRuns(routine: string): Promise<NightRun[]> {
+    return this.current().nightRuns?.(routine) ?? [];
+  }
+}
+
 /** Een contextbron die ook de ruwe laag kan lezen (Jira per epic, heartbeats). */
 export interface LayerAware {
   jiraLayer(): Promise<JiraLayerIssue[]>;

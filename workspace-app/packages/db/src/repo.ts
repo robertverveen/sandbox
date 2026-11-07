@@ -222,7 +222,12 @@ export async function updateWeekdoel(
 export async function listConnections(db: Db, userId: string) {
   return withUser(db, userId, (tx) =>
     tx
-      .select({ provider: connections.provider, status: connections.status, connectedAt: connections.connectedAt })
+      .select({
+        provider: connections.provider,
+        status: connections.status,
+        connectedAt: connections.connectedAt,
+        scopes: connections.scopes,
+      })
       .from(connections),
   );
 }

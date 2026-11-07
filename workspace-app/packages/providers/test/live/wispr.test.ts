@@ -2,10 +2,24 @@
  * HZW-035 zelftest: meeting van gisteren zichtbaar, ook als de nachtdienst hem nog niet had. De laag levert de
  * verwerkte meetings; live Wispr (nep-MCP-server in msw) alleen wat na de laatste nachtrun kwam.
  */
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { ContextSnapshot, RecItem } from '@hz/shared';
-import { ContextFirstWispr, FixtureContext, LiveWispr, NotConnectedError, type WisprProvider } from '../../src';
+import {
+  ContextFirstWispr,
+  FixtureContext,
+  LiveWispr,
+  NotConnectedError,
+  OwnerScopedContext,
+  RepoContext,
+  createProviders,
+  currentUserName,
+  withUserScope,
+  type WisprProvider,
+} from '../../src';
 import { creds, mockServer } from './msw';
 
 const MCP = 'https://wispr-mcp.test.invalid/mcp';
@@ -51,8 +65,11 @@ const snapshot = (nachtdienst: string): ContextSnapshot =>
   });
 
 let calls: Array<{ method: string; params: Record<string, unknown> }>;
+/** Aan: search_meetings geeft pagina's van één meeting met has_more/next_cursor (zoals de echte Wispr-server). */
+let paged = false;
 beforeEach(() => {
   calls = [];
+  paged = false;
 });
 
 const { server } = mockServer(
@@ -91,9 +108,26 @@ const { server } = mockServer(
         share_link: 'https://notes.wisprflow.ai/shared/wm-0511',
       },
     ];
+    let payload: Record<string, unknown> = { meetings };
+    if (paged) {
+      // Drie pagina's: c1 -> c2 -> einde. Pagina 2 herhaalt een meeting (mag geen dubbel item worden).
+      const cur = (b.params.arguments as { cursor?: string }).cursor;
+      const extra = {
+        id: 'wm-0411',
+        title: 'Oudere opname',
+        start: '2026-11-06T08:00:00Z',
+        end: '2026-11-06T08:30:00Z',
+      };
+      payload =
+        cur === undefined
+          ? { meetings: [meetings[0]], has_more: true, next_cursor: 'c1', more: '2 meer' }
+          : cur === 'c1'
+            ? { meetings: [meetings[1], meetings[0]], has_more: true, next_cursor: 'c2' }
+            : { meetings: [extra], has_more: false, next_cursor: null };
+    }
     // Antwoord als SSE (streamable HTTP), zoals een MCP-server mag doen.
     return new HttpResponse(
-      `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: b.id, result: { content: [{ type: 'text', text: JSON.stringify({ meetings }) }] } })}\n\n`,
+      `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: b.id, result: { content: [{ type: 'text', text: JSON.stringify(payload) }] } })}\n\n`,
       {
         headers: { 'content-type': 'text/event-stream' },
       },
@@ -129,7 +163,7 @@ describe('meetings: contextlaag eerst, live Wispr na de nachtrun (HZW-035)', () 
     const call = calls.find((c) => c.method === 'tools/call')!;
     expect(call.params).toEqual({
       name: 'search_meetings',
-      arguments: { since: '2026-11-05T23:46:00.000Z', limit: 60 },
+      arguments: { since: '2026-11-05T23:46:00.000Z', limit: 100 },
     });
     expect(w.lastWindow).toMatchObject({ basis: 'nachtrun', missedNight: false });
   });
@@ -158,8 +192,106 @@ describe('meetings: contextlaag eerst, live Wispr na de nachtrun (HZW-035)', () 
     expect(items[0]).toMatchObject({ processed: true, start: '2026-11-05' });
   });
 
+  it('LiveWispr volgt has_more en next_cursor tot het einde (geen stop na één pagina)', async () => {
+    paged = true;
+    const items = await new LiveWispr(creds(), { url: MCP }).listMeetings('2026-11-01T00:00');
+    expect(items.map((i) => i.rawId).sort()).toEqual(['wm-0411', 'wm-0511', 'wm-0611']);
+    const pages = calls.filter((c) => c.method === 'tools/call').map((c) => c.params.arguments);
+    expect(pages).toEqual([
+      { since: '2026-10-31T23:00:00.000Z', limit: 100 },
+      { since: '2026-10-31T23:00:00.000Z', limit: 100, cursor: 'c1' },
+      { since: '2026-10-31T23:00:00.000Z', limit: 100, cursor: 'c2' },
+    ]);
+  });
+
   it('LiveWispr zonder endpoint gooit NotConnectedError (geen stille terugval)', async () => {
     await expect(new LiveWispr(creds()).listMeetings('2026-11-06')).rejects.toBeInstanceOf(NotConnectedError);
     void server;
+  });
+});
+
+/* ---------- Meerdere collega's: owner per ingelogde collega, niet de globale HZ_OWNER ---------- */
+
+const FIX = join(import.meta.dirname, '../../../context/test/fixtures');
+const tmp = mkdtempSync(join(tmpdir(), 'hz-wispr-owner-'));
+const ctxDir = join(tmp, 'ctx');
+const priveDir = join(tmp, 'prive');
+cpSync(join(FIX, 'ctx'), ctxDir, { recursive: true });
+cpSync(join(FIX, 'prive'), priveDir, { recursive: true });
+// Synthetisch: Lisanne heeft een eigen nachtrun (later dan die van Robert) en een eigen opname in de laag.
+writeFileSync(
+  join(ctxDir, '_systeem/routines/lisanne.md'),
+  '---\ntitel: Heartbeat (synthetisch)\n---\n# Heartbeat\n\n- 2026-11-06 00:20Z | groen | gezien 1 | verwerkt 1\n',
+);
+writeFileSync(
+  join(ctxDir, 'partners/zonnig/meetings/2026-11-05-demo-lisanne.md'),
+  '---\nmeeting_id: evt-demo-lisanne\ndatum: 2026-11-05\npartners: [zonnig]\nopgenomen_door: Lisanne\nbron: -\n---\n## Samenvatting\n- Demo gegeven.\n',
+);
+afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+
+describe("meetings per collega (twee collega's, één proces)", () => {
+  it('elke collega eigen laagmeetings en eigen nachtrun-venster', async () => {
+    const ctx = new OwnerScopedContext(
+      (who) => new RepoContext(ctxDir, who === 'Robert' ? priveDir : null, who),
+      () => currentUserName() ?? 'Robert',
+    );
+    const w = new ContextFirstWispr(new LiveWispr(creds(), { url: MCP }), ctx, {
+      owner: () => currentUserName() ?? 'Robert',
+      statusOwner: 'Robert',
+      now: NOW,
+    });
+    const robert = await withUserScope('u-robert', () => w.listMeetings('2026-10-15'), { name: 'Robert' });
+    const robertSince = (calls.filter((c) => c.method === 'tools/call').at(-1)!.params.arguments as { since: string })
+      .since;
+    const lisanne = await withUserScope('u-lisanne', () => w.listMeetings('2026-10-15'), { name: 'Lisanne' });
+    const lisanneSince = (calls.filter((c) => c.method === 'tools/call').at(-1)!.params.arguments as { since: string })
+      .since;
+    const layer = (xs: RecItem[]) => xs.filter((i) => i.processed && i.rawId.startsWith('evt-')).map((i) => i.rawId);
+    expect(layer(robert).sort()).toEqual(['evt-kickoff', 'evt-werksessie']);
+    expect(layer(lisanne)).toEqual(['evt-demo-lisanne']);
+    // Robert: laatste run 4 nov 00:16 Amsterdam (= 3 nov 23:16Z) min 30 min; Lisanne: 6 nov 00:20Z min 30 min.
+    expect(robertSince).toBe('2026-11-03T22:46:00.000Z');
+    expect(lisanneSince).toBe('2026-11-05T23:50:00.000Z');
+    // Zonder eigen heartbeat: geen run van een ander lenen, maar het ruime venster (7 dagen).
+    await withUserScope('u-mike', () => w.listMeetings('2026-10-15'), { name: 'Mike' });
+    expect(w.lastWindow).toMatchObject({ basis: 'geen-run', missedNight: true });
+  });
+
+  it('createProviders: owner, Persoonlijk-repo en heartbeat volgen de ingelogde collega', async () => {
+    const b = createProviders(
+      {
+        HZ_CONTEXT_REPO: ctxDir,
+        HZ_PERSOONLIJK_REPO: priveDir,
+        HZ_OWNER: 'Robert',
+        HZ_LIVE_WISPR: '1',
+        HZ_WISPR_MCP_URL: MCP,
+      },
+      creds(),
+    );
+    const w = b.providers.wispr as ContextFirstWispr;
+    const r = await withUserScope(
+      'u-robert',
+      async () => ({ owner: w.owner(), snap: await b.providers.context.snapshot() }),
+      {
+        name: 'Robert',
+      },
+    );
+    const l = await withUserScope(
+      'u-lisanne',
+      async () => ({
+        owner: w.owner(),
+        snap: await b.providers.context.snapshot(),
+        runs: await w.nightRuns(w.owner()),
+      }),
+      { name: 'Lisanne' },
+    );
+    expect(r.owner).toBe('Robert');
+    expect(l.owner).toBe('Lisanne');
+    // De Persoonlijk-repo op schijf is van Robert: Lisanne ziet hem niet.
+    expect(r.snap.pers).not.toBeNull();
+    expect(l.snap.pers).toBeNull();
+    expect(r.snap.status?.nachtdienst).toMatch(/^2026-11-04 00:16/);
+    expect(l.snap.status?.nachtdienst).toMatch(/^2026-11-06 00:20Z/);
+    expect(l.runs[0]!.at.toISOString()).toBe('2026-11-06T00:20:00.000Z');
   });
 });

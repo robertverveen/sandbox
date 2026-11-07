@@ -1,6 +1,6 @@
 /** Start de API: `pnpm --filter @hz/api dev`. Poort HZ_API_PORT (standaard 8700). */
 import { serve } from '@hono/node-server';
-import { createDb, dbSyncStore, dbTokenStore, parseMasterKey } from '@hz/db';
+import { createDb, dbSyncStore, dbTokenStore, disconnectSource, parseMasterKey } from '@hz/db';
 import {
   createProviders,
   createUserCredentials,
@@ -31,13 +31,14 @@ const syncDb = config.HZ_STORE === 'db' && config.DATABASE_URL ? createDb(config
 let creds: LiveCredentials | undefined;
 const tokens = syncDb && config.HZ_TOKEN_KEY ? dbTokenStore(syncDb.db, parseMasterKey(config.HZ_TOKEN_KEY)) : null;
 if (tokens) creds = createUserCredentials({ store: tokens, clients: oauthClientsFromEnv(process.env) });
-/** Ontkoppelen: intrekken bij Google of Slack, daarna het versleutelde token wissen (ook als intrekken mislukt). */
-const revoke = tokens
-  ? async (userId: string, provider: string) => {
-      const t = await tokens.load(userId, provider).catch(() => null);
-      if (t) await revokeToken(provider, t);
-      await tokens.clear(userId, provider);
-    }
+/**
+ * Ontkoppelen: intrekken bij Google of Slack, daarna het versleutelde token en de sync-data wissen (ook als intrekken
+ * mislukt). Een Google-bron zonder eigen rij gebruikt de gedeelde koppeling 'google'; Google trekt dan alles in.
+ */
+const masterKey = config.HZ_TOKEN_KEY ? parseMasterKey(config.HZ_TOKEN_KEY) : null;
+const revoke = syncDb
+  ? (userId: string, provider: string) =>
+      disconnectSource(syncDb.db, masterKey, userId, provider, (p, t) => revokeToken(p, t))
   : undefined;
 const bundle = createProviders(process.env, creds, syncDb ? { store: dbSyncStore(syncDb.db, currentUserId) } : {});
 const store: AppStore = config.HZ_STORE === 'db' ? new DbStore(config.DATABASE_URL!) : new MemoryStore(bundle.dataset);
@@ -50,6 +51,7 @@ const { app } = createApp({
   sync: {
     db: syncDb?.db ?? null,
     slackSigningSecret: process.env.HZ_SLACK_SIGNING_SECRET,
+    slackAppToken: process.env.HZ_SLACK_APP_TOKEN,
     hookSecret: process.env.HZ_HOOK_SECRET,
     revoke,
   },

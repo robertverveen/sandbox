@@ -47,9 +47,45 @@ export function dbSyncStore(db: Db, userId: () => string | undefined) {
   };
 }
 
+/** Google-bronnen die één gedeelde koppeling 'google' kunnen gebruiken (één OAuth-client, K1). */
+export const GOOGLE_SOURCES = ['calendar', 'google_tasks', 'gmail'] as const;
+/** Welke verleende scope bij welke Google-bron hoort. */
+export const GOOGLE_SCOPE: Record<(typeof GOOGLE_SOURCES)[number], RegExp> = {
+  calendar: /auth\/calendar/,
+  google_tasks: /auth\/tasks/,
+  gmail: /auth\/gmail/,
+};
+const isGoogleSource = (p: string): p is (typeof GOOGLE_SOURCES)[number] =>
+  (GOOGLE_SOURCES as readonly string[]).includes(p);
+
+type Tx = Parameters<Parameters<typeof withUser>[2]>[0];
+
+/**
+ * De rij in `connections` die het token voor deze bron echt draagt: een eigen rij met token, anders (Google) de
+ * gedeelde rij 'google'. Zonder token: de eigen naam (er valt dan niets in te trekken of af te keuren).
+ */
+async function tokenRow(tx: Tx, provider: string): Promise<string> {
+  const r = await tx.execute(
+    sql`select provider from connections where token_ciphertext is not null and provider in (${provider}, 'google')`,
+  );
+  const have = rows<{ provider: string }>(r).map((x) => x.provider);
+  if (have.includes(provider)) return provider;
+  if (isGoogleSource(provider) && have.includes('google')) return 'google';
+  return provider;
+}
+
+/** Planningsrijen die aan een tokenrij hangen ('google' = alle Google-bronnen zonder eigen token). */
+async function jobsOf(tx: Tx, row: string): Promise<string[]> {
+  if (row !== 'google') return [row];
+  const r = await tx.execute(sql`select provider from connections where token_ciphertext is not null`);
+  const own = new Set(rows<{ provider: string }>(r).map((x) => x.provider));
+  return GOOGLE_SOURCES.filter((g) => !own.has(g));
+}
+
 /**
  * TokenStore op `connections` (envelope-versleuteld). Verversen werkt alleen de versleutelde velden bij;
- * scopes en account blijven staan. 401 of geweigerd verversen: koppeling en sync op needs_reauth.
+ * scopes en account blijven staan. 401 of geweigerd verversen: koppeling en sync op needs_reauth. Een Google-bron
+ * zonder eigen rij gebruikt de gedeelde rij 'google'; afkeuren en wissen raken dan die rij.
  */
 export function dbTokenStore(db: Db, masterKey: Buffer) {
   return {
@@ -62,30 +98,120 @@ export function dbTokenStore(db: Db, masterKey: Buffer) {
           where provider = ${provider}`),
       );
     },
-    /** Ontkoppelen: versleuteld token weg (de rij blijft met status disconnected). */
-    async clear(userId: string, provider: string) {
-      await withUser(db, userId, async (tx) => {
+    /** Ontkoppelen: versleuteld token weg (de rij blijft met status disconnected). Geeft de gewiste rij terug. */
+    async clear(userId: string, provider: string): Promise<string> {
+      return withUser(db, userId, async (tx) => {
+        const row = await tokenRow(tx, provider);
         await tx.execute(sql`update connections set token_ciphertext = null, token_iv = null, token_tag = null, dek_wrapped = null,
-          status = 'disconnected' where provider = ${provider}`);
+          status = 'disconnected' where provider = ${row}`);
         await tx.execute(
-          sql`insert into audit_log (user_id, action, target) values (${userId}, 'connection.token_cleared', ${provider})`,
+          sql`insert into audit_log (user_id, action, target) values (${userId}, 'connection.token_cleared', ${row})`,
         );
+        return row;
       });
     },
     async markReauth(userId: string, provider: string, reason: string) {
       await withUser(db, userId, async (tx) => {
+        const row = await tokenRow(tx, provider);
+        const jobs = await jobsOf(tx, row);
         await tx.execute(
-          sql`update connections set status = 'needs_reauth', error = ${'opnieuw koppelen: ' + reason.slice(0, 80)} where provider = ${provider}`,
+          sql`update connections set status = 'needs_reauth', error = ${'opnieuw koppelen: ' + reason.slice(0, 80)} where provider = ${row}`,
         );
         await tx.execute(
-          sql`update sync_jobs set status = 'needs_reauth', last_error = 'token afgewezen' where provider = ${provider}`,
+          sql`update sync_jobs set status = 'needs_reauth', last_error = 'token afgewezen' where provider in (${sql.join(
+            [row, ...jobs].map((j) => sql`${j}`),
+            sql`, `,
+          )})`,
         );
         await tx.execute(
-          sql`insert into audit_log (user_id, action, target) values (${userId}, 'connection.needs_reauth', ${provider})`,
+          sql`insert into audit_log (user_id, action, target) values (${userId}, 'connection.needs_reauth', ${row})`,
         );
       });
     },
   };
+}
+
+export interface DisconnectResult {
+  /** Tokens die bij de bron zijn ingetrokken (aantal geslaagde intrekkingen). */
+  revoked: number;
+  /** Rijen in `connections` waarvan het token is gewist. */
+  cleared: string[];
+  /** Bronnen waarvan planning, cursors en events zijn gewist. */
+  wiped: string[];
+  /** Google-bronnen die nog toestemming hadden en nu opnieuw gekoppeld moeten worden (Google trekt alles in). */
+  needsReauth: string[];
+}
+
+/**
+ * Ontkoppelen (keuze 06): token intrekken bij de bron, versleuteld token wissen en de data van die bron wissen.
+ *
+ * Google kent geen intrekking per scope: het intrekken van één token trekt de hele toestemming van de collega voor
+ * onze OAuth-client in (Agenda, Taken en Gmail tegelijk). Ontkoppel je één Google-bron, dan gaan daarom alle
+ * Google-tokens van die collega weg (eigen rijen en de gedeelde rij 'google'), wordt de scope van die bron uit
+ * `connections.scopes` gehaald en staan de andere Google-bronnen die nog toestemming hadden op needs_reauth.
+ * Planning, cursors en events van alle drie de Google-bronnen gaan weg, zodat planSync niets opnieuw aanmaakt.
+ * Intrekken dat mislukt blokkeert het ontkoppelen nooit.
+ */
+export async function disconnectSource(
+  db: Db,
+  masterKey: Buffer | null,
+  userId: string,
+  provider: string,
+  revoke?: (provider: string, token: string) => Promise<unknown>,
+): Promise<DisconnectResult> {
+  const out: DisconnectResult = { revoked: 0, cleared: [], wiped: [], needsReauth: [] };
+  const google = isGoogleSource(provider);
+  const candidates = google ? [provider, ...GOOGLE_SOURCES.filter((g) => g !== provider), 'google'] : [provider];
+  const held = await withUser(db, userId, async (tx) => {
+    const r = await tx.execute(
+      sql`select provider, scopes from connections where token_ciphertext is not null and provider in (${sql.join(
+        candidates.map((c) => sql`${c}`),
+        sql`, `,
+      )})`,
+    );
+    return rows<{ provider: string; scopes: string[] | null }>(r);
+  });
+  // Eerst intrekken (met het token in de hand), daarna wissen.
+  for (const h of held) {
+    if (!revoke || !masterKey) break;
+    const t = await readConnectionToken(db, masterKey, userId, h.provider).catch(() => null);
+    if (!t) continue;
+    const res = await revoke(h.provider === 'google' ? provider : h.provider, t).catch(() => 'failed');
+    if (res === 'revoked') out.revoked++;
+  }
+  const stillGranted = new Set<string>();
+  for (const h of held) {
+    if (h.provider === provider) continue;
+    if (h.provider === 'google') {
+      for (const g of GOOGLE_SOURCES)
+        if (g !== provider && (h.scopes ?? []).some((s) => GOOGLE_SCOPE[g].test(s))) stillGranted.add(g);
+    } else stillGranted.add(h.provider);
+  }
+  await withUser(db, userId, async (tx) => {
+    for (const h of held) {
+      let scopes = h.scopes ?? [];
+      if (h.provider === 'google' && google) scopes = scopes.filter((s) => !GOOGLE_SCOPE[provider].test(s));
+      const reauth =
+        h.provider !== provider &&
+        (h.provider === 'google' ? GOOGLE_SOURCES.some((g) => stillGranted.has(g)) : stillGranted.has(h.provider));
+      await tx.execute(sql`update connections set token_ciphertext = null, token_iv = null, token_tag = null, dek_wrapped = null,
+        scopes = ${sql`array[${sql.join(
+          scopes.map((s) => sql`${s}`),
+          sql`, `,
+        )}]::text[]`},
+        status = ${reauth ? 'needs_reauth' : 'disconnected'},
+        error = ${reauth ? 'Google trekt alle rechten tegelijk in: opnieuw koppelen' : null}
+        where provider = ${h.provider}`);
+      await tx.execute(
+        sql`insert into audit_log (user_id, action, target) values (${userId}, 'connection.token_cleared', ${h.provider})`,
+      );
+      out.cleared.push(h.provider);
+    }
+  });
+  out.needsReauth = [...stillGranted];
+  out.wiped = google ? [...GOOGLE_SOURCES] : [provider];
+  for (const w of out.wiped) await wipeSyncData(db, userId, w);
+  return out;
 }
 
 export interface SyncJobRow {
@@ -119,6 +245,16 @@ const toJob = (r: Row): SyncJobRow => ({
 export async function syncUsers(db: Db): Promise<string[]> {
   const r = await withPurpose(db, 'system', (tx) => tx.execute(sql`select id from users where blocked_at is null`));
   return rows<{ id: string }>(r).map((x) => x.id);
+}
+
+/** Voornaam van een collega (owner in de contextlaag); alleen de naam, voor de worker ('system'). */
+export async function userFirstName(db: Db, userId: string): Promise<string | null> {
+  const r = await withPurpose(db, 'system', (tx) =>
+    tx.execute(sql`select name, email from users where id = ${userId}`),
+  );
+  const u = rows<{ name: string | null; email: string }>(r)[0];
+  if (!u) return null;
+  return (u.name || u.email.split('@')[0] || '').trim().split(/\s+/)[0] || null;
 }
 
 /** Gekoppelde bronnen van één collega (eigen transactie, RLS). */
@@ -230,6 +366,36 @@ export async function userByChannel(db: Db, provider: string, channelId: string)
     ),
   );
   return rows<{ user_id: string }>(r)[0]?.user_id ?? null;
+}
+
+/** Collega's met een Slack-sync die dit kanaal kennen (kanaal-id's staan als metadata in sync_jobs.push). */
+export async function usersBySlackChannel(db: Db, channelId: string): Promise<string[]> {
+  const r = await withPurpose(db, 'system', (tx) =>
+    tx.execute(sql`select user_id from sync_jobs where provider = 'slack' and push -> 'slackChannels' ? ${channelId}`),
+  );
+  return rows<{ user_id: string }>(r).map((x) => String(x.user_id));
+}
+
+/** Alle collega's met een planningsrij voor deze bron (en het externe account erbij). */
+export async function usersWithJob(
+  db: Db,
+  provider: string,
+): Promise<Array<{ userId: string; account: string | null }>> {
+  const r = await withPurpose(db, 'system', (tx) =>
+    tx.execute(sql`select user_id, account from sync_jobs where provider = ${provider}`),
+  );
+  return rows<{ user_id: string; account: string | null }>(r).map((x) => ({
+    userId: String(x.user_id),
+    account: x.account,
+  }));
+}
+
+/** Is er ooit een event van deze bron voor deze collega binnengekomen (dan werkt push echt)? */
+export async function hasSyncEvents(db: Db, userId: string, source: string): Promise<boolean> {
+  const r = await withUser(db, userId, (tx) =>
+    tx.execute(sql`select 1 from sync_events where user_id = ${userId} and source = ${source} limit 1`),
+  );
+  return rows(r).length > 0;
 }
 
 /** Event bewaren als het nieuw is. false = dubbel (al eerder ontvangen): negeren. */

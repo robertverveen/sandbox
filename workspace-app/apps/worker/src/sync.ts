@@ -68,6 +68,10 @@ export interface SyncRepo {
   takeEvents(userId: string, source: string): Promise<Array<{ event_id: string; payload: Record<string, unknown> }>>;
   notify(userId: string, keys: string[]): Promise<void>;
   markReauth?(userId: string, provider: string, reason: string): Promise<void>;
+  /** Is er ooit een push-event van deze bron voor deze collega binnengekomen? */
+  hasEvents?(userId: string, source: string): Promise<boolean>;
+  /** Voornaam van de collega (owner in de contextlaag: eigen meetings, eigen nachtrun). */
+  userName?(userId: string): Promise<string | null>;
 }
 
 export interface SyncDeps {
@@ -83,6 +87,8 @@ export interface SyncDeps {
   gmailTopic?: string;
   /** Token voor een Agenda-kanaal (HMAC van het kanaal-id); de webhook controleert hem. */
   channelToken?: (channelId: string) => string;
+  /** Slack Events is ingesteld (HZ_SLACK_SIGNING_SECRET staat ook in de worker-env). */
+  slackEvents?: boolean;
 }
 
 interface Result {
@@ -143,9 +149,10 @@ async function syncSlack(p: Providers, d: SyncDeps, job: SyncJobRow): Promise<Re
   const s = p.slack;
   if (!(s instanceof LiveSlack)) return { changed: 0 };
   let changed = 0;
-  for (const e of await d.repo.takeEvents(job.userId, 'slack'))
-    if (await s.applyEvent(e.payload as Parameters<LiveSlack['applyEvent']>[0])) changed++;
-  const sig = (await s.listConversations())
+  const events = await d.repo.takeEvents(job.userId, 'slack');
+  for (const e of events) if (await s.applyEvent(e.payload as Parameters<LiveSlack['applyEvent']>[0])) changed++;
+  const convs = await s.listConversations();
+  const sig = convs
     .filter((c) => c.unread)
     .map((c) => `${c.key}@${c.time ?? ''}`)
     .sort()
@@ -155,7 +162,12 @@ async function syncSlack(p: Providers, d: SyncDeps, job: SyncJobRow): Promise<Re
     await d.store.set('slack:unreadsig', sig);
     if (prev !== null) changed++;
   }
-  return { changed, pushActive: true };
+  // Push telt alleen als Slack Events echt binnenkomt: geheim ingesteld, of er is al een event ontvangen. Anders
+  // pollen we elke 3 minuten (geen veiligheidspoll van 30 minuten op een push die er niet is).
+  const seen = events.length > 0 || job.push.slackEvents === true || !!(await d.repo.hasEvents?.(job.userId, 'slack'));
+  // Kanaal-id's (metadata, geen inhoud) voor de webhook: welke collega's zitten in het kanaal van een event.
+  const slackChannels = convs.map((c) => c.key.replace(/^sl:/, '')).sort();
+  return { changed, push: { ...job.push, slackChannels, slackEvents: seen }, pushActive: !!d.slackEvents || seen };
 }
 
 async function syncJira(p: Providers): Promise<Result> {
@@ -213,7 +225,8 @@ export async function runSync(d: SyncDeps, userId: string, provider: string): Pr
   await d.repo.markRunning(userId, provider, now);
   let o: SyncOutcome;
   try {
-    const r = await withUserScope(userId, () => syncer(d.providers, d, job));
+    const name = (await d.repo.userName?.(userId)) ?? null;
+    const r = await withUserScope(userId, () => syncer(d.providers, d, job), { name });
     const interval = r.pushActive ? PUSH_POLL_MS : (POLL_MS[provider] ?? 10 * 60_000);
     o = {
       status: 'idle',
