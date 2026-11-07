@@ -1,6 +1,7 @@
 /**
  * HZW-001/HZW-020: de CI die RLS moet bewijzen moet ook echt draaien, en met een testrol die geen superuser is.
- * GitHub leest alleen <git-root>/.github/workflows; de git-root is de map boven workspace-app.
+ * GitHub leest alleen <git-root>/.github/workflows. In de sandbox is de git-root de map boven workspace-app,
+ * in de eigen repo (robertverveen/homezero-workspace) is de app zelf de git-root.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -8,22 +9,26 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const root = resolve(app, '..');
+const own = existsSync(join(app, '.github/workflows')); // eigen repo
+const root = own ? app : resolve(app, '..');
+const pre = own ? '' : 'workspace-app/';
 const wf = join(root, '.github/workflows/workspace-app.yml');
 
 describe('CI-workflow', () => {
   it('staat in de .github van de git-root, niet in workspace-app (daar leest GitHub niet)', () => {
-    expect(existsSync(join(root, '.git')), 'git-root verwacht boven workspace-app').toBe(true);
+    expect(existsSync(join(root, '.git')), 'git-root verwacht in de app of erboven').toBe(true);
     expect(existsSync(wf)).toBe(true);
-    expect(existsSync(join(app, '.github/workflows'))).toBe(false);
+    if (!own) expect(existsSync(join(app, '.github/workflows'))).toBe(false);
   });
 
   const text = existsSync(wf) ? readFileSync(wf, 'utf8') : '';
 
   it('draait in workspace-app met de pnpm-versie uit package.json', () => {
-    expect(text).toMatch(/defaults:\s*\n\s*run:\s*\n\s*working-directory: workspace-app/);
-    expect(text).toMatch(/package_json_file: workspace-app\/package\.json/);
-    expect(text).toMatch(/cache-dependency-path: workspace-app\/pnpm-lock\.yaml/);
+    expect(text).toMatch(
+      new RegExp(`defaults:\\s*\\n\\s*run:\\s*\\n\\s*working-directory: ${own ? '\\.' : 'workspace-app'}\\n`),
+    );
+    expect(text).toContain(`package_json_file: ${pre}package.json`);
+    expect(text).toContain(`cache-dependency-path: ${pre}pnpm-lock.yaml`);
   });
 
   it('Postgres-service met superuser postgres; hz_dev zonder SUPERUSER; runtime-rol via bootstrap-roles.sql', () => {

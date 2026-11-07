@@ -17,7 +17,13 @@ import { describe, expect, it } from 'vitest';
 import { IMPORT_COLUMNS, planImport, readExport, trackerItemVisible, VELDEN } from '../src';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const PROTO = process.env.HZ_PROTOTYPE ?? resolve(here, '../../../../workspace-prototype/index.html');
+const PROTO =
+  process.env.HZ_PROTOTYPE ??
+  [
+    resolve(here, '../../../docs/prototype/index.html'),
+    resolve(here, '../../../../workspace-prototype/index.html'),
+  ].find((p) => existsSync(p)) ??
+  resolve(here, '../../../docs/prototype/index.html');
 
 /* ---------- Mini-scanner voor JavaScript: strings, template-literals, commentaar en regex overslaan ---------- */
 

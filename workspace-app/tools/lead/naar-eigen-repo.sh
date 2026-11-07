@@ -43,6 +43,8 @@ cp "$SRC/workspace-prototype/index.html" "$SRC/workspace-prototype/architectuur.
 [ -d "$SRC/workspace-prototype/tools" ] && cp -r "$SRC/workspace-prototype/tools" "$OUT/docs/prototype/"
 sed -i.bak "s#resolve(root, '../workspace-prototype/index.html')#resolve(root, 'docs/prototype/index.html')#; s#standaard ../workspace-prototype/index.html naast deze repo#standaard docs/prototype/index.html#" "$OUT/tools/bar/bar.mjs" && rm -f "$OUT/tools/bar/bar.mjs.bak"
 
+printf '\n# Het prototype (de lat) is van anderen: nooit herformatteren.\ndocs/prototype/\n' >> "$OUT/.prettierignore"
+
 echo "4/5 paden in BRIEF.md, README.md, HUMAN_INPUT.md en de infra-documentatie"
 for f in BRIEF.md README.md HUMAN_INPUT.md infra/README.md infra/RUNBOOK.md; do
   [ -f "$OUT/$f" ] || continue

@@ -12,7 +12,7 @@
 set -uo pipefail
 infra="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app="$(dirname "$infra")"
-root="$(dirname "$app")"
+root="$(dirname "$app")"; [ -d "$app/.github/workflows" ] && root="$app"   # eigen repo: de app is de git-root
 strict="${HZ_VALIDATE_STRICT:-0}"
 # Gereedschap uit 'go install' (actionlint, caddy) staat vaak niet in PATH.
 if command -v go >/dev/null 2>&1; then PATH="$PATH:$(go env GOPATH)/bin"; fi

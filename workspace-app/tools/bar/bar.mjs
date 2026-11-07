@@ -23,7 +23,10 @@ import { fileURLToPath } from 'node:url';
 import { shoot, parseArgs, VIEWPORTS } from '../shared.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const proto = process.env.HZ_PROTOTYPE ?? resolve(root, '../workspace-prototype/index.html');
+const proto =
+  process.env.HZ_PROTOTYPE ??
+  [resolve(root, 'docs/prototype/index.html'), resolve(root, '../workspace-prototype/index.html')].find((p) => existsSync(p)) ??
+  resolve(root, 'docs/prototype/index.html');
 const args = parseArgs(process.argv.slice(2), { modes: process.env.HZ_CONTEXT_EXPORT ? 'demo,context' : 'demo' });
 
 if (!existsSync(proto)) {

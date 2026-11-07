@@ -26,7 +26,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const proto = process.env.HZ_PROTOTYPE ?? resolve(root, '../workspace-prototype/index.html');
+const proto =
+  process.env.HZ_PROTOTYPE ??
+  [resolve(root, 'docs/prototype/index.html'), resolve(root, '../workspace-prototype/index.html')].find((p) => existsSync(p)) ??
+  resolve(root, 'docs/prototype/index.html');
 const out = resolve(process.argv[2] ?? resolve(root, 'packages/db/test/fixtures/prototype-recorded-export.json'));
 if (!existsSync(proto)) {
   console.error(`Prototype niet gevonden: ${proto} (zet HZ_PROTOTYPE)`);
