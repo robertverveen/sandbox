@@ -11,9 +11,17 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ContextSnapshot } from '@hz/shared';
 import { ContextSnapshot as SnapshotSchema } from '@hz/shared';
-import { exportContext, readExport, toSnapshot } from '@hz/context';
+import {
+  exportContext,
+  readExport,
+  readJiraLayer,
+  readNightRuns,
+  RepoReader,
+  toSnapshot,
+  type JiraLayerIssue,
+  type NightRun,
+} from '@hz/context';
 import type { ContextProvider } from './types';
-import { NotConnectedError } from './types';
 
 export class FixtureContext implements ContextProvider {
   readonly mode = 'fixture' as const;
@@ -58,16 +66,54 @@ export class RepoContext implements ContextProvider {
     }
     return this.cache.snap;
   }
+  /** Jira uit de laag (product/jira/) en heartbeats van de routines (HZW-034/035). */
+  async jiraLayer(): Promise<JiraLayerIssue[]> {
+    return readJiraLayer(new RepoReader(this.ctxDir));
+  }
+  async nightRuns(routine: string): Promise<NightRun[]> {
+    return readNightRuns(new RepoReader(this.ctxDir), routine);
+  }
 }
 
 /**
- * TODO(context, HZW-060): HomeZeroTech/HomeZero-context en de Persoonlijk-repo via de GitHub App lezen,
- * webhook op push -> worker werkt de index (context_index) bij; lezen uit de index, bestand openen live.
+ * Per collega een eigen kijk op de repo's op schijf (lokaal en in de harness): owner = voornaam uit de scope, zodat
+ * partneracties, heartbeat en meetings van die collega zijn. De Persoonlijk-repo op schijf hoort bij één collega
+ * (HZ_OWNER); anderen zien hem niet.
  */
-export class GitHubContext implements ContextProvider {
+export class OwnerScopedContext implements ContextProvider {
   readonly mode = 'live' as const;
-  readonly source = 'repo' as const;
-  async snapshot(): Promise<ContextSnapshot> {
-    throw new NotConnectedError('github', 'nog niet gebouwd (GitHub App + index)');
+  readonly source: ContextProvider['source'];
+  private per = new Map<string, ContextProvider & Partial<LayerAware>>();
+  constructor(
+    readonly make: (owner: string) => ContextProvider & Partial<LayerAware>,
+    readonly owner: () => string,
+  ) {
+    this.source = this.current().source;
+  }
+  private current() {
+    const o = this.owner().toLowerCase();
+    let c = this.per.get(o);
+    if (!c) {
+      c = this.make(this.owner());
+      this.per.set(o, c);
+    }
+    return c;
+  }
+  snapshot() {
+    return this.current().snapshot();
+  }
+  async jiraLayer(): Promise<JiraLayerIssue[]> {
+    return this.current().jiraLayer?.() ?? [];
+  }
+  async nightRuns(routine: string): Promise<NightRun[]> {
+    return this.current().nightRuns?.(routine) ?? [];
   }
 }
+
+/** Een contextbron die ook de ruwe laag kan lezen (Jira per epic, heartbeats). */
+export interface LayerAware {
+  jiraLayer(): Promise<JiraLayerIssue[]>;
+  nightRuns(routine: string): Promise<NightRun[]>;
+}
+export const isLayerAware = (c: unknown): c is LayerAware =>
+  !!c && typeof (c as LayerAware).jiraLayer === 'function' && typeof (c as LayerAware).nightRuns === 'function';

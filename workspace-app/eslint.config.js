@@ -26,4 +26,11 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
     },
   },
+  {
+    // Workflowscript van de lead: draait in de workflow-harnas, die deze namen als globals meegeeft.
+    files: ['tools/lead/golf-workflow.js'],
+    languageOptions: {
+      globals: { args: 'readonly', agent: 'readonly', log: 'readonly', phase: 'readonly', pipeline: 'readonly' },
+    },
+  },
 );

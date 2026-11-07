@@ -30,6 +30,8 @@ import * as dbm from '@hz/db';
 export interface ConnectionState {
   status: 'connected' | 'disconnected' | 'error' | 'needs_reauth';
   connectedAt?: string;
+  /** Verleende scopes (stuk E3: de gedeelde Google-koppeling geldt per scope). */
+  scopes?: string[];
 }
 
 export interface AppStore {
@@ -416,7 +418,10 @@ export class DbStore implements AppStore {
   async connections(userId: string) {
     const rows = await dbm.listConnections(this.db, userId);
     return Object.fromEntries(
-      rows.map((r) => [r.provider, { status: r.status, connectedAt: r.connectedAt.toISOString() }]),
+      rows.map((r) => [
+        r.provider,
+        { status: r.status, connectedAt: r.connectedAt.toISOString(), scopes: r.scopes ?? [] },
+      ]),
     );
   }
   async setConnection(userId: string, provider: ProviderName, state: ConnectionState | null) {

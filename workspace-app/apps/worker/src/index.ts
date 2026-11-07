@@ -6,7 +6,7 @@
  *   verplicht en nooit de migratierol: de worker weigert dan te starten; lokaal = DATABASE_URL).
  */
 import { createProviders } from '@hz/providers';
-import { DEFAULT_DATABASE_URL, ensureDatabase } from '@hz/db';
+import { DEFAULT_DATABASE_URL, ensureDatabase, parseMasterKey } from '@hz/db';
 import { startWorker } from './worker';
 
 const url = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
@@ -16,11 +16,18 @@ if (!bossUrl) {
   process.exit(1);
 }
 if (process.env.NODE_ENV !== 'production') await ensureDatabase(url);
+// Sync-motor alleen met een hoofdsleutel (tokens zijn versleuteld) en minstens één live bron (stuk E3).
+const liveOn = Object.keys(process.env).some((k) => k.startsWith('HZ_LIVE_') && process.env[k] === '1');
+const sync =
+  process.env.HZ_TOKEN_KEY && liveOn
+    ? { masterKey: parseMasterKey(process.env.HZ_TOKEN_KEY), env: process.env }
+    : undefined;
 const w = await startWorker({
   connectionString: bossUrl,
   databaseUrl: url,
   schema: process.env.HZ_BOSS_SCHEMA ?? 'pgboss',
   bundle: createProviders(process.env),
+  sync,
 }).catch((e: Error) => {
   console.error(`[worker] start geweigerd: ${e.message}`);
   process.exit(1);

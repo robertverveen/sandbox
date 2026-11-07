@@ -16,17 +16,27 @@ import {
   type RouteName,
   type Routes,
   type SessionInfo,
+  type SourceStatus,
   type User,
 } from '@hz/shared';
 import { ctxAge, freeSlots, localISO, orgFromText, orgIndex, ymd } from '@hz/shared/logic';
 import { planRepoWrite, RepoWriteError } from '@hz/context';
-import { parseMasterKey } from '@hz/db';
-import type { ProviderBundle } from '@hz/providers';
+import { parseMasterKey, requestSync, syncStatus } from '@hz/db';
+import {
+  AuthError,
+  LiveSlack,
+  NotConnectedError,
+  NotHumanError,
+  withHumanAction,
+  withUserScope,
+  type ProviderBundle,
+} from '@hz/providers';
 import { authjsConfig, authSecret, handleAuthjs, isAuthjsPath } from './auth/authjs';
 import { SESSION_MS } from './auth/checks';
 import { registerE1, resolveSession } from './auth/routes';
 import { DbAuthStore, MemoryAuthStore, type AuthStore } from './auth/store';
 import type { Fetch } from './auth/oauth';
+import { registerSyncHooks, type SyncHookOptions } from './sync-hooks';
 import type { Config } from './config';
 import { EventBus } from './events';
 import {
@@ -42,6 +52,17 @@ import {
 import { DbStore, type AppStore } from './store';
 
 export const VERSION = '0.1.0';
+
+/**
+ * Routes waarin een ingelogde collega zelf op Versturen, Reageren of Uitnodigen drukt. Alleen hier mogen live
+ * providers iets naar buiten sturen (assertHumanAction); de rest van de API, de worker en Claude nooit.
+ */
+export const HUMAN_ACTION_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
+  'sendMessage',
+  'react',
+  'createEvent',
+  'rsvp',
+]);
 export const SESSION_COOKIE = 'hz_session';
 
 type Env = { Variables: { user: User; token: string } };
@@ -57,6 +78,8 @@ export interface AppDeps {
   auth?: AuthStore;
   /** Stuk E1: fetch voor OAuth-aanroepen naar de bronnen (in tests de nep-autorisatieserver). */
   fetch?: Fetch;
+  /** Sync-motor (stuk E3): database voor planning en webhooks, en de geheimen om webhooks te controleren. */
+  sync?: SyncHookOptions;
 }
 
 /** Hoofdsleutel voor tokens: verplicht in productie (config), anders per proces willekeurig (alleen lokaal). */
@@ -78,6 +101,38 @@ type Handler<N extends RouteName> = (
   ctx: Ctx,
 ) => Promise<z.input<Routes[N]['response']>> | z.input<Routes[N]['response']>;
 
+/**
+ * Eén bron in een antwoord (stuk E3). Live staat per proces aan, maar elke collega koppelt zelf: wie een bron niet
+ * gekoppeld heeft (NotConnectedError) of opnieuw moet koppelen (AuthError) krijgt die bron leeg terug met een
+ * status, en de rest van het antwoord gewoon. Andere fouten vallen alleen weg waar meerdere bronnen samenkomen
+ * (`soft`); anders gaan ze door naar de foutafhandeling.
+ */
+async function fromSource<T>(
+  sources: SourceStatus[],
+  provider: ProviderName,
+  fallback: T,
+  fn: () => Promise<T>,
+  soft = false,
+): Promise<T> {
+  const note = (s: SourceStatus) => {
+    const i = sources.findIndex((x) => x.provider === provider);
+    if (i < 0) sources.push(s);
+    else if (sources[i]!.status === 'ok') sources[i] = s;
+  };
+  try {
+    const r = await fn();
+    note({ provider, status: 'ok' });
+    return r;
+  } catch (e) {
+    if (e instanceof NotConnectedError) note({ provider, status: 'niet gekoppeld' });
+    else if (e instanceof AuthError) note({ provider, status: 'opnieuw koppelen' });
+    else if (soft) {
+      console.error(`[api] bron ${provider}: ${e instanceof Error ? e.name : 'fout'}`);
+      note({ provider, status: 'fout', message: 'Bron tijdelijk niet bereikbaar' });
+    } else throw e;
+    return fallback;
+  }
+}
 export function createApp(deps: AppDeps) {
   const { config, bundle, store } = deps;
   const bus = deps.bus ?? new EventBus();
@@ -101,6 +156,16 @@ export function createApp(deps: AppDeps) {
   app.onError((err, c) => {
     if (err instanceof HTTPException) return c.json({ error: 'http', message: err.message }, err.status);
     if (err instanceof z.ZodError) return c.json({ error: 'invalid', message: z.prettifyError(err) }, 400);
+    // Eén bron die deze collega niet (meer) gekoppeld heeft: duidelijke 409 in plaats van een 500.
+    if (err instanceof NotConnectedError)
+      return c.json(
+        { error: 'not_connected', message: `${err.provider} is niet gekoppeld. Koppel de bron eerst.` },
+        409,
+      );
+    if (err instanceof AuthError)
+      return c.json({ error: 'needs_reauth', message: `${err.provider}: opnieuw koppelen.` }, 409);
+    // Versturen buiten een verstuur-route (geen klik van een mens): geweigerd, niets verstuurd.
+    if (err instanceof NotHumanError) return c.json({ error: 'forbidden', message: err.message }, 403);
     console.error(err);
     return c.json({ error: 'server', message: 'Er ging iets mis op de server.' }, 500);
   });
@@ -153,9 +218,13 @@ export function createApp(deps: AppDeps) {
     if (r.renewTo) setCookie(c, SESSION_COOKIE, token, cookieOpts(r.renewTo));
     c.set('user', r.user);
     c.set('token', token);
-    // Alle database-werk van deze request hoort bij deze sessie (app.session, migratie 0011).
-    return store.asSession(token, () => next());
+    // Alle database-werk van deze request hoort bij deze sessie (app.session, migratie 0011), en de live providers
+    // werken voor deze collega (eigen token en cursors, stuk E3). Versturen mag alleen binnen de expliciete
+    // verstuur-routes (HUMAN_ACTION_ROUTES, zie on()), niet bij elke POST.
+    const user = r.user;
+    return store.asSession(token, () => withUserScope(user.id, () => next(), { name: firstName(user) }));
   });
+  registerSyncHooks(app, deps.sync ?? { db: null });
 
   const sessionInfo = (user: User): SessionInfo => ({
     user,
@@ -179,7 +248,10 @@ export function createApp(deps: AppDeps) {
       const user = c.get('user');
       // Stuk E1: een bron met een OAuth-flow levert alleen iets als de collega hem gekoppeld heeft.
       const hasFlow = async (p: ProviderName) => !!user && !!(await connections?.oauth(user.id, p));
-      const out = await handler({ params, query, body } as Input<N>, c, { bundle, store, user, hasFlow });
+      const run = () => handler({ params, query, body } as Input<N>, c, { bundle, store, user, hasFlow });
+      // Alleen deze routes zijn "een mens drukte op Versturen/Reageren/Uitnodigen"; elke andere POST (ook /api/ask of
+      // een MCP-aanroep) mag niets naar buiten sturen.
+      const out = await (user && HUMAN_ACTION_ROUTES.has(name) ? withHumanAction(user.id, run) : run());
       if (out instanceof Response) return out;
       return c.json(out as object);
     });
@@ -189,6 +261,21 @@ export function createApp(deps: AppDeps) {
   const need = async (ctx: Ctx, p: ProviderName) => {
     if (!(await readableSources(ctx))(p))
       throw new HTTPException(409, { message: `${PROVIDER_CATALOG[p].label} is niet gekoppeld` });
+  };
+  /** Stuk E1 (alleen gekoppelde bronnen) en E3 (live fouten per bron als status in het antwoord) samen. */
+  const fromReadable = async <T>(
+    ctx: Ctx,
+    sources: SourceStatus[],
+    p: ProviderName,
+    fallback: T,
+    fn: () => Promise<T>,
+    soft = false,
+  ): Promise<T> => {
+    if (!(await readableSources(ctx))(p)) {
+      if (!sources.some((x) => x.provider === p)) sources.push({ provider: p, status: 'niet gekoppeld' });
+      return fallback;
+    }
+    return fromSource(sources, p, fallback, fn, soft);
   };
 
   /* ---------- Gezondheid en sessie ---------- */
@@ -248,8 +335,8 @@ export function createApp(deps: AppDeps) {
       store.weekdoelen(ctx.user.id),
       readableSources(ctx).then((ok) =>
         ok('jira')
-          ? bundle.providers.jira.activeSprint().catch(() => ({ sprint: null, issues: [] }))
-          : { sprint: null, issues: [] },
+          ? bundle.providers.jira.activeSprint().catch(() => ({ sprint: null, issues: [] as never[] }))
+          : { sprint: null, issues: [] as never[] },
       ),
       store.itemStates(ctx.user.id),
     ]);
@@ -319,11 +406,12 @@ export function createApp(deps: AppDeps) {
   });
 
   /* ---------- Taken en sprint ---------- */
-  on('tasks', async (_i, _c, ctx) =>
-    (await readableSources(ctx))('google_tasks')
-      ? { lists: await bundle.providers.tasks.listTaskLists(), tasks: await bundle.providers.tasks.listTasks() }
-      : { lists: [], tasks: [] },
-  );
+  on('tasks', async (_i, _c, ctx) => {
+    const sources: SourceStatus[] = [];
+    const lists = await fromReadable(ctx, sources, 'google_tasks', [], () => bundle.providers.tasks.listTaskLists());
+    const tasks = await fromReadable(ctx, sources, 'google_tasks', [], () => bundle.providers.tasks.listTasks());
+    return { lists, tasks, sources };
+  });
   on('addTask', async ({ body }, _c, ctx) => {
     await need(ctx, 'google_tasks');
     const t = await bundle.providers.tasks.addTask(body);
@@ -336,20 +424,33 @@ export function createApp(deps: AppDeps) {
     bus.invalidate(ctx.user.id, 'tasks', 'items', 'dagstart');
     return t;
   });
-  on('sprint', async (_i, _c, ctx) =>
-    (await readableSources(ctx))('jira') ? bundle.providers.jira.activeSprint() : { sprint: null, issues: [] },
-  );
+  on('sprint', async (_i, _c, ctx) => {
+    const sources: SourceStatus[] = [];
+    const r = await fromReadable(ctx, sources, 'jira', { sprint: null, issues: [] }, () =>
+      bundle.providers.jira.activeSprint(),
+    );
+    return { ...r, sources };
+  });
 
   /* ---------- Tracker en weekdoelen ---------- */
   on('tracker', async (_i, _c, ctx) => {
-    const [snap, ok] = await Promise.all([bundle.providers.context.snapshot(), readableSources(ctx)]);
+    const sources: SourceStatus[] = [];
+    const [snap, taken, weekdoelen, ok] = await Promise.all([
+      fromSource(sources, 'github', { status: null, partners: {}, acties: {}, pers: null }, () =>
+        bundle.providers.context.snapshot(),
+      ),
+      fromReadable(ctx, sources, 'google_tasks', [], () => bundle.providers.tasks.listTasks(), true),
+      store.weekdoelen(ctx.user.id),
+      readableSources(ctx),
+    ]);
     const pers = persFor(snap, ok);
     return {
       hasPersRepo: !!pers,
-      taken: ok('google_tasks') ? await bundle.providers.tasks.listTasks() : [],
+      taken,
       takenMd: pers,
       partneracties: myPartnerActies(snap, ctx.user),
-      weekdoelen: await store.weekdoelen(ctx.user.id),
+      weekdoelen,
+      sources,
     };
   });
   on('weekdoelen', async ({ query }, _c, ctx) => {
@@ -380,14 +481,17 @@ export function createApp(deps: AppDeps) {
     await need(ctx, k.kind === 'sl' ? 'slack' : 'gmail');
     return k;
   };
+  /** Slack- en mailgesprekken samen; een bron die deze collega niet gekoppeld heeft komt leeg terug (E1, E3). */
+  const allConversations = async (ctx: Ctx, sources: SourceStatus[]) => {
+    const [sl, ml] = await Promise.all([
+      fromReadable(ctx, sources, 'slack', [], () => bundle.providers.slack.listConversations(), true),
+      fromReadable(ctx, sources, 'gmail', [], () => bundle.providers.gmail.listConversations(), true),
+    ]);
+    return [...sl, ...ml];
+  };
   on('conversations', async (_i, _c, ctx) => {
-    const ok = await readableSources(ctx);
-    return {
-      conversations: [
-        ...(ok('slack') ? await bundle.providers.slack.listConversations() : []),
-        ...(ok('gmail') ? await bundle.providers.gmail.listConversations() : []),
-      ],
-    };
+    const sources: SourceStatus[] = [];
+    return { conversations: await allConversations(ctx, sources), sources };
   });
   on('conversation', async ({ params }, _c, ctx) => {
     const { kind, id } = await convKey(ctx, params.key);
@@ -409,8 +513,27 @@ export function createApp(deps: AppDeps) {
   on('markRead', async ({ params, body }, _c, ctx) => {
     const { kind, id } = await convKey(ctx, params.key);
     if (kind === 'sl') {
-      const last = (await bundle.providers.slack.history(id)).at(-1);
-      if (last && body.read) await bundle.providers.slack.markRead(id, last.ts);
+      // Slack kent één leescursor per gesprek (conversations.mark): alles tot en met ts is gelezen. Markeer tot het
+      // gelezen bericht, niet tot het nieuwste, anders worden nieuwere ongelezen berichten stil gelezen.
+      const history = await bundle.providers.slack.history(id);
+      if (body.ts && !history.some((m) => m.ts === body.ts))
+        throw new HTTPException(404, { message: 'Onbekend bericht in dit gesprek' });
+      let mark: string | null;
+      if (body.read) mark = body.ts ?? history.at(-1)?.ts ?? null;
+      else {
+        if (!body.ts)
+          throw new HTTPException(400, {
+            message:
+              'Ongelezen zetten in Slack kan alleen vanaf een bericht: geef ts van het eerste ongelezen bericht mee.',
+          });
+        const before = history.filter((m) => parseFloat(m.ts) < parseFloat(body.ts!)).at(-1);
+        if (!before)
+          throw new HTTPException(400, {
+            message: 'Dit is het oudste bericht dat de app ziet; Slack kan de leescursor niet daarvoor zetten.',
+          });
+        mark = before.ts;
+      }
+      if (mark) await bundle.providers.slack.markRead(id, mark);
     } else await bundle.providers.gmail.markRead(id, body.read);
     bus.invalidate(ctx.user.id, 'conversations', 'items', 'dagstart');
     return { ok: true as const };
@@ -480,16 +603,13 @@ export function createApp(deps: AppDeps) {
       const text = hay(`${it.title} ${'body' in it ? (it.body ?? '') : ''}`);
       return keywords.every((k) => text.includes(k)) && (entities.length || keywords.length);
     });
-    const ok = await readableSources(ctx);
-    const convs = [
-      ...(ok('slack') ? await bundle.providers.slack.listConversations() : []),
-      ...(ok('gmail') ? await bundle.providers.gmail.listConversations() : []),
-    ].filter(
+    const sources: SourceStatus[] = [];
+    const convs = (await allConversations(ctx, sources)).filter(
       (c) =>
         (entities.length && entities.some((e) => c.entities.includes(e))) ||
         keywords.some((k) => hay(c.name + ' ' + (c.preview ?? '')).includes(k)),
     );
-    return { q, entities, keywords, mode, items, conversations: convs };
+    return { q, entities, keywords, mode, items, conversations: convs, sources };
   });
 
   /* ---------- Wegschrijven naar de contextlaag (wachtrij) ---------- */
@@ -570,6 +690,38 @@ export function createApp(deps: AppDeps) {
     bus,
     fetch: deps.fetch ?? fetch,
     sessionCookie: SESSION_COOKIE,
+    sync: deps.sync,
+  });
+
+  /* ---------- Sync (stuk E3) ---------- */
+  on('syncStatus', async (_i, _c, ctx) => {
+    const db = deps.sync?.db;
+    if (!db) return { jobs: [] };
+    const jobs = await syncStatus(db, ctx.user.id);
+    return {
+      jobs: jobs.map((j) => ({
+        provider: j.provider,
+        status: j.status,
+        failures: j.failures,
+        nextRunAt: j.nextRunAt.toISOString(),
+        lastOkAt: j.lastOkAt?.toISOString() ?? null,
+        lastChanged: j.lastChanged,
+        lastError: j.lastError,
+        push: !!(j.push && (j.push.channels || j.push.gmailExpiration || j.push.slackEvents)),
+      })),
+    };
+  });
+  on('syncNow', async ({ params }, _c, ctx) => {
+    const db = deps.sync?.db;
+    if (!db) return { ok: true as const, queued: false };
+    await requestSync(db, ctx.user.id, params.provider);
+    await store.audit(ctx.user.id, 'sync.now', params.provider);
+    return { ok: true as const, queued: true };
+  });
+  on('slackEmoji', async () => {
+    const s = bundle.providers.slack;
+    const sources: SourceStatus[] = [];
+    return { emoji: s instanceof LiveSlack ? await fromSource(sources, 'slack', {}, () => s.customEmoji(), true) : {} };
   });
 
   /* ---------- Claude (nep in fixture-modus) ---------- */

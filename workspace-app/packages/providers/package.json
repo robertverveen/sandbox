@@ -8,13 +8,15 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "spike:slack-todos": "tsx src/cli/spike-slack-todos.ts"
   },
   "dependencies": {
     "@hz/context": "workspace:*",
     "@hz/shared": "workspace:*"
   },
   "devDependencies": {
+    "msw": "2.15.0",
     "typescript": "5.9.3",
     "vitest": "3.2.4"
   }

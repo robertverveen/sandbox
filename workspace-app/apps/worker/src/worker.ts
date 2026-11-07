@@ -14,6 +14,7 @@ import PgBoss from 'pg-boss';
 import { assertBossLoginAt, createDb, WORKER_ROLE } from '@hz/db';
 import type { ProviderBundle } from '@hz/providers';
 import { QUEUES, telActies, telWeekdoelen, type TelActiesInput } from './jobs';
+import { createSyncDeps, registerSync, type SyncRuntimeOptions } from './sync-db';
 
 export interface WorkerOptions {
   /** Verbinding voor pg-boss (eigen schema). Lokaal hz_dev; productie HZ_BOSS_DATABASE_URL. */
@@ -28,6 +29,8 @@ export interface WorkerOptions {
   log?: (msg: string) => void;
   /** Omgeving voor de productiecontrole (standaard process.env). */
   env?: Record<string, string | undefined>;
+  /** Sync-motor (HZW-036) aan: hoofdsleutel voor tokens en omgeving (HZ_LIVE_*, OAuth-clients). */
+  sync?: Omit<SyncRuntimeOptions, 'db'> & { cron?: string | null };
 }
 
 /**
@@ -80,6 +83,16 @@ export async function startWorker(opts: WorkerOptions) {
     log(`${QUEUES.telWeekdoelen}: ${r.open} open bij ${r.gebruikers} collega's (als ${r.rol})`);
     return r;
   });
+  let syncStop: (() => Promise<void>) | null = null;
+  if (opts.sync) {
+    // Sync-motor (stuk E3) op dezelfde app-verbinding (hz_app; productie de worker-login, lid van hz_worker).
+    const deps = createSyncDeps({ ...opts.sync, db: app.db, log: opts.sync.log ?? log });
+    const r = await registerSync(boss, deps, app.db, opts.databaseUrl ?? opts.connectionString, {
+      cron: opts.sync.cron,
+    });
+    syncStop = () => r.stop();
+    log('sync-motor gestart');
+  }
   return {
     boss,
     db: app.db,
@@ -87,6 +100,7 @@ export async function startWorker(opts: WorkerOptions) {
     sendTelWeekdoelen: () => boss.send(QUEUES.telWeekdoelen, {}),
     stop: async () => {
       await boss.stop({ graceful: true, wait: true });
+      await syncStop?.();
       await app.close();
     },
   };

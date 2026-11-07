@@ -7,3 +7,4 @@ export * from './repo';
 export * from './import';
 export * from './schema-auth';
 export * from './auth';
+export * from './sync';

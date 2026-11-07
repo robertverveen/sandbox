@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { exportContext, writeExport } from '@hz/context';
 import { ContextSnapshot, Conversation, Item, Message, Weekdoel } from '@hz/shared';
 import { ymd } from '@hz/shared/logic';
-import { createProviders, loadFixtureSet, NotConnectedError, type Providers } from '../src';
+import { createProviders, loadFixtureSet, NotConnectedError, type Providers, withHumanAction } from '../src';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FX = join(here, '../../context/test/fixtures');
@@ -143,20 +143,32 @@ describe('live-implementaties zijn lege schillen', () => {
     const all = ['CALENDAR', 'GMAIL', 'TASKS', 'SLACK', 'JIRA', 'WISPR', 'ANTHROPIC'];
     const { providers } = createProviders(Object.fromEntries(all.map((k) => [`HZ_LIVE_${k}`, '1'])));
     const calls: Array<[keyof Providers, () => Promise<unknown>]> = [
-      ['calendar', () => providers.calendar.listEvents({ from: 'a', to: 'b' })],
-      ['calendar', () => providers.calendar.freeBusy(['a@homezero.nl'], { from: 'a', to: 'b' })],
+      ['calendar', () => providers.calendar.listEvents({ from: '2026-01-01', to: '2026-01-02' })],
+      ['calendar', () => providers.calendar.freeBusy(['a@homezero.nl'], { from: '2026-01-01', to: '2026-01-02' })],
       [
         'calendar',
-        () => providers.calendar.createEvent({ title: 'x', start: 'a', end: 'b', attendees: [], meet: false }),
+        // Een klik van een mens (anders weigert de live-provider al eerder: de app verstuurt nooit zelf).
+        () =>
+          withHumanAction('u', () =>
+            providers.calendar.createEvent({
+              title: 'x',
+              start: '2026-01-01T10:00',
+              end: '2026-01-01T11:00',
+              attendees: [],
+              meet: false,
+            }),
+          ),
       ],
       ['gmail', () => providers.gmail.listThreads()],
       ['tasks', () => providers.tasks.listTasks()],
       ['slack', () => providers.slack.attention()],
       ['jira', () => providers.jira.activeSprint()],
-      ['wispr', () => providers.wispr.listMeetings('2026-01-01')],
       ['anthropic', () => providers.anthropic.complete({ purpose: 'ask', system: '', messages: [] })],
     ];
     for (const [name, call] of calls) await expect(call(), name).rejects.toBeInstanceOf(NotConnectedError);
+    // Wispr: contextlaag eerst; zonder koppeling alleen de laag, nooit de nep-opnames uit de fixture.
+    const recs = await providers.wispr.listMeetings('2026-01-01');
+    expect(recs.every((r) => r.processed)).toBe(true);
   });
 });
 

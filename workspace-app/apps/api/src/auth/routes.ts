@@ -16,11 +16,13 @@ import {
   type ProviderName,
   type User,
 } from '@hz/shared';
+import { GOOGLE_SCOPE, wipeSyncData } from '@hz/db';
 import type { ProviderBundle } from '@hz/providers';
 import type { Config } from '../config';
 import type { EventBus } from '../events';
 import { collect, firstName, stateKey, type Ctx } from '../services';
 import type { AppStore } from '../store';
+import type { SyncHookOptions } from '../sync-hooks';
 import { deviceLabel, judgeSession, safeReturnTo } from './checks';
 import {
   authorizeUrl,
@@ -46,6 +48,8 @@ export interface E1Deps {
   bus: EventBus;
   fetch: Fetch;
   sessionCookie: string;
+  /** Stuk E3: sync-database en intrekken van tokens die E3 beheert (de gedeelde Google-koppeling 'google'). */
+  sync?: SyncHookOptions;
 }
 
 const PROVIDER_OF: Record<ProviderName, keyof ProviderBundle['providers']> = {
@@ -123,7 +127,14 @@ export function connectionsService(d: E1Deps) {
       const cat = PROVIDER_CATALOG[p];
       const mode = bundle.providers[PROVIDER_OF[p]].mode;
       const o = cat.viaContext ? null : await oauth(userId, p);
-      const r = recs.get(p);
+      // Stuk E3: een Google-bron zonder eigen koppeling kan op de gedeelde rij 'google' hangen (per verleende scope).
+      const own = recs.get(p);
+      const shared = recs.get('google');
+      const viaShared =
+        !!shared &&
+        p in GOOGLE_SCOPE &&
+        shared.scopes.some((x) => GOOGLE_SCOPE[p as keyof typeof GOOGLE_SCOPE].test(x));
+      const r = own && (own.status !== 'disconnected' || !viaShared) ? own : viaShared ? shared : own;
       // Zonder OAuth-flow in fixture-modus is er niets te autoriseren: de bron staat aan tot je hem intrekt.
       const fallback = mode === 'fixture' && !o ? 'connected' : 'disconnected';
       out.push({
@@ -458,7 +469,12 @@ export function registerE1(onAny: (name: string, h: Handler) => void, d: E1Deps)
           await auth.setConnectionError(ctx.user.id, q, 'needs_reauth', 'Toegang ingetrokken bij Google');
       }
     }
+    // Stuk E3: zonder eigen token kan de bron op een koppeling hangen die E3 beheert (de gedeelde rij 'google'); die
+    // trekt E3 in (Google trekt dan alles in). Daarna planning, cursors en events van de bron wissen.
+    let syncWiped: string[] = [];
+    if (!token && d.sync?.revoke) syncWiped = (await d.sync.revoke(ctx.user.id, p))?.wiped ?? [];
     await auth.clearConnection(ctx.user.id, p);
+    if (d.sync?.db) for (const q of new Set([p, ...syncWiped])) await wipeSyncData(d.sync.db, ctx.user.id, q);
     bus.invalidate(ctx.user.id, 'connections', 'items', 'dagstart', 'agenda', 'conversations', 'tasks', 'tracker');
     return {
       ok: true as const,

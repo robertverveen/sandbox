@@ -752,6 +752,8 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
       'context_index_definer',
       'onboarding_definer',
       'sessions_definer',
+      'sync_events_definer',
+      'sync_jobs_definer',
       'users_definer',
     ]);
     for (const p of r.rows) expect(p.roles).toBe(me);
