@@ -81,6 +81,9 @@ importers:
         specifier: 4.1.13
         version: 4.1.13
     devDependencies:
+      '@hz/fake-oauth':
+        specifier: workspace:*
+        version: link:../../packages/fake-oauth
       tsup:
         specifier: 8.5.1
         version: 8.5.1(postcss@8.5.32)(tsx@4.20.6)(typescript@5.9.3)

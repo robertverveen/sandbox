@@ -286,7 +286,7 @@ export async function startFakeOAuth(opts: FakeOAuthOptions = {}): Promise<FakeO
       nonce: p.nonce,
       challenge: p.code_challenge,
       method: p.code_challenge_method,
-      offline: family !== 'google' || p.access_type === 'offline',
+      offline: family === 'google' ? p.access_type === 'offline' : family !== 'slack',
       expires: Date.now() + 60_000,
     });
     back.searchParams.set('code', code);
