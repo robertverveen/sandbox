@@ -5,3 +5,5 @@ export * from './crypto';
 export * from './migrate';
 export * from './repo';
 export * from './import';
+export * from './schema-auth';
+export * from './auth';

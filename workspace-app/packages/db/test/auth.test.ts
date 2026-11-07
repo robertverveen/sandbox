@@ -692,6 +692,15 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
     'auth_touch_session',
     'auth_revoke_session',
     'system_active_user_ids',
+    // stuk E1 (0014, rechten 0015): uitnodigingslijst, Google-account, geweigerde login, onboarding, auditregel
+    'auth_allowlist_role',
+    'auth_apply_allowlist_role',
+    'auth_account_lookup',
+    'auth_link_account',
+    'auth_audit_refusal',
+    'auth_user_by_id',
+    'auth_init_onboarding',
+    'auth_audit_event',
   ];
   /** Wie ze mag uitvoeren: alles hz_auth (0011), behalve de lijst met alle gebruikers-id's (alleen hz_worker, 0010). */
   const GRANTEE: Record<string, string> = { system_active_user_ids: 'hz_worker' };
@@ -736,9 +745,12 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
       from pg_policy where polname like '%\_definer'`);
     const me = (await owner.db.execute<{ u: string }>(sql`select current_user as u`)).rows[0]!.u;
     expect(r.rows.map((x) => x.polname).sort()).toEqual([
+      'allowlist_definer',
       'audit_definer',
+      'auth_accounts_definer',
       'auth_domains_definer',
       'context_index_definer',
+      'onboarding_definer',
       'sessions_definer',
       'users_definer',
     ]);

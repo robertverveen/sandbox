@@ -1,0 +1,730 @@
+/* Stuk E1: inloggen, onboarding, koppelingen, apparaten en team. Bouwt op de huisstijl van het prototype
+   (prototype.css: viltkop, pill-tabs, kaarten, knoppen) en alleen op de CSS-variabelen, dus licht en donker. */
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- Knoppen ---------- */
+.btn.danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: transparent;
+}
+.btn.danger:hover {
+  filter: brightness(1.08);
+}
+.btn.ghost-danger {
+  color: var(--danger);
+}
+.btn.ghost-danger:hover {
+  background: var(--danger-soft);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.kbd-on-blue {
+  background: transparent;
+  color: inherit;
+  border-color: currentColor;
+  opacity: 0.8;
+}
+.btn .kbd {
+  margin-left: 2px;
+}
+
+/* ---------- Inloggen ---------- */
+.login {
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+}
+.login-card {
+  max-width: 440px;
+  overflow: hidden;
+  border-radius: var(--corner-xl, 24px);
+}
+.login-head {
+  padding: 28px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.login-head .brand-logo {
+  height: 26px;
+  width: auto;
+  align-self: flex-start;
+  filter: none !important;
+}
+.login-head h1 {
+  font-size: 40px;
+  margin: 10px 0 0;
+  color: var(--ink, #292f38);
+  max-width: 13ch;
+}
+.login-card.refused .login-head h1 {
+  font-size: 30px;
+  max-width: 16ch;
+}
+.login-head p {
+  margin: 0;
+  color: #3a4560;
+  font-size: 15px;
+  line-height: 1.5;
+  max-width: 34ch;
+}
+.login-card .card-body {
+  padding: 22px 28px 26px;
+}
+.google-btn {
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 15px;
+}
+.login-card .btn:not(.google-btn) {
+  justify-content: center;
+}
+.login-card .hint {
+  font-size: 12.5px;
+  margin: 2px 0 0;
+}
+
+/* ---------- Koppelingen (kaarten zoals connectors in Claude) ---------- */
+.conn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.conn {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: var(--corner-l, 16px);
+}
+.conn.on {
+  border-color: color-mix(in srgb, var(--blue-500, #0022c4) 22%, var(--line));
+}
+.conn.kf {
+  outline: none !important;
+  box-shadow: inset 0 0 0 2px var(--blue-500, #0022c4);
+  background: var(--panel);
+}
+.conn-main {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.conn-ic {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--blue-100, #e6eaff);
+  color: var(--blue-500, #0022c4);
+}
+.conn-ic svg.i {
+  width: 20px;
+  height: 20px;
+}
+.conn-ic.fam-slack {
+  background: color-mix(in srgb, var(--c-slack) 16%, transparent);
+  color: var(--c-slack);
+}
+.conn-ic.fam-atlassian {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.conn-ic.fam-github {
+  background: var(--hover);
+  color: var(--fg);
+}
+.conn-ic.fam-wispr {
+  background: var(--yellow-200, #fde9b6);
+  color: var(--ink, #292f38);
+}
+.conn-text {
+  min-width: 0;
+  flex: 1;
+}
+.conn-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.conn-title h3 {
+  margin: 0;
+  font-size: 15.5px;
+  white-space: normal;
+}
+.conn-tag {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.conn-acc,
+.conn-err,
+.conn-ok {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+}
+.conn-acc {
+  color: var(--muted);
+}
+.conn-err {
+  color: var(--danger);
+}
+.conn-ok {
+  color: var(--accent);
+  font-weight: 550;
+}
+.conn-acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-left: 54px;
+}
+.conn-confirm {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.conn-rights {
+  margin-left: 54px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 22px;
+  padding: 14px 16px;
+  border-radius: var(--corner-m, 12px);
+  background: var(--bg);
+  font-size: 13px;
+}
+.conn-rights h4 {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.conn-rights ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+.conn-rights li + li {
+  margin-top: 2px;
+}
+.conn-scopes,
+.conn-revoke {
+  grid-column: 1 / -1;
+}
+.scope-list {
+  list-style: none;
+  padding: 0 !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.scope-list code {
+  font-size: 11.5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: var(--fg);
+}
+.conn-revoke {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+}
+.conn-extra {
+  margin-left: 54px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.conn-extra details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 550;
+}
+.conn-extra details[open] {
+  padding-bottom: 4px;
+}
+.conn-extra code {
+  font-size: 11.5px;
+  word-break: break-all;
+}
+.conn-mcp {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 0;
+  font-size: 12.5px;
+}
+.own-client,
+.pers-form,
+.set-add {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.own-client label,
+.pers-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.own-client input,
+.pers-form input,
+.set-add input,
+.set-add select,
+.ob-inline input {
+  border: 1px solid var(--grey-200, var(--line));
+  border-radius: var(--corner-s, 8px);
+  background: var(--panel);
+  padding: 8px 10px;
+  font-size: 13.5px;
+  min-width: 0;
+}
+.own-client input:focus,
+.pers-form input:focus,
+.set-add input:focus {
+  border-color: var(--blue-500, var(--accent));
+  outline: none;
+}
+.prompt-box {
+  white-space: pre-wrap;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.layers .cp-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.cp-scope-seg button {
+  white-space: nowrap;
+}
+.cp-scope-seg button.on {
+  background: var(--panel);
+  color: var(--fg);
+}
+
+/* ---------- Onboarding ---------- */
+.ob-page {
+  max-width: 980px;
+}
+.ob-steps .tab {
+  cursor: pointer;
+}
+.ob-steps .tab.skipped:not(.on) {
+  color: var(--muted);
+  border-style: dashed;
+}
+.ob-steps .tab.done:not(.on) svg.i {
+  color: var(--accent);
+}
+.ob-n {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--hover);
+  color: var(--muted);
+}
+.tab.on .ob-n {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.ob-body {
+  min-height: 220px;
+  margin-bottom: 20px;
+}
+.ob-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 14px 0 6px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 22%);
+}
+.ob-spacer {
+  flex: 1;
+}
+.ob-later {
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--accent);
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.ob-welcome {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 18px;
+  align-items: start;
+}
+.ob-plan {
+  list-style: none;
+  margin: 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+.ob-plan b {
+  font-weight: 600;
+}
+.ob-plan .sub {
+  font-size: 13px;
+}
+.ob-plan li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.ob-promise h2 {
+  margin: 0 0 8px;
+}
+.ob-promise ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.ob-form {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+}
+.ob-field {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.ob-field > span:first-child {
+  min-width: 150px;
+  font-weight: 550;
+}
+.ob-inline {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+}
+.ob-check {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+.ob-check input {
+  accent-color: var(--blue-500, var(--accent));
+  width: 16px;
+  height: 16px;
+}
+.ob-keys .sw-key {
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.ob-keys .sw-key.hit {
+  border-color: var(--blue-500, var(--accent));
+  background: var(--blue-100, var(--accent-soft));
+}
+.ob-keys .ob-hit {
+  margin-left: auto;
+  color: var(--blue-500, var(--accent));
+}
+:root[data-theme='dark'] .ob-keys .sw-key.hit {
+  background: color-mix(in srgb, var(--blue-500, #0022c4) 30%, var(--panel));
+  color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .ob-keys .sw-key.hit {
+    background: color-mix(in srgb, var(--blue-500, #0022c4) 30%, var(--panel));
+    color: #fff;
+  }
+}
+
+/* Zijbalk: rustige link zolang inrichten niet af is. */
+.ob-nudge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: var(--corner-s, 8px);
+  background: var(--yellow-200, #fde9b6);
+  color: var(--ink, #292f38);
+  font-weight: 550;
+  font-size: 13px;
+  text-decoration: none;
+}
+.ob-nudge .count {
+  margin-left: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.set-btn {
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+/* ---------- Instellingen ---------- */
+a.tab {
+  text-decoration: none;
+}
+.set-page .hz-sub {
+  margin: 0;
+}
+.set-summary {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+.set-summary b {
+  color: var(--fg);
+}
+.set-tabs {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.set-tabs .tabs {
+  margin-bottom: 14px;
+}
+.set-logout {
+  margin-left: auto;
+}
+:root[data-theme='dark'] .conn-ok,
+:root[data-theme='dark'] .conn-extra details summary,
+:root[data-theme='dark'] .ob-later,
+:root[data-theme='dark'] .set-summary a.linklike {
+  color: var(--blue-300);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .conn-ok,
+  :root:not([data-theme='light']) .conn-extra details summary,
+  :root:not([data-theme='light']) .ob-later,
+  :root:not([data-theme='light']) .set-summary a.linklike {
+    color: var(--blue-300);
+  }
+}
+.set-card {
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.set-card .card-head {
+  flex-wrap: wrap;
+}
+.set-card .card-head h2 {
+  margin: 0;
+}
+.set-card .card-head .sub {
+  font-size: 12.5px;
+}
+.set-card .list {
+  padding: 6px;
+}
+.set-row {
+  cursor: default;
+  align-items: center;
+}
+.set-row .row-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  white-space: normal;
+}
+.set-row .row-sub {
+  white-space: normal;
+}
+.set-row.blocked .row-title {
+  color: var(--muted);
+}
+.set-row .avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--blue-100, var(--accent-soft));
+  color: var(--blue-500, var(--accent));
+  font-weight: 600;
+  flex: none;
+}
+.set-danger {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  border-radius: var(--corner-l, 16px);
+  padding: 16px 18px;
+}
+.set-danger h2 {
+  margin: 0 0 4px;
+}
+.set-danger p {
+  margin: 0;
+  font-size: 13px;
+}
+.set-add input {
+  flex: 1 1 220px;
+}
+.set-allow {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.set-allow li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 2px;
+  font-size: 13.5px;
+}
+.set-allow li > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-allow .iconbtn {
+  margin-left: auto;
+}
+
+/* ---------- Telefoon (400 px) ---------- */
+@media (max-width: 760px) {
+  .conn {
+    padding: 14px;
+  }
+  .conn-acts,
+  .conn-rights,
+  .conn-extra {
+    margin-left: 0;
+    padding-left: 0;
+  }
+  .conn-rights {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ob-welcome {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ob-steps {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .ob-steps .tab {
+    flex: none;
+  }
+  .ob-foot .ob-spacer {
+    display: none;
+  }
+  .ob-foot .btn.primary {
+    margin-left: auto;
+  }
+  .layers .cp-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .layers .cp-scope-seg {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .ob-field > span:first-child {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .set-logout {
+    margin-left: 0;
+  }
+  .login-head h1 {
+    font-size: 34px;
+  }
+  /* Vormen achter het vilt kleiner, zodat ze de tekst niet raken. */
+  .ob-head .shapes svg:first-child,
+  .set-page .hz-head .shapes svg:first-child {
+    width: 84px !important;
+    height: 84px !important;
+  }
+  .ob-head .shapes svg + svg,
+  .set-page .hz-head .shapes svg + svg {
+    display: none;
+  }
+  .ob-head h1,
+  .set-page .hz-head h1 {
+    padding-right: 64px;
+  }
+  .ob-foot .kbd,
+  .ob-foot .ob-long {
+    display: none;
+  }
+  .ob-foot {
+    gap: 8px;
+  }
+}
+
+/* Donker: "Gekoppeld" en "beheerder" leesbaar (het prototype zet witte tekst op een lichtblauwe chip). */
+:root[data-theme='dark'] .conn .chip.ok,
+:root[data-theme='dark'] .set-page .chip.ok {
+  background: color-mix(in srgb, var(--blue-500, #0022c4) 55%, var(--panel));
+  color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .conn .chip.ok,
+  :root:not([data-theme='light']) .set-page .chip.ok {
+    background: color-mix(in srgb, var(--blue-500, #0022c4) 55%, var(--panel));
+    color: #fff;
+  }
+}

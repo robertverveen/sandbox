@@ -23,7 +23,31 @@ export interface Ctx {
   bundle: ProviderBundle;
   store: AppStore;
   user: User;
+  /** Stuk E1: heeft deze bron een OAuth-flow (client ingericht)? Dan levert hij alleen iets als hij gekoppeld is. */
+  hasFlow?: (p: ProviderName) => Promise<boolean>;
 }
+
+/** Stuk E1: bronnen met een eigen koppeling (wispr komt uit de contextlaag en heeft er geen). */
+const GATED: ProviderName[] = ['google_tasks', 'calendar', 'gmail', 'slack', 'jira', 'github'];
+export type Readable = (p: ProviderName) => boolean;
+
+/**
+ * Mag de app deze bron lezen? Met een OAuth-flow alleen als de koppeling 'connected' is (geen rij, ontkoppeld,
+ * fout of opnieuw verbinden = niets). Zonder flow (fixture-modus zonder client) staat hij aan tot je hem ontkoppelt.
+ */
+export function sourceReadable(status: string | undefined, hasFlow: boolean) {
+  return hasFlow ? status === 'connected' : status !== 'disconnected';
+}
+
+export async function readableSources(ctx: Ctx): Promise<Readable> {
+  const conns = await ctx.store.connections(ctx.user.id);
+  const flows = new Map<ProviderName, boolean>();
+  if (ctx.hasFlow) await Promise.all(GATED.map(async (p) => flows.set(p, await ctx.hasFlow!(p))));
+  return (p) => sourceReadable(conns[p]?.status, flows.get(p) ?? false);
+}
+
+/** Persoonlijk-repo (taken.md, wachten-op.md) alleen met een gekoppelde GitHub. */
+export const persFor = (snap: ContextSnapshot, readable: Readable) => (readable('github') ? snap.pers : null);
 
 export interface SourceError {
   provider: ProviderName;
@@ -105,14 +129,19 @@ export async function collect(ctx: Ctx, range?: { from?: string; to?: string }):
   const to = range?.to ?? ymd(addDays(now, 28));
   const selfDomain = ctx.user.email.split('@')[1] ?? 'homezero.nl';
 
-  const [rawCals, meetings, mails, slack, tasks, recs, jira, context, state, goals, legacy] = await Promise.all([
-    safe('calendar', errors, [], () => p.calendar.listCalendars()),
-    safe('calendar', errors, [], () => p.calendar.listEvents({ from, to })),
-    safe('gmail', errors, [], () => p.gmail.listThreads()),
-    safe('slack', errors, [], () => p.slack.attention()),
-    safe('google_tasks', errors, [], () => p.tasks.listTasks()),
-    safe('wispr', errors, [], () => p.wispr.listMeetings(ymd(addDays(now, -7)))),
-    safe('jira', errors, { sprint: null, issues: [] }, () => p.jira.activeSprint()),
+  // Stuk E1: een bron levert alleen iets als hij gekoppeld is (ook niet uit fixtures); zie sourceReadable.
+  const readable = await readableSources(ctx);
+  const src = <T>(prov: ProviderName, fallback: T, fn: () => Promise<T>) =>
+    readable(prov) ? safe(prov, errors, fallback, fn) : Promise.resolve(fallback);
+
+  const [rawCals, meetings, mails, slack, tasks, recs, jira, snapshot, state, goals, legacy] = await Promise.all([
+    src('calendar', [], () => p.calendar.listCalendars()),
+    src('calendar', [], () => p.calendar.listEvents({ from, to })),
+    src('gmail', [], () => p.gmail.listThreads()),
+    src('slack', [], () => p.slack.attention()),
+    src('google_tasks', [], () => p.tasks.listTasks()),
+    src('wispr', [], () => p.wispr.listMeetings(ymd(addDays(now, -7)))),
+    src('jira', { sprint: null, issues: [] }, () => p.jira.activeSprint()),
     safe<ContextSnapshot>('github', errors, { status: null, partners: {}, acties: {}, pers: null }, () =>
       p.context.snapshot(),
     ),
@@ -120,6 +149,7 @@ export async function collect(ctx: Ctx, range?: { from?: string; to?: string }):
     ctx.store.weekdoelen(ctx.user.id),
     ctx.store.legacyCommits(ctx.user.id),
   ]);
+  const context: ContextSnapshot = { ...snapshot, pers: persFor(snapshot, readable) };
 
   const calendars = calDefaults(rawCals, ctx.user.email);
   const calById = new Map(calendars.map((c) => [c.id, c]));

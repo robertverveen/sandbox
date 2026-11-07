@@ -70,6 +70,10 @@ export interface AppStore {
   repoQueueEntry(userId: string, id: string): Promise<RepoQueueEntry | null>;
   /** Aantal regels in de rij met `[id:: <slug>-<dag>-n]`, voor het volgende volgnummer. */
   queuedIdCount(userId: string, slug: string, yyyymmdd: string): Promise<number>;
+  /** Stuk E1 (ontkoppelen wist de data van een bron): itemstate op sleutel of voorvoegsel wissen. */
+  deleteItemStates(userId: string, keys: string[], prefixes: string[]): Promise<number>;
+  /** Stuk E1: agenda-instellingen (kleur, overal/alleen in Agenda) wissen bij het ontkoppelen van Agenda. */
+  resetCalendarPreferences(userId: string): Promise<number>;
   close(): Promise<void>;
 }
 
@@ -241,6 +245,24 @@ export class MemoryStore implements AppStore {
   async queuedIdCount(userId: string, slug: string, yyyymmdd: string) {
     return (this.queue.get(userId) ?? []).filter((e) => e.line.includes(`[id:: ${slug}-${yyyymmdd}-`)).length;
   }
+  async deleteItemStates(userId: string, keys: string[], prefixes: string[]) {
+    const m = this.state.get(userId);
+    if (!m) return 0;
+    const ks = new Set(keys);
+    let n = 0;
+    for (const k of [...m.keys()])
+      if (ks.has(k) || prefixes.some((p) => k.startsWith(p))) {
+        m.delete(k);
+        n++;
+      }
+    return n;
+  }
+  async resetCalendarPreferences(userId: string) {
+    const cur = this.prefs.get(userId);
+    if (!cur || !Object.keys(cur.calendars).length) return 0;
+    this.prefs.set(userId, { ...cur, calendars: {} });
+    return 1;
+  }
   async close() {}
 }
 
@@ -257,7 +279,8 @@ export class DbStore implements AppStore {
     this.conn = dbm.createDb(url);
     this.authConn = dbm.createAuthDb(authUrl ?? url);
   }
-  private get authDb() {
+  /** De auth-login (hz_auth): inloggen en sessies (ook de opslag van E1, DbAuthStore). */
+  get authDb() {
     return this.authConn.db;
   }
   asSession<T>(token: string, fn: () => Promise<T>) {
@@ -453,6 +476,12 @@ export class DbStore implements AppStore {
   }
   async queuedIdCount(userId: string, slug: string, yyyymmdd: string) {
     return dbm.countQueuedIds(this.db, userId, slug, yyyymmdd);
+  }
+  async deleteItemStates(userId: string, keys: string[], prefixes: string[]) {
+    return dbm.deleteItemStates(this.db, userId, keys, prefixes);
+  }
+  async resetCalendarPreferences(userId: string) {
+    return dbm.resetCalendarPreferences(this.db, userId);
   }
   async close() {
     await this.conn.close();

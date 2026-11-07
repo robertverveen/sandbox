@@ -6,6 +6,7 @@ import logo from '../assets/logo.svg';
 import { decide, isTyping, KBD_MODE_KEYS, type KeyState } from '../lib/keyboard';
 import { Icon, type IconName } from '../lib/icons';
 import { useDagstart, useSession } from '../lib/queries';
+import { OnboardingNudge } from './OnboardingNudge';
 import { toggleTheme, useUi } from '../lib/ui';
 import { Help } from './Help';
 import { Inspector } from './Inspector';
@@ -69,6 +70,7 @@ function Sidebar() {
           })}
         </div>
       </nav>
+      <OnboardingNudge />
       <div className="sources quiet-foot">
         <button
           type="button"
@@ -80,6 +82,15 @@ function Sidebar() {
           <span className="sd" style={{ background: session?.mode === 'live' ? 'var(--accent)' : 'var(--faint)' }} />
           <span className="kbd">?</span>
         </button>
+        <Link
+          to="/instellingen"
+          className="iconbtn theme-btn set-btn"
+          aria-label="Instellingen en koppelingen"
+          title="Instellingen (g i)"
+          onClick={() => ui.setNavOpen(false)}
+        >
+          <Icon name="gear" />
+        </Link>
         <button
           type="button"
           className="iconbtn theme-btn"
@@ -172,6 +183,11 @@ const HINTS: Record<string, Array<[string, string]>> = {
     ['r', 'recap met Claude'],
     ['t', 'afspraken naar tracker'],
     ['o', 'Wispr'],
+  ],
+  conn: [
+    ['↵', 'rechten'],
+    ['v', 'verbinden'],
+    ['⇧1–3', 'tab'],
   ],
   other: [['↵', 'openen']],
 };

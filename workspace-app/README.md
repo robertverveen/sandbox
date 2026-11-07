@@ -393,6 +393,42 @@ e2e/          Playwright-tests (schil, Dagstart, toetsenbord, axe, 400 px)
 - **Huisstijl.** `apps/web/src/styles/prototype.css` is de CSS van het prototype (alleen lettertype en viltkorrel naar
   `src/assets`); aanvullingen (toegankelijkheid, links) staan in `app.css`.
 
+## Inloggen, sessies en koppelingen (stuk E1)
+
+- **Inloggen** met Google (OIDC) via Auth.js (`@auth/core`, `apps/api/src/auth/authjs.ts`) met een eigen adapter op
+  `users`/`sessions` (alleen een sha256 van het token). Alleen naam en e-mail; de server eist e-mail in het domein,
+  `hd`, `email_verified` en de uitnodigingslijst (tabel `allowlist`, `HZ_ALLOWLIST`). Beheerder ben je via de
+  uitnodigingslijst met rol `admin` (`robert@homezero.nl` staat er vast op; meer via Instellingen → Team of
+  `packages/db/sql/e1-beheerder.sql` als de migratierol). `HZ_ADMIN_EMAILS` geldt alleen voor de geheugenopslag:
+  met Postgres kan geen request zichzelf beheerder maken. Anders `/login?fout=…` met een nette weigerpagina. Eerste login: profiel en `/welkom`.
+  Keuze Auth.js boven Better Auth (open vraag S3): de kleine adapter houdt de sessies op de fundamenttabellen.
+- **Sessies**: cookie `hz_session` HttpOnly, SameSite=Lax, Secure in productie; 30 dagen, hooguit eens per dag
+  verlengd; een cookie in een andere browser of op een ander systeem (user-agent zonder versienummers) trekt de
+  sessie meteen in. Uitloggen per apparaat of overal (Instellingen → Apparaten). Verzoeken die iets wijzigen
+  moeten van de eigen site komen (Origin-controle). De dev-login-stub alleen buiten productie.
+- **Koppelingen** per bron met eigen toestemming (`apps/api/src/auth/oauth.ts`): state en PKCE in `connect_flows`,
+  tokens envelope-versleuteld in `connections`, nooit naar de browser. Een bron met een OAuth-flow levert alleen data
+  als hij gekoppeld is (`sourceReadable` in `apps/api/src/services.ts`): een nieuwe collega ziet niets tot hij
+  koppelt. Intrekken trekt het token in bij Google, Slack of GitHub (Atlassian heeft geen intrek-API) en wist de
+  eigen data van die bron (itemstate, agenda-instellingen; bij GitHub ook de Persoonlijk-data in Dagstart en Tracker).
+  Google trekt per app (client) en gebruiker in: Taken, Agenda en Gmail delen de client, dus het intrek-endpoint
+  wordt pas bij de laatste Google-bron aangeroepen; daarvoor wordt alleen het token gewist (`keptFor` in het antwoord).
+- **Lokaal en in tests** tegen de nep-autorisatieserver `packages/fake-oauth` (Google-uitgever met testaccounts,
+  Slack, Atlassian, GitHub). E2e start die vanzelf met een tweede API (zie `e2e/e1-env.ts`).
+- Schermen: `/login`, `/welkom` (wizard, `g w`), `/instellingen/{koppelingen,apparaten,team}` (`g i`), ook via ⌘K.
+- Migratie `0014_e1_auth.sql`: `allowlist`, `auth_accounts`, `connect_flows`, `onboarding` met RLS, zonder
+  GUC-doelen. Inloggen en beheer via SECURITY DEFINER-functies: `auth_allowlist_role`, `auth_apply_allowlist_role`,
+  `auth_account_lookup`, `auth_link_account`, `auth_audit_refusal` en `admin_members_list`, `admin_allowlist_list`,
+  `admin_set_user_blocked`, `admin_allowlist_add/remove` (die controleren zelf of `app_user_id()` een niet-geblokkeerde
+  beheerder is, anders 42501). Users en sessies via de functies van stuk E2 (`auth_session_by_token` enz.).
+- Migratie `0015_e1_auth_roles.sql` (samenvoegen met E2): de inlogfuncties van E1 zijn alleen voor `hz_auth`, net als
+  die van E2 sinds 0011. `DbAuthStore` krijgt twee verbindingen: de api-login (`hz_app`, alles per collega binnen de
+  request-sessie) en de auth-login (`HZ_AUTH_DATABASE_URL`, `hz_auth`: inloggen, sessies, uitnodigingslijst). Nieuw
+  voor `hz_auth`: `auth_user_by_id`, `auth_init_onboarding` (onboarding-rij bij de eerste login) en `auth_audit_event`
+  (auditregel over inloggen en sessies buiten een request); voor `hz_app`: `auth_revoke_all_own_sessions` (overal
+  uitloggen; `hz_app` heeft sinds 0013 geen UPDATE op `sessions`). Eén sessie op een ander apparaat intrekken loopt via
+  E2's `auth_revoke_own_session`.
+
 ## Status van dit stuk
 
 Gebouwd en getest: zie de tests per pakket en `e2e/`. Bewust nog niet: echte OAuth en Google-inloggen, echte

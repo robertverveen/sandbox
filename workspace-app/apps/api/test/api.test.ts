@@ -84,6 +84,11 @@ describe('configuratie (HZW-006)', () => {
       HZ_AUTH_DATABASE_URL: 'postgres://y',
       HZ_STORE: 'db',
       HZ_TOKEN_KEY: Buffer.alloc(32, 1).toString('base64'),
+      // Stuk E1: Google-inloggen is in productie verplicht (anders kan niemand inloggen).
+      HZ_GOOGLE_CLIENT_ID: 'x.apps.googleusercontent.com',
+      HZ_GOOGLE_CLIENT_SECRET: 'geheim',
+      HZ_AUTH_SECRET: 'a'.repeat(32),
+      HZ_PUBLIC_URL: 'https://homezero.verveen.me',
     });
     expect(ok.devLogin).toBe(false);
     expect(ok.secureCookies).toBe(true);
@@ -97,7 +102,7 @@ describe('contract: elke GET-route antwoordt volgens zijn schema', () => {
     partner: { slug: 'feenstra' },
   };
   const gets = (Object.entries(routes) as Array<[RouteName, (typeof routes)[RouteName]]>).filter(
-    ([n, r]) => r.method === 'GET' && n !== 'events',
+    ([n, r]) => r.method === 'GET' && n !== 'events' && n !== 'connectCallback',
   );
 
   const queries: Partial<Record<RouteName, string>> = {

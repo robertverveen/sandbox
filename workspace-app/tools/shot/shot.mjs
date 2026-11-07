@@ -85,6 +85,10 @@ const ROUTES = {
   entity: '/o/feenstra',
   palette: '/dagstart',
   help: '/dagstart',
+  // Stuk E1 (alleen met --screens): agenda-lagen naast het lagenpaneel van de lat, en de eigen schermen.
+  lagen: '/welkom?stap=agenda',
+  welkom: '/welkom?stap=welkom',
+  koppelingen: '/instellingen/koppelingen',
 };
 
 const outRoot = join(root, '.local/ours');
@@ -127,6 +131,8 @@ for (const mode of args.modes) {
             await p.keyboard.type('feen');
           }
           if (s === 'help') await p.keyboard.press('?');
+          if (s === 'lagen') await p.waitForSelector('.calpanel .cp-row');
+          if (s === 'koppelingen') await p.waitForSelector('.conn');
           await p.mouse.move(1, 1);
           await p.waitForTimeout(300);
           const file = join(out, `${s}-${vp}-${theme}.png`);
