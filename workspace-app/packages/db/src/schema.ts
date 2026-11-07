@@ -258,6 +258,8 @@ export const briefings = pgTable(
       .$type<Array<{ title: string; items: Array<{ text: string; url?: string }> }>>()
       .notNull(),
     session: text('session'),
+    /** Velden van een briefing die geen eigen kolom hebben (import uit het prototype: niets gaat stil verloren). */
+    extra: jsonb('extra').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('briefings_user_date_uq').on(t.userId, t.date)],

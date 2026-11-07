@@ -38,6 +38,12 @@ export interface AppStore {
   createSession(userId: string, userAgent: string): Promise<{ token: string; expiresAt: Date }>;
   userForSession(token: string): Promise<User | null>;
   revokeSession(token: string): Promise<void>;
+  /**
+   * Voer `fn` uit als de request van deze sessie: alle database-transacties daarin zijn gebonden aan het sessietoken
+   * (app.session, migratie 0011). De sessie-middleware roept dit aan; zonder kan de DbStore met de api-login niemand
+   * zien. MemoryStore: gewoon `fn()`.
+   */
+  asSession<T>(token: string, fn: () => Promise<T>): Promise<T>;
   itemStates(userId: string): Promise<Record<string, ItemState>>;
   setItemState(userId: string, key: string, patch: Omit<ItemState, 'key'>): Promise<ItemState>;
   weekdoelen(userId: string): Promise<Weekdoel[]>;
@@ -105,6 +111,9 @@ export class MemoryStore implements AppStore {
   async revokeSession(token: string) {
     const s = this.sessions.get(token);
     if (s) s.revoked = true;
+  }
+  asSession<T>(_token: string, fn: () => Promise<T>) {
+    return fn();
   }
   async itemStates(userId: string) {
     return Object.fromEntries(this.state.get(userId) ?? new Map());
@@ -239,8 +248,20 @@ export class MemoryStore implements AppStore {
 export class DbStore implements AppStore {
   readonly kind = 'db' as const;
   private conn: ReturnType<typeof dbm.createDb>;
-  constructor(url: string) {
+  private authConn: ReturnType<typeof dbm.createAuthDb>;
+  /**
+   * `url`: de api-login (alleen hz_app). `authUrl`: de auth-login (alleen hz_auth, sql/auth-login.sql) voor inloggen en
+   * sessies; standaard `url` (lokaal de migratierol, die lid is van beide). In productie verplicht apart (config).
+   */
+  constructor(url: string, authUrl?: string) {
     this.conn = dbm.createDb(url);
+    this.authConn = dbm.createAuthDb(authUrl ?? url);
+  }
+  private get authDb() {
+    return this.authConn.db;
+  }
+  asSession<T>(token: string, fn: () => Promise<T>) {
+    return dbm.runWithSession(dbm.hashToken(token), fn);
   }
   get db() {
     return this.conn.db;
@@ -250,18 +271,18 @@ export class DbStore implements AppStore {
    * beheerder met packages/db/sql/set-role.sql; de gevraagde rol telt hier dus niet.
    */
   async ensureUser(email: string, name: string, _role: User['role'] = 'member') {
-    const u = await dbm.upsertUser(this.db, email, name);
+    const u = await dbm.upsertUser(this.authDb, email, name);
     return { id: u.id, email: u.email, name: u.name, role: u.role, blocked: !!u.blockedAt };
   }
   async createSession(userId: string, ua: string) {
-    return dbm.createSession(this.db, userId, ua);
+    return dbm.createSession(this.authDb, userId, ua);
   }
   async userForSession(token: string) {
-    const r = await dbm.findSession(this.db, token);
+    const r = await dbm.findSession(this.authDb, token);
     return r ? { id: r.user.id, email: r.user.email, name: r.user.name, role: r.user.role, blocked: false } : null;
   }
   async revokeSession(token: string) {
-    await dbm.revokeSession(this.db, token);
+    await dbm.revokeSession(this.authDb, token);
   }
   async itemStates(userId: string) {
     const rows = await dbm.listItemState(this.db, userId);
@@ -435,5 +456,6 @@ export class DbStore implements AppStore {
   }
   async close() {
     await this.conn.close();
+    await this.authConn.close();
   }
 }

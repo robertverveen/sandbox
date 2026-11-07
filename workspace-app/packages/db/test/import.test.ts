@@ -15,8 +15,11 @@ import {
   applyImport,
   briefings,
   contextIndex,
+  auditLog,
   createDb,
+  createOwnerDb,
   ensureDatabase,
+  findUserByEmail,
   formatReport,
   importPrototype,
   itemState,
@@ -83,6 +86,31 @@ async function totals(userId: string) {
     briefings: await n(briefings),
     context_index: ctx,
   };
+}
+
+/**
+ * Totaal over de hele database: gebruikers, auditregels en rijen in de per-collega-tabellen. Gebruikers als de
+ * migratierol (regel users_definer); de rest per gebruiker via withUser (de migratierol is lid van hz_worker).
+ */
+async function counts() {
+  const owner = createOwnerDb(URL_, 1);
+  try {
+    const ids = (await owner.db.execute<{ id: string }>(sql`select id from users order by id`)).rows.map((r) => r.id);
+    let audit = 0;
+    let rows = 0;
+    for (const id of ids) {
+      audit += await withUser(
+        db,
+        id,
+        async (tx) => ((await tx.select({ n: sql<number>`count(*)::int` }).from(auditLog)) as [{ n: number }])[0].n,
+      );
+      const t = await totals(id);
+      rows += t.tracker_items + t.weekdoelen + t.item_state + t.pins + t.briefings;
+    }
+    return { users: ids.length, audit, rows };
+  } finally {
+    await owner.close();
+  }
 }
 
 const EXPECTED = { tracker_items: 14, weekdoelen: 7, item_state: 15, pins: 2, briefings: 2, context_index: 10 };
@@ -224,6 +252,50 @@ describe('plan: export naar rijen (zonder database)', () => {
     expect(p.briefings.find((b) => b.date === '2026-10-29')!.title).toBe('☀️ Briefing do 29 okt');
   });
 
+  it('briefing: velden zonder kolom en secties die niet in de vaste vorm passen, blijven bewaard in extra', () => {
+    const raw = {
+      briefings: [
+        {
+          id: 'b-extra',
+          data: {
+            date: '2026-11-03',
+            title: 'Briefing di 3 nov',
+            bron: 'routine',
+            stats: { mails: 4, slack: 9 },
+            leeg: null,
+            sections: [
+              { items: [{ url: 'https://example.com/a', text: 'Volgorde telt niet' }], title: 'Vandaag' },
+              { title: 'Met meer', icon: '☀', items: [{ text: 'x', prio: 1 }, 'los item'] },
+            ],
+          },
+        },
+        {
+          id: 'b-netjes',
+          data: { date: '2026-11-04', title: 'Netjes', sections: [{ title: 'A', items: [{ text: 't' }] }] },
+        },
+      ],
+    } satisfies ExportCollections;
+    const p = planImport(raw);
+    const b = p.briefings.find((x) => x.date === '2026-11-03')!;
+    expect(b.extra).toEqual({
+      bron: 'routine',
+      stats: { mails: 4, slack: 9 },
+      leeg: null,
+      sections: raw.briefings[0]!.data.sections,
+    });
+    expect(b.sections).toEqual([
+      { title: 'Vandaag', items: [{ text: 'Volgorde telt niet', url: 'https://example.com/a' }] },
+      { title: 'Met meer', items: [{ text: 'x' }] },
+    ]);
+    expect(p.waarschuwingen.join('\n')).toMatch(
+      /b-extra: veld\(en\) bron, stats, leeg hebben geen kolom, bewaard in extra/,
+    );
+    expect(p.waarschuwingen.join('\n')).toMatch(/b-extra: sections past niet volledig/);
+    // een briefing die precies past: lege extra, geen waarschuwing
+    expect(p.briefings.find((x) => x.date === '2026-11-04')!.extra).toEqual({});
+    expect(p.waarschuwingen.join('\n')).not.toMatch(/b-netjes/);
+  });
+
   it('gtask zoals het prototype hem schrijft: object {id, tasklist} (planCommit) of tekst "gtask:<id>" (c-gtask)', () => {
     const p = planImport(cols);
     const t = (id: string) => p.tracker.find((x) => x.legacyId === id)!;
@@ -347,7 +419,7 @@ describe('import in Postgres (RLS, als hz_app)', () => {
 
   it('eerste run: aantallen voor en na kloppen per tabel', async () => {
     first = await importPrototype(db, { email: ROBERT, name: 'Robert', collections: cols });
-    robert = first.gebruiker.id;
+    robert = first.gebruiker.id!;
     expect(first.klopt).toBe(true);
     for (const [t, n] of Object.entries(EXPECTED)) {
       expect(first.tabellen[t as keyof typeof EXPECTED], t).toMatchObject({
@@ -553,12 +625,44 @@ describe('import in Postgres (RLS, als hz_app)', () => {
     expect(annas.map((x) => x.wat)).toEqual(['Annas belofte met hetzelfde doc-id']);
   });
 
-  it('proefdraai: alles doorgerekend en gecontroleerd, niets opgeslagen', async () => {
+  it('briefing met velden zonder kolom: extra staat in de database en een tweede run verandert niets', async () => {
+    const c: ExportCollections = {
+      briefings: [{ id: 'b-x', data: { date: '2026-11-05', title: 'B', sections: [], stem: 'kort', meta: { v: 2 } } }],
+    };
+    const g = (await upsertUser(db, 'gijs@homezero.nl', 'Gijs')).id;
+    const r1 = await importPrototype(db, { email: 'gijs@homezero.nl', collections: c });
+    expect(r1.tabellen.briefings).toMatchObject({ nieuw: 1, na: 1, klopt: true });
+    const [row] = await withUser(db, g, (tx) => tx.select().from(briefings));
+    expect(row!.extra).toEqual({ stem: 'kort', meta: { v: 2 } });
+    const r2 = await importPrototype(db, { email: 'gijs@homezero.nl', collections: c });
+    expect(r2.tabellen.briefings).toMatchObject({ nieuw: 0, bijgewerkt: 0, ongewijzigd: 1 });
+  });
+
+  it('proefdraai voor een nieuwe collega: doorgerekend, maar geen gebruiker, auditregel of rij aangemaakt', async () => {
+    const before = await counts();
     const r = await importPrototype(db, { email: 'cees@homezero.nl', collections: cols, dryRun: true });
     expect(r.dryRun).toBe(true);
     expect(r.klopt).toBe(true);
+    expect(r.gebruiker).toEqual({ id: null, email: 'cees@homezero.nl' });
     expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 14, nieuw: 14, na: 14 });
-    expect(await totals(r.gebruiker.id)).toMatchObject({ tracker_items: 0, weekdoelen: 0, item_state: 0, pins: 0 });
+    expect(r.waarschuwingen.join('\n')).toMatch(/cees@homezero\.nl bestaat nog niet/);
+    expect(await findUserByEmail(db, 'cees@homezero.nl')).toBeNull();
+    expect(await counts()).toEqual(before);
+    // de echte import daarna geeft dezelfde aantallen
+    const echt = await importPrototype(db, { email: 'cees@homezero.nl', collections: cols });
+    for (const t of ['tracker_items', 'weekdoelen', 'item_state', 'pins', 'briefings'] as const)
+      expect(echt.tabellen[t], t).toMatchObject({ verwacht: r.tabellen[t].verwacht, nieuw: r.tabellen[t].nieuw });
+  });
+
+  it('proefdraai voor een bestaande collega: echt doorgerekend in de database en teruggedraaid', async () => {
+    const u = (await upsertUser(db, 'fien@homezero.nl', 'Fien')).id;
+    const before = await counts();
+    const r = await importPrototype(db, { email: 'fien@homezero.nl', collections: cols, dryRun: true });
+    expect(r.gebruiker.id).toBe(u);
+    expect(r.klopt).toBe(true);
+    expect(r.tabellen.tracker_items).toMatchObject({ verwacht: 14, nieuw: 14, na: 14 });
+    expect(await totals(u)).toMatchObject({ tracker_items: 0, weekdoelen: 0, item_state: 0, pins: 0, briefings: 0 });
+    expect(await counts()).toEqual(before);
   });
 
   it('de contextindex schrijft alleen de indexer (purpose index) en weigert admin.md', async () => {
@@ -699,9 +803,22 @@ describe('opdrachtregel (import:prototype)', () => {
     return u.toString();
   };
 
-  it('als app-login zonder indexer-login: contextindex overgeslagen met uitleg, de rest geïmporteerd, exitcode 0', () => {
+  it('als de api-login (hz_app_login): geweigerd met uitleg, niets aangemaakt (die login kan niemand nadoen, 0011)', async () => {
+    const before = await counts();
     const r = run(['--export', FIXTURE, '--email', 'eva@homezero.nl', '--json'], {
       DATABASE_URL: as('hz_app_login'),
+      HZ_AUTH_DATABASE_URL: as('hz_auth_login'),
+      HZ_INDEX_DATABASE_URL: '',
+    });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/hz_worker/);
+    expect(await counts()).toEqual(before);
+  }, 30_000);
+
+  it('als worker-login met auth-login, zonder indexer-login: contextindex overgeslagen met uitleg, de rest geïmporteerd, exitcode 0', () => {
+    const r = run(['--export', FIXTURE, '--email', 'eva@homezero.nl', '--json'], {
+      DATABASE_URL: as('hz_worker_login'),
+      HZ_AUTH_DATABASE_URL: as('hz_auth_login'),
       HZ_INDEX_DATABASE_URL: '',
     });
     expect(r.stderr).toBe('');
@@ -715,7 +832,11 @@ describe('opdrachtregel (import:prototype)', () => {
   }, 30_000);
 
   it('met HZ_INDEX_DATABASE_URL (indexer-login) schrijft hij ook de contextindex; tweede run verandert niets', () => {
-    const env = { DATABASE_URL: as('hz_app_login'), HZ_INDEX_DATABASE_URL: as('hz_indexer_login') };
+    const env = {
+      DATABASE_URL: as('hz_worker_login'),
+      HZ_AUTH_DATABASE_URL: as('hz_auth_login'),
+      HZ_INDEX_DATABASE_URL: as('hz_indexer_login'),
+    };
     // Eva is in de vorige test al geïmporteerd (zonder context); de contextrijen bestaan al van Roberts import.
     for (const ronde of [1, 2]) {
       const r = run(['--export', FIXTURE, '--email', 'eva@homezero.nl', '--json'], env);

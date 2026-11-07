@@ -8,13 +8,17 @@
  *   start elke verbinding als hz_app (`-c role=hz_app`), en withUser/withPurpose doen daarbovenop per
  *   transactie `SET LOCAL ROLE hz_app`. Zo kan geen app-query RLS uitzetten of een policy weggooien.
  *
- * withUser(): elke query van een request loopt in een transactie met SET LOCAL app.user_id.
+ * withUser(): elke query loopt in een transactie met SET LOCAL app.user_id, en in een request ook app.session (de
+ * sha256-hash van het sessietoken; runWithSession). Sinds 0011 leidt app_user_id() de gebruiker af uit app.session
+ * via de geldige sessie; app.user_id alleen telt zonder sessie, en alleen voor een login die lid is van hz_worker
+ * (worker, importscript). De api-login kan dus niemand nadoen door app.user_id te zetten.
  * withPurpose(): transacties zonder gebruiker. app.purpose opent sinds 0006/0009 niets meer (een GUC kan elke
  * transactie zetten): 'auth' en 'system' geven geen leesrecht op users of sessions, 'index' geen schrijfrecht op
- * context_index. Inloggen en de worker gebruiken SECURITY DEFINER-functies (repo.ts: findSession, upsertUser,
- * activeUserIds, …); schrijven in de contextindex alleen als hz_indexer (createIndexerDb/withIndexer, 0009); de id's
+ * context_index. Inloggen en sessies alleen als hz_auth (createAuthDb/withAuth, 0011; repo.ts: findSession,
+ * upsertUser, …); schrijven in de contextindex alleen als hz_indexer (createIndexerDb/withIndexer, 0009); de id's
  * van alle collega's alleen als hz_worker (withWorker, 0010; alleen de worker-login is daar lid van).
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
@@ -56,7 +60,7 @@ export interface AppLoginCheck {
 }
 
 /** Rollen met een eigen recht naast hz_app; een login mag er alleen lid van zijn als dat zo bedoeld is. */
-export const SPECIAL_ROLES = ['hz_worker', 'hz_indexer'] as const;
+export const SPECIAL_ROLES = ['hz_worker', 'hz_indexer', 'hz_auth'] as const;
 
 /**
  * Wat de login achter DATABASE_URL zelf kan, los van `-c role=hz_app`. De app hoort te verbinden met een login die
@@ -170,7 +174,7 @@ export interface CreateDbOptions {
   env?: Record<string, string | undefined>;
   /**
    * Bijzondere rollen waar de login in productie lid van mag zijn. De api: geen (standaard). De worker: ['hz_worker']
-   * (sql/worker-login.sql), voor activeUserIds().
+   * (sql/worker-login.sql), voor activeUserIds() en werken namens een collega.
    */
   allowRoles?: string[];
 }
@@ -229,11 +233,88 @@ export async function canIndex(db: Db): Promise<boolean> {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const setAppRole = sql.raw(`SET LOCAL ROLE ${APP_ROLE}`);
 
+const HASH = /^[0-9a-f]{64}$/;
+const sessionContext = new AsyncLocalStorage<{ tokenHash: string }>();
+
+/**
+ * Alles wat `fn` (ook asynchroon) via withUser doet, hoort bij deze sessie: withUser zet dan ook app.session. Zo bindt
+ * de api elke request aan het sessietoken uit de cookie (sessie-middleware), zonder dat elke repo-functie het token
+ * hoeft door te geven. `tokenHash`: hashToken(token), nooit het token zelf.
+ */
+export function runWithSession<T>(tokenHash: string, fn: () => T): T {
+  if (!HASH.test(tokenHash)) throw new Error('runWithSession: alleen een sha256-hash (64 hex) van het token');
+  return sessionContext.run({ tokenHash }, fn);
+}
+
+/** De sessie-hash van de lopende request (runWithSession), of null. */
+export const currentSessionHash = () => sessionContext.getStore()?.tokenHash ?? null;
+
+/**
+ * Transactie als hz_app voor één collega. Binnen runWithSession zet hij ook app.session: app_user_id() geeft dan alleen
+ * de gebruiker van die sessie, en niemand als `userId` daar niet bij hoort. Zonder sessie telt `userId` alleen voor
+ * een login die lid is van hz_worker (worker, importscript, lokaal de migratierol); de api-login ziet dan niets.
+ */
 export async function withUser<T>(db: Db, userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
   if (!UUID.test(userId)) throw new Error('withUser: ongeldige gebruiker');
+  const hash = currentSessionHash();
   return db.transaction(async (tx) => {
     await tx.execute(setAppRole);
     await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
+    if (hash) await tx.execute(sql`select set_config('app.session', ${hash}, true)`);
+    return fn(tx);
+  });
+}
+
+/** Transactie als hz_app voor de gebruiker van één sessie (alleen app.session; zonder geldige sessie: niemand). */
+export async function withSession<T>(db: Db, tokenHash: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  if (!HASH.test(tokenHash)) throw new Error('withSession: alleen een sha256-hash (64 hex) van het token');
+  return db.transaction(async (tx) => {
+    await tx.execute(setAppRole);
+    await tx.execute(sql`select set_config('app.session', ${tokenHash}, true)`);
+    return fn(tx);
+  });
+}
+
+/** Mag de login van deze verbinding namens een collega werken met app.user_id (lid van hz_worker)? */
+export async function canActAsUser(db: Db): Promise<boolean> {
+  const r = await db.execute<{ ok: boolean }>(
+    sql`select coalesce(pg_has_role(session_user, 'hz_worker', 'MEMBER'), false) as ok`,
+  );
+  return r.rows[0]?.ok === true;
+}
+
+/** De rol voor inloggen en sessies (alleen de auth_*-functies; migratie 0011). */
+export const AUTH_ROLE = 'hz_auth';
+
+/**
+ * Verbinding voor inloggen en sessies: de sessie-middleware van de api en de adapter van de auth-bibliotheek. Elke
+ * sessie draait als hz_auth (geen tabelrechten, alleen de auth_*-functies). In productie een eigen login die alleen
+ * lid is van hz_auth (sql/auth-login.sql, HZ_AUTH_DATABASE_URL); dezelfde productiecontrole als createDb(). Lokaal mag
+ * het de migratierol zijn (die is lid van hz_auth).
+ */
+export function createAuthDb(
+  url = process.env.HZ_AUTH_DATABASE_URL ?? process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL,
+  max = 4,
+  opts: CreateDbOptions = {},
+) {
+  const prod = (opts.env ?? process.env).NODE_ENV === 'production';
+  const p = pool(
+    url,
+    max,
+    AUTH_ROLE,
+    prod ? async (c) => void (await assertAppLogin(c, { allowRoles: [AUTH_ROLE] })) : undefined,
+  );
+  const db = drizzle(p, { schema });
+  return { db, pool: p, close: () => p.end() };
+}
+
+/**
+ * Transactie als hz_auth: alleen de auth_*-functies. Faalt met 42501 als de login geen lid is van hz_auth (zoals de
+ * api-login hz_app_login en de worker-login).
+ */
+export async function withAuth<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql.raw(`SET LOCAL ROLE ${AUTH_ROLE}`));
     return fn(tx);
   });
 }

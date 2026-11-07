@@ -95,7 +95,8 @@ export function createApp(deps: AppDeps) {
     if (!user || !token) return c.json({ error: 'unauthenticated', message: 'Log in om verder te gaan.' }, 401);
     c.set('user', user);
     c.set('token', token);
-    return next();
+    // Alle database-werk van deze request hoort bij deze sessie (app.session, migratie 0011).
+    return store.asSession(token, () => next());
   });
 
   const sessionInfo = (user: User): SessionInfo => ({
@@ -160,7 +161,7 @@ export function createApp(deps: AppDeps) {
       path: '/',
       expires: expiresAt,
     });
-    await store.audit(user.id, 'session.dev-login');
+    await store.asSession(token, () => store.audit(user.id, 'session.dev-login'));
     return sessionInfo(user);
   });
 

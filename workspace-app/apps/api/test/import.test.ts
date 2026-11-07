@@ -2,13 +2,23 @@
  * HZW-021 goedkeuring "Robert ziet zijn tracker terug": na de import van een (synthetische) prototype-export laat de
  * API met HZ_STORE=db de tracker-items, weekdoelen, briefing, planning en vastgezette zoekopdrachten van Robert zien,
  * en niets daarvan aan een andere collega. Eigen, verse database (hz_e2_test_api_import).
+ * De API draait hier zoals in productie: als hz_app_login (requests) en hz_auth_login (inloggen en sessies); elke
+ * request is via de sessie-middleware gebonden aan het sessietoken (migratie 0011).
  */
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { routes, type CommitItem } from '@hz/shared';
 import { createProviders } from '@hz/providers';
-import { createDb, ensureDatabase, importPrototype, readExport, runMigrations, type ExportCollections } from '@hz/db';
+import {
+  createDb,
+  ensureDatabase,
+  findUserByEmail,
+  importPrototype,
+  readExport,
+  runMigrations,
+  type ExportCollections,
+} from '@hz/db';
 import { createApp, SESSION_COOKIE } from '../src/app';
 import { stateKey } from '../src/services';
 import { loadConfig } from '../src/config';
@@ -21,6 +31,12 @@ const url =
 
 let store: DbStore;
 let cols: ExportCollections;
+const asLogin = (login: string) => {
+  const u = new URL(url);
+  u.username = login;
+  u.password = login;
+  return u.toString();
+};
 
 /** Opnieuw importeren zoals Robert dat doet (zelfde export, of een nieuwere). */
 async function reimport(c: ExportCollections) {
@@ -47,7 +63,12 @@ function client() {
     return res;
   };
   const get = async (path: string) => (await req('GET', path)).json() as Promise<unknown>;
-  return { req, get, login: (email: string) => req('POST', routes.devLogin.path, { email }) };
+  return {
+    req,
+    get,
+    login: (email: string) => req('POST', routes.devLogin.path, { email }),
+    token: () => cookie.slice(SESSION_COOKIE.length + 1),
+  };
 }
 
 beforeAll(async () => {
@@ -63,7 +84,7 @@ beforeAll(async () => {
   } finally {
     await close();
   }
-  store = new DbStore(url);
+  store = new DbStore(asLogin('hz_app_login'), asLogin('hz_auth_login'));
 }, 30_000);
 
 afterAll(async () => {
@@ -164,7 +185,8 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     await robert.login('robert@homezero.nl');
     const robertId = (routes.session.response.parse(await robert.get(routes.session.path)) as { user: { id: string } })
       .user.id;
-    const st = await store.itemStates(robertId);
+    // buiten een request ziet de store (als hz_app_login) niemand: binnen Roberts sessie lezen
+    const st = await store.asSession(robert.token(), () => store.itemStates(robertId));
     expect(st['sl_CFE_1761670000.000300']).toMatchObject({ read: true, answeredBy: 'Lisanne' });
     expect(st['sl_CFE_1761660000.000200']).toMatchObject({ answeredBy: 'Lisanne' }); // alias answeredBy
 
@@ -177,7 +199,10 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     expect(r.klopt).toBe(true);
     const after = routes.items.response.parse(await robert.get('/api/items')).items.find((i) => i.id === sl.id)!;
     expect(after).toMatchObject({ read: true, answered: true });
-    expect((await store.itemStates(robertId))[key]).toMatchObject({ answeredBy: 'Lisanne', extra: {} });
+    expect((await store.asSession(robert.token(), () => store.itemStates(robertId)))[key]).toMatchObject({
+      answeredBy: 'Lisanne',
+      extra: {},
+    });
   });
 
   it('een export opgenomen uit het prototype zelf (record-export.mjs): gekoppelde taken één keer, niet als tracker-item', async () => {
@@ -209,5 +234,26 @@ describe('na de import ziet Robert zijn tracker terug (HZ_STORE=db)', () => {
     expect(routes.tracker.response.parse(await lisanne.get('/api/tracker')).weekdoelen).toEqual([]);
     expect(routes.briefing.response.parse(await lisanne.get(routes.briefing.path)).briefing).toBeNull();
     expect(routes.pins.response.parse(await lisanne.get('/api/pins')).pins).toEqual([]);
+  });
+
+  it('als hz_app_login telt alleen de sessie: zonder sessie of met de sessie van een ander ziet de store niets van Robert', async () => {
+    const { db, close } = createDb(url, 1);
+    const robertId = (await findUserByEmail(db, 'robert@homezero.nl'))!.id;
+    await close();
+    // buiten een request (geen sessie), ook met Roberts id: niets
+    expect(await store.weekdoelen(robertId)).toEqual([]);
+    expect(await store.legacyCommits(robertId)).toEqual([]);
+    // binnen de sessie van Lisanne, met Roberts id: niets
+    const lisanne = client();
+    await lisanne.login('lisanne@homezero.nl');
+    expect(await store.asSession(lisanne.token(), () => store.weekdoelen(robertId))).toEqual([]);
+    // binnen Roberts eigen sessie: zijn weekdoelen
+    const robert = client();
+    await robert.login('robert@homezero.nl');
+    expect((await store.asSession(robert.token(), () => store.weekdoelen(robertId))).length).toBeGreaterThan(0);
+    // na uitloggen werkt zijn oude token niet meer
+    const old = robert.token();
+    expect((await robert.req('POST', routes.logout.path)).status).toBe(200);
+    expect(await store.asSession(old, () => store.weekdoelen(robertId))).toEqual([]);
   });
 });

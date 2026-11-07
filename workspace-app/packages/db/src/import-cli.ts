@@ -1,12 +1,16 @@
 /**
  * Import uit het prototype (HZW-021), voor één collega:
  *
- *   DATABASE_URL=postgres://hz_app_login:…@host/db \
+ *   DATABASE_URL=postgres://hz_worker_login:…@host/db HZ_AUTH_DATABASE_URL=postgres://hz_auth_login:…@host/db \
+ *   HZ_INDEX_DATABASE_URL=postgres://hz_indexer_login:…@host/db \
  *     pnpm --filter @hz/db import:prototype -- --export /pad/buiten/de/repo/export.json --email robert@homezero.nl \
  *       [--naam Robert] [--proef] [--zonder-context] [--opruimen-forceren] [--json]
  *
- * De export maakt een mens (README, "Import uit het prototype"); hij staat nooit in Git. Draait als hz_app met RLS:
- * het script kan alleen rijen van deze collega schrijven. De gedeelde contextindex schrijft het als hz_indexer:
+ * De export maakt een mens (README, "Import uit het prototype"); hij staat nooit in Git. Draait als hz_app met RLS,
+ * namens deze ene collega (app.user_id): daarvoor moet de login van DATABASE_URL lid zijn van hz_worker (de
+ * worker-login, lokaal de migratierol; de api-login kan het sinds 0011 niet). De collega opzoeken of aanmaken gaat als
+ * hz_auth via HZ_AUTH_DATABASE_URL (sql/auth-login.sql; standaard DATABASE_URL). Met --proef wordt hij alleen opgezocht,
+ * nooit aangemaakt. De gedeelde contextindex schrijft het als hz_indexer:
  * met HZ_INDEX_DATABASE_URL (sql/indexer-login.sql), of met DATABASE_URL als die login lid is van hz_indexer (lokaal
  * de migratierol). Kan dat niet (de app-login), dan slaat het de contextindex over en zegt dat in het verslag.
  * Opnieuw draaien mag, ook met een nieuwere export: wat de collega in de app wijzigde of verwijderde blijft staan.
@@ -14,7 +18,7 @@
  * helft verdwijnen, dan niet: controleer de export en draai met --opruimen-forceren).
  * Exitcode 0 = aantallen kloppen; 1 = aantallen kloppen niet; 2 = fout in de invoer.
  */
-import { canIndex, createDb, createIndexerDb, DEFAULT_DATABASE_URL, type Db } from './client';
+import { canIndex, createAuthDb, createDb, createIndexerDb, DEFAULT_DATABASE_URL, type Db } from './client';
 import { formatReport, importPrototype } from './import';
 
 function args(argv: string[]) {
@@ -48,7 +52,8 @@ if (typeof a.export !== 'string' || typeof a.email !== 'string') {
   process.exit(2);
 }
 
-const { db, close } = createDb(process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL, 2);
+const { db, close } = createDb(process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL, 2, { allowRoles: ['hz_worker'] });
+const auth = process.env.HZ_AUTH_DATABASE_URL ? createAuthDb(process.env.HZ_AUTH_DATABASE_URL, 1) : null;
 const indexer = process.env.HZ_INDEX_DATABASE_URL ? createIndexerDb(process.env.HZ_INDEX_DATABASE_URL, 1) : null;
 try {
   let context = a['zonder-context'] !== true;
@@ -67,6 +72,7 @@ try {
     dryRun: a.proef === true || a['dry-run'] === true,
     context,
     indexDb,
+    authDb: auth?.db,
     contextOvergeslagen,
     opruimenForceren: a['opruimen-forceren'] === true,
   });
@@ -78,4 +84,5 @@ try {
 } finally {
   await close();
   await indexer?.close();
+  await auth?.close();
 }

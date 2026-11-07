@@ -58,7 +58,9 @@ beforeAll(async () => {
   } finally {
     await owner.close();
   }
-  const seed = createDb(APP_URL, 1);
+  // Klaarzetten als de migratierol (lid van hz_auth en hz_worker). De api-login kan sinds 0011 geen gebruiker aanmaken
+  // en niet namens een collega schrijven.
+  const seed = createDb(OWNER_URL, 1);
   try {
     const A = (await upsertUser(seed.db, 'anna@homezero.nl', 'Anna')).id;
     const B = (await upsertUser(seed.db, 'bram@homezero.nl', 'Bram')).id;
@@ -183,6 +185,31 @@ describe('worker-rol: alleen de worker-login kent de id’s van alle collega’s
       );
       expect(codeOf(e)).toBe('42501');
     } finally {
+      await api.close();
+    }
+  });
+
+  it('namens een collega werken (app.user_id zonder sessie): de worker-login wel, de api-login niet (0011)', async () => {
+    const owner = createDb(OWNER_URL, 1);
+    const [A] = await activeUserIds(owner.db);
+    await owner.close();
+    const wk = createDb(WORKER_URL, 1);
+    const api = createDb(APP_URL, 1);
+    try {
+      expect((await withUser(wk.db, A!, (tx) => tx.select().from(weekdoelen))).map((r) => r.wat).sort()).toEqual([
+        'a1',
+        'a2',
+      ]);
+      expect(await withUser(api.db, A!, (tx) => tx.select().from(weekdoelen))).toEqual([]);
+      const e = await withUser(api.db, A!, (tx) =>
+        tx.insert(weekdoelen).values({ userId: A!, wat: 'vervalst', week: '2026-W45' }),
+      ).then(
+        () => null,
+        (x: E) => x,
+      );
+      expect(codeOf(e)).toBe('42501');
+    } finally {
+      await wk.close();
       await api.close();
     }
   });

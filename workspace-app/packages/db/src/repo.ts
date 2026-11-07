@@ -4,7 +4,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { withIndexer, withPurpose, withUser, withWorker, type Db, type Tx } from './client';
+import { withAuth, withIndexer, withUser, withWorker, type Db, type Tx } from './client';
 import { openToken, sealToken } from './crypto';
 import {
   auditLog,
@@ -40,14 +40,16 @@ const toUser = (r: AuthUserRow) => ({
 export type AuthUser = ReturnType<typeof toUser>;
 
 /**
- * Inloggen en sessies lopen via SECURITY DEFINER-functies (drizzle/0006_e2_auth_functions.sql): de app-rol heeft
- * geen open SELECT op users of sessions. Elke functie zoekt precies één sleutel op. De transactie draait als hz_app.
+ * Inloggen en sessies lopen via SECURITY DEFINER-functies (drizzle/0006_e2_auth_functions.sql): geen open SELECT op
+ * users of sessions. Elke functie zoekt precies één sleutel op. Sinds 0011 alleen als hz_auth: `db` is de verbinding
+ * van createAuthDb() (HZ_AUTH_DATABASE_URL, sql/auth-login.sql), of lokaal de migratierol. Met de api-login
+ * (hz_app_login) of de worker-login faalt elke functie hieronder met 42501.
  */
-const asApp = <T>(db: Db, fn: (tx: Tx) => Promise<T>) => withPurpose(db, 'auth', fn);
+const asAuth = <T>(db: Db, fn: (tx: Tx) => Promise<T>) => withAuth(db, fn);
 
 /** Gebruiker bij precies één e-mailadres, of null. */
 export async function findUserByEmail(db: Db, email: string): Promise<AuthUser | null> {
-  return asApp(db, async (tx) => {
+  return asAuth(db, async (tx) => {
     const r = await tx.execute<AuthUserRow>(sql`select * from auth_user_by_email(${email})`);
     return r.rows[0] ? toUser(r.rows[0]) : null;
   });
@@ -58,7 +60,7 @@ export async function findUserByEmail(db: Db, email: string): Promise<AuthUser |
  * auth_domains (standaard homezero.nl); anders faalt hij (42501). Admin wordt je alleen via sql/set-role.sql.
  */
 export async function upsertUser(db: Db, email: string, name: string) {
-  return asApp(db, async (tx) => {
+  return asAuth(db, async (tx) => {
     const r = await tx.execute<AuthUserRow>(sql`select * from auth_upsert_user(${email}, ${name})`);
     return toUser(r.rows[0]!);
   });
@@ -68,7 +70,7 @@ export async function upsertUser(db: Db, email: string, name: string) {
 export async function createSession(db: Db, userId: string, userAgent: string, days = 30) {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + days * 864e5);
-  await asApp(db, (tx) =>
+  await asAuth(db, (tx) =>
     tx.execute(
       sql`select auth_create_session(${userId}::uuid, ${hashToken(token)}, ${userAgent}, ${expiresAt.toISOString()}::timestamptz)`,
     ),
@@ -90,7 +92,7 @@ type AuthSessionRow = {
 
 /** Sessie bij een cookie-token: geldig, niet ingetrokken, niet verlopen, gebruiker niet geblokkeerd. */
 export async function findSession(db: Db, token: string) {
-  return asApp(db, async (tx) => {
+  return asAuth(db, async (tx) => {
     const r = (await tx.execute<AuthSessionRow>(sql`select * from auth_session_by_token(${hashToken(token)})`)).rows[0];
     if (!r) return null;
     return {
@@ -109,7 +111,7 @@ export async function findSession(db: Db, token: string) {
 
 /** Laatst gezien bijwerken en desgewenst de sessie verlengen. false als de sessie niet (meer) geldig is. */
 export async function touchSession(db: Db, token: string, expiresAt?: Date) {
-  return asApp(db, async (tx) => {
+  return asAuth(db, async (tx) => {
     const r = await tx.execute<{ ok: boolean }>(
       sql`select auth_touch_session(${hashToken(token)}, ${expiresAt ? expiresAt.toISOString() : null}::timestamptz) as ok`,
     );
@@ -118,7 +120,7 @@ export async function touchSession(db: Db, token: string, expiresAt?: Date) {
 }
 
 export async function revokeSession(db: Db, token: string) {
-  return asApp(db, async (tx) => {
+  return asAuth(db, async (tx) => {
     const r = await tx.execute<{ ok: boolean }>(sql`select auth_revoke_session(${hashToken(token)}) as ok`);
     return r.rows[0]?.ok === true;
   });

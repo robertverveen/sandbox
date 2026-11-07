@@ -2,6 +2,8 @@
  * HZW-020 (stuk E2): inloggen zonder open SELECT op users en sessions.
  * app.purpose is een GUC die elke transactie kan zetten; daarom geeft 'auth' of 'system' geen leesrecht meer.
  * Inloggen, sessies en de worker gaan via SECURITY DEFINER-functies die precies één sleutel opzoeken.
+ * Sinds 0011 mag alleen hz_auth die functies uitvoeren, en volgt app_user_id() uit een geldige sessie (app.session):
+ * het aanvalspad van de criticus (ronde 3) staat in 'aanvalspad: een request kan niemand nadoen'.
  * Eigen, verse database (hz_e2_test_auth) op localhost:5432.
  */
 import { readFileSync } from 'node:fs';
@@ -12,7 +14,9 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   activeUserIds,
+  canActAsUser,
   canIndex,
+  createAuthDb,
   createDb,
   createIndexerDb,
   deleteContextIndexPath,
@@ -26,11 +30,15 @@ import {
   hashToken,
   revokeSession,
   runMigrations,
+  runWithSession,
   sessions,
+  trackerItems,
   touchSession,
   upsertUser,
   users,
+  withAuth,
   withPurpose,
+  withSession,
   withUser,
   withWorker,
   deleteContextIndexId,
@@ -150,7 +158,7 @@ describe('SECURITY DEFINER-functies: precies één sleutel', () => {
 
   it('geen patroon of ongeldige hash: auth_session_by_token geeft niets terug', async () => {
     for (const probe of ['%', '.*', "' or true --", 'a'.repeat(63), hashToken(tokenA).toUpperCase()]) {
-      const r = await withPurpose(db, 'auth', (tx) => tx.execute(sql`select * from auth_session_by_token(${probe})`));
+      const r = await withAuth(db, (tx) => tx.execute(sql`select * from auth_session_by_token(${probe})`));
       expect(r.rows, probe).toHaveLength(0);
     }
   });
@@ -171,7 +179,7 @@ describe('SECURITY DEFINER-functies: precies één sleutel', () => {
     const future = new Date(Date.now() + 864e5).toISOString();
     const call = (uid: string, hash: string, exp: string) =>
       errOf(
-        withPurpose(db, 'auth', (tx) =>
+        withAuth(db, (tx) =>
           tx.execute(sql`select auth_create_session(${uid}::uuid, ${hash}, 'x', ${exp}::timestamptz)`),
         ),
       );
@@ -216,7 +224,7 @@ describe('SECURITY DEFINER-functies: precies één sleutel', () => {
     expect(s!.session.expiresAt.getTime()).toBeLessThanOrEqual(max() + 1000);
     expect(s!.session.expiresAt.getTime()).toBeGreaterThan(max() - 60_000);
     // rechtstreeks via de functie, zoals een auth-bibliotheek dat zou doen: zelfde grens
-    const direct = await withPurpose(db, 'auth', (tx) =>
+    const direct = await withAuth(db, (tx) =>
       tx.execute<{ ok: boolean }>(
         sql`select auth_touch_session(${hashToken(tokenB)}, now() + interval '400 days') as ok`,
       ),
@@ -319,7 +327,7 @@ describe('auth_upsert_user: geen rol van buiten, alleen toegestane domeinen (000
     await owner.db.execute(
       sql`insert into sessions (user_id, token_hash, expires_at) values (${x}::uuid, ${tok}, now() + interval '1 day')`,
     );
-    const r = await withPurpose(db, 'auth', (tx) => tx.execute(sql`select * from auth_session_by_token(${tok})`));
+    const r = await withAuth(db, (tx) => tx.execute(sql`select * from auth_session_by_token(${tok})`));
     expect(r.rows).toHaveLength(0);
   });
 
@@ -497,6 +505,180 @@ describe('contextindex: schrijven alleen als hz_indexer, niet via app.purpose (0
   });
 });
 
+const asLogin = (login: string) => {
+  const u = new URL(URL_);
+  u.username = login;
+  u.password = login;
+  return u.toString();
+};
+
+describe('aanvalspad: een request kan niemand nadoen (0011, criticus ronde 3)', () => {
+  // De api verbindt als hz_app_login (alleen lid van hz_app). Een request van A is een transactie met de geldige sessie
+  // van A (app.session). Daarbinnen draait in dit scenario willekeurige SQL (een injectie of een fout in een route).
+  let app: ReturnType<typeof createDb>;
+  let hashA: string;
+  let hashB: string;
+  const request = <T>(fn: (tx: Parameters<Parameters<typeof withSession>[2]>[0]) => Promise<T>) =>
+    withSession(app.db, hashA, fn);
+  // tellen namens B als de migratierol (lid van hz_worker; de eigenaar zelf valt ook onder FORCE RLS)
+  const trackerVanB = async () => (await withUser(db, B, (tx) => tx.select().from(trackerItems))).length;
+
+  beforeAll(async () => {
+    app = createDb(asLogin('hz_app_login'), 2);
+    hashA = hashToken(tokenA);
+    hashB = hashToken(tokenB);
+    // B heeft 5 tracker-items, A 1 (klaargezet als de migratierol, lid van hz_worker)
+    await withUser(db, B, (tx) =>
+      tx
+        .insert(trackerItems)
+        .values([1, 2, 3, 4, 5].map((i) => ({ userId: B, stroom: 'mijn' as const, wat: `geheim van B ${i}` }))),
+    );
+    await withUser(db, A, (tx) => tx.insert(trackerItems).values({ userId: A, stroom: 'mijn', wat: 'van A' }));
+  });
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it('de login van de api kan hz_auth en hz_worker niet worden', async () => {
+    expect(await canActAsUser(app.db)).toBe(false);
+    for (const role of ['hz_auth', 'hz_worker', 'hz_indexer']) {
+      const e = await errOf(request((tx) => tx.execute(sql.raw(`SET LOCAL ROLE ${role}`))));
+      expect(codeOf(e), role).toBe('42501');
+    }
+  });
+
+  it('id van B opvragen via een raadbaar e-mailadres of via auth_upsert_user: geweigerd', async () => {
+    for (const q of [
+      sql`select * from auth_user_by_email('bram@homezero.nl')`,
+      sql`select * from auth_upsert_user('bram@homezero.nl', '')`,
+      sql`select * from auth_upsert_user('nieuw@homezero.nl', '')`,
+      sql`select * from auth_session_by_token(${hashB})`,
+      sql`select auth_touch_session(${hashB}, null)`,
+      sql`select auth_revoke_session(${hashB})`,
+    ]) {
+      const e = await errOf(request((tx) => tx.execute(q)));
+      expect(codeOf(e)).toBe('42501');
+      expect(`${e?.cause?.message ?? e?.message}`).toMatch(/permission denied for function/);
+    }
+    expect(await findSession(db, tokenB)).not.toBeNull(); // B's sessie is niet aangeraakt
+  });
+
+  it('ook met het id van B (bijv. uit een log) en app.user_id = B: geen rijen van B, niets schrijven namens B', async () => {
+    const r = await request(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${B}, true)`);
+      return {
+        uid: (await tx.execute<{ u: string | null }>(sql`select app_user_id() as u`)).rows[0]!.u,
+        tracker: await tx.select().from(trackerItems),
+        users: await tx.select({ id: users.id }).from(users),
+      };
+    });
+    expect(r.uid).toBeNull();
+    expect(r.tracker).toHaveLength(0);
+    expect(r.users).toHaveLength(0);
+    const e = await errOf(
+      request(async (tx) => {
+        await tx.execute(sql`select set_config('app.user_id', ${B}, true)`);
+        await tx.insert(trackerItems).values({ userId: B, stroom: 'mijn', wat: 'vervalst' });
+      }),
+    );
+    expect(codeOf(e)).toBe('42501');
+    expect(await trackerVanB()).toBe(5);
+  });
+
+  it('app.user_id = B zonder sessie, of met een verzonnen of andermans ingetrokken token: niemand', async () => {
+    const probes: Array<string | null> = [null, 'f'.repeat(64), hashToken('geraden'), 'onzin'];
+    const revoked = (await createSession(db, B, 'ingetrokken')).token;
+    await revokeSession(db, revoked);
+    probes.push(hashToken(revoked));
+    for (const h of probes) {
+      const rows = await app.db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('app.user_id', ${B}, true)`);
+        if (h) await tx.execute(sql`select set_config('app.session', ${h}, true)`);
+        return tx.select().from(trackerItems);
+      });
+      expect(rows, String(h)).toHaveLength(0);
+    }
+    // via de gewone hulpfunctie, zonder sessie: ook niets
+    expect(await withUser(app.db, B, (tx) => tx.select().from(trackerItems))).toHaveLength(0);
+  });
+
+  it('auth_create_session voor B vanuit een request: geweigerd, B heeft geen nieuwe sessie', async () => {
+    const before = (
+      await owner.db.execute<{ n: number }>(sql`select count(*)::int as n from sessions where user_id = ${B}`)
+    ).rows[0]!.n;
+    const exp = new Date(Date.now() + 864e5).toISOString();
+    const e = await errOf(
+      request((tx) =>
+        tx.execute(sql`select auth_create_session(${B}::uuid, ${hashToken('kaper')}, 'x', ${exp}::timestamptz)`),
+      ),
+    );
+    expect(codeOf(e)).toBe('42501');
+    // rechtstreeks een sessierij invoegen kan ook niet (geen INSERT-recht meer)
+    const e2 = await errOf(
+      request((tx) =>
+        tx.insert(sessions).values({ userId: A, tokenHash: hashToken('eigen'), expiresAt: new Date(exp) }),
+      ),
+    );
+    expect(codeOf(e2)).toBe('42501');
+    const after = (
+      await owner.db.execute<{ n: number }>(sql`select count(*)::int as n from sessions where user_id = ${B}`)
+    ).rows[0]!.n;
+    expect(after).toBe(before);
+  });
+
+  it('met de eigen sessie werkt alles gewoon: A ziet en schrijft alleen zijn eigen rijen', async () => {
+    const mine = await request((tx) => tx.select({ wat: trackerItems.wat }).from(trackerItems));
+    expect(mine.map((x) => x.wat)).toEqual(['van A']);
+    // de api: runWithSession + withUser (DbStore). Om B vragen binnen de sessie van A: niemand.
+    expect(
+      (await runWithSession(hashA, () => withUser(app.db, A, (tx) => tx.select().from(trackerItems)))).length,
+    ).toBe(1);
+    expect(await runWithSession(hashA, () => withUser(app.db, B, (tx) => tx.select().from(trackerItems)))).toHaveLength(
+      0,
+    );
+    // eigen sessie intrekken mag (uitloggen op een ander apparaat), de verloopdatum verschuiven niet
+    const other = (await createSession(db, A, 'ander apparaat')).token;
+    await request((tx) =>
+      tx.execute(sql`update sessions set revoked_at = now() where token_hash = ${hashToken(other)}`),
+    );
+    expect(await findSession(db, other)).toBeNull();
+    const e = await errOf(request((tx) => tx.execute(sql`update sessions set expires_at = now() + interval '1 year'`)));
+    expect(codeOf(e)).toBe('42501');
+  });
+
+  it('de auth-login (hz_auth_login) kan inloggen en sessies beheren, maar leest geen enkele tabel', async () => {
+    const auth = createAuthDb(asLogin('hz_auth_login'), 1);
+    try {
+      expect((await findUserByEmail(auth.db, 'bram@homezero.nl'))?.id).toBe(B);
+      expect((await findSession(auth.db, tokenA))?.user.id).toBe(A);
+      expect(await canActAsUser(auth.db)).toBe(false);
+      for (const q of [sql`select * from users`, sql`select * from sessions`, sql`select * from tracker_items`]) {
+        const e = await errOf(withAuth(auth.db, (tx) => tx.execute(q)));
+        expect(codeOf(e)).toBe('42501');
+      }
+      const e = await errOf(withUser(auth.db, B, (tx) => tx.select().from(trackerItems)));
+      expect(codeOf(e)).toBe('42501'); // kan geen hz_app worden
+    } finally {
+      await auth.close();
+    }
+  });
+
+  it('de worker-login werkt namens een collega (app.user_id), maar binnen een sessie telt alleen die sessie', async () => {
+    const wk = createDb(asLogin('hz_worker_login'), 1, { allowRoles: ['hz_worker'] });
+    try {
+      expect(await canActAsUser(wk.db)).toBe(true);
+      expect(await withUser(wk.db, B, (tx) => tx.select().from(trackerItems))).toHaveLength(5);
+      expect(
+        await runWithSession(hashA, () => withUser(wk.db, B, (tx) => tx.select().from(trackerItems))),
+      ).toHaveLength(0);
+      const e = await errOf(findUserByEmail(wk.db, 'bram@homezero.nl'));
+      expect(codeOf(e)).toBe('42501'); // de worker-login is geen hz_auth
+    } finally {
+      await wk.close();
+    }
+  });
+});
+
 describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
   const FNS = [
     'auth_user_by_email',
@@ -507,7 +689,7 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
     'auth_revoke_session',
     'system_active_user_ids',
   ];
-  /** Wie ze mag uitvoeren: alles hz_app, behalve de lijst met alle gebruikers-id's (alleen hz_worker, 0010). */
+  /** Wie ze mag uitvoeren: alles hz_auth (0011), behalve de lijst met alle gebruikers-id's (alleen hz_worker, 0010). */
   const GRANTEE: Record<string, string> = { system_active_user_ids: 'hz_worker' };
   const FNS_ARR = `{${FNS.join(',')}}`;
 
@@ -525,16 +707,17 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
     }
   });
 
-  it('PUBLIC mag ze niet uitvoeren; hz_app wel, system_active_user_ids alleen hz_worker', async () => {
+  it('PUBLIC en hz_app mogen ze niet uitvoeren; de auth_*-functies alleen hz_auth, system_active_user_ids alleen hz_worker', async () => {
     const r = await owner.db.execute<{ proname: string; grantee: string }>(sql`
       select p.proname, coalesce(nullif(pg_get_userbyid(a.grantee), '-'), 'PUBLIC') as grantee
       from pg_proc p, aclexplode(p.proacl) a
       where p.pronamespace = 'public'::regnamespace and p.proname = any(${FNS_ARR}::text[]) and a.privilege_type = 'EXECUTE'`);
     for (const f of FNS) {
       const grantees = r.rows.filter((x) => x.proname === f).map((x) => x.grantee);
-      const want = GRANTEE[f] ?? 'hz_app';
+      const want = GRANTEE[f] ?? 'hz_auth';
       expect(grantees, f).toContain(want);
-      if (want !== 'hz_app') expect(grantees, f).not.toContain('hz_app');
+      expect(grantees, f).not.toContain('hz_app');
+      expect(grantees, f).not.toContain(want === 'hz_auth' ? 'hz_worker' : 'hz_auth');
       expect(grantees, f).not.toContain('PUBLIC');
     }
     const pub = await owner.db.execute<{ n: number }>(sql`

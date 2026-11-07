@@ -3,6 +3,8 @@
  * login die alleen lid is van hz_app: `CREATE ROLE hz_app_login LOGIN NOINHERIT IN ROLE hz_app` (sql/app-login.sql).
  * Dan kan een request met `SET ROLE NONE` of `RESET ROLE` RLS niet omzeilen: zonder hz_app heeft de login geen
  * tabelrechten (NOINHERIT) en hij is nergens eigenaar. createDb() weigert in productie een login die eigenaar is.
+ * Sinds 0011 telt app.user_id voor deze login niet: hij ziet alleen rijen van de gebruiker van een geldige sessie
+ * (app.session, runWithSession/withSession).
  *
  * Vereist dat een beheerder eenmalig sql/app-login.sql draaide (lokaal en in CI met login/wachtwoord hz_app_login).
  * Eigen, verse database (hz_e2_test_login) op localhost:5432.
@@ -14,11 +16,15 @@ import {
   assertAppLogin,
   checkAppLogin,
   createDb,
+  createSession,
   ensureDatabase,
+  hashToken,
   runMigrations,
+  runWithSession,
   upsertUser,
   UnsafeAppLoginError,
   weekdoelen,
+  withSession,
   withUser,
   type Db,
 } from '../src';
@@ -38,6 +44,8 @@ let app: ReturnType<typeof createDb>;
 let db: Db;
 let A: string;
 let B: string;
+let hashA: string;
+let hashB: string;
 
 beforeAll(async () => {
   await ensureDatabase(OWNER_URL, { recreate: true });
@@ -53,17 +61,25 @@ beforeAll(async () => {
   await probe.end();
   app = createDb(loginUrl, 3);
   db = app.db;
-  A = (await upsertUser(db, 'anna@homezero.nl', 'Anna')).id;
-  B = (await upsertUser(db, 'bram@homezero.nl', 'Bram')).id;
+  // Gebruikers, sessies en rijen klaarzetten als de migratierol (lid van hz_auth en hz_worker); de app-login kan dat
+  // niet (zie auth.test.ts, aanvalspad).
+  seed = createDb(OWNER_URL, 1);
+  A = (await upsertUser(seed.db, 'anna@homezero.nl', 'Anna')).id;
+  B = (await upsertUser(seed.db, 'bram@homezero.nl', 'Bram')).id;
+  hashA = hashToken((await createSession(seed.db, A, 'vitest-a')).token);
+  hashB = hashToken((await createSession(seed.db, B, 'vitest-b')).token);
   for (const [uid, wat] of [
     [A, 'doel-a'],
     [B, 'doel-b'],
   ] as const)
-    await withUser(db, uid, (tx) => tx.insert(weekdoelen).values({ userId: uid, wat, week: '2026-W45' }));
+    await withUser(seed.db, uid, (tx) => tx.insert(weekdoelen).values({ userId: uid, wat, week: '2026-W45' }));
 }, 30_000);
+
+let seed: ReturnType<typeof createDb>;
 
 afterAll(async () => {
   await app?.close();
+  await seed?.close();
 });
 
 type PgErr = { code?: string; message?: string };
@@ -152,6 +168,9 @@ describe('SET ROLE NONE en RESET ROLE in een request: RLS blijft dicht', () => {
       const cu = (await c.query('select current_user as cu')).rows[0].cu as string;
       expect(['hz_app', loginName]).toContain(cu);
       await c.query(`select set_config('app.user_id', '${A}', true)`);
+      // app.user_id alleen: deze login is niemand (0011)
+      expect((await c.query('select wat from weekdoelen')).rows).toHaveLength(0);
+      await c.query(`select set_config('app.session', '${hashA}', true)`);
       const rows = await c.query('select wat from weekdoelen');
       expect(rows.rows.map((r: { wat: string }) => r.wat)).toEqual(['doel-a']);
       await c.query('SAVEPOINT s1');
@@ -162,9 +181,14 @@ describe('SET ROLE NONE en RESET ROLE in een request: RLS blijft dicht', () => {
     }
   });
 
-  it('withUser via deze login: A ziet nooit rijen van B', async () => {
-    const a = await withUser(db, A, (tx) => tx.select().from(weekdoelen));
+  it('withUser via deze login: alleen binnen de sessie van A, en A ziet nooit rijen van B', async () => {
+    const a = await runWithSession(hashA, () => withUser(db, A, (tx) => tx.select().from(weekdoelen)));
     expect(a.map((r) => r.wat)).toEqual(['doel-a']);
+    // binnen de sessie van A om B vragen: niemand
+    const ab = await runWithSession(hashA, () => withUser(db, B, (tx) => tx.select().from(weekdoelen)));
+    expect(ab).toHaveLength(0);
+    // zonder sessie: app.user_id telt niet voor de app-login
+    expect(await withUser(db, B, (tx) => tx.select().from(weekdoelen))).toHaveLength(0);
     const none = await db.execute(sql`select * from weekdoelen`);
     expect(none.rows).toHaveLength(0);
   });
@@ -202,7 +226,7 @@ describe('createDb() in NODE_ENV=production', () => {
   it('accepteert de aparte login en werkt dan gewoon met RLS', async () => {
     const good = createDb(loginUrl, 1, { env: { NODE_ENV: 'production' } });
     try {
-      const rows = await withUser(good.db, B, (tx) => tx.select().from(weekdoelen));
+      const rows = await withSession(good.db, hashB, (tx) => tx.select().from(weekdoelen));
       expect(rows.map((r) => r.wat)).toEqual(['doel-b']);
     } finally {
       await good.close();
