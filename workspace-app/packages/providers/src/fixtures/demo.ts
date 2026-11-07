@@ -477,13 +477,10 @@ export const DEMO_HISTORY: Record<string, Message[]> = {
       'De nieuwe ZSB-vragen staan op acceptatie. @Femke wil jij ze morgen doorlopen?',
     ),
     DM('Femke', 'UMJ', '2026-10-28T16:40', 'Top, doe ik morgenochtend :+1:'),
-    DM(
-      'Femke',
-      'UMJ',
-      '2026-10-29T09:12',
-      'De leads van gisteravond staan niet in de planning, kan iemand kijken?',
-      { replies: 2, latest: '2026-10-29T09:31' },
-    ),
+    DM('Femke', 'UMJ', '2026-10-29T09:12', 'De leads van gisteravond staan niet in de planning, kan iemand kijken?', {
+      replies: 2,
+      latest: '2026-10-29T09:31',
+    }),
     DM(
       'Robert Verveen',
       SLACK_ME,
@@ -543,12 +540,7 @@ export const DEMO_HISTORY: Record<string, Message[]> = {
 
 export const DEMO_THREADS: Record<string, Message[]> = {
   ['CDEMOFEEN|' + tsOf('2026-10-29T09:12')]: [
-    DM(
-      'Femke',
-      'UMJ',
-      '2026-10-29T09:12',
-      'De leads van gisteravond staan niet in de planning, kan iemand kijken?',
-    ),
+    DM('Femke', 'UMJ', '2026-10-29T09:12', 'De leads van gisteravond staan niet in de planning, kan iemand kijken?'),
     DM(
       'Emiel',
       'UEMIEL',
