@@ -21,6 +21,7 @@ on:
         default: test
       tag:
         description: Bestaande image-tag (sha-... of v...); leeg = deze commit bouwen
+        type: string
         required: false
         default: ''
 

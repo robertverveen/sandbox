@@ -200,6 +200,9 @@ importers:
       '@types/node':
         specifier: 22.19.1
         version: 22.19.1
+      '@types/pg':
+        specifier: 8.15.6
+        version: 8.15.6
       ajv:
         specifier: 8.17.1
         version: 8.17.1

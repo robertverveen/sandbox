@@ -121,7 +121,7 @@ else
 fi
 
 # 5. Opruimen: oude bundels (houd de 5 nieuwste plus wat in gebruik is) en ongebruikte images.
-keep="$(cat "$HZ_ROOT"/env/*/current "$HZ_ROOT"/env/*/previous 2>/dev/null | sort -u)"
+keep="$(cat "$HZ_ROOT"/env/*/current "$HZ_ROOT"/env/*/previous 2>/dev/null | sort -u || true)"
 if [[ -d "$HZ_ROOT/releases" ]]; then
   # shellcheck disable=SC2012 # namen zijn tags; sorteren op tijd
   while IFS= read -r dir; do
