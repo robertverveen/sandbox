@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - name: Bouw hz-${{ matrix.image }} (geen push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: workspace-app
           file: workspace-app/infra/docker/${{ matrix.image }}.Dockerfile
