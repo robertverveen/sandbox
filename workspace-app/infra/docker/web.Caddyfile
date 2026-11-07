@@ -1,0 +1,43 @@
+# Web-container van één instantie: serveert de gebouwde SPA (apps/web/dist) en zet /api door naar de api van
+# dezelfde instantie. TLS doet de edge-proxy; deze Caddy praat alleen http op het interne netwerk.
+# De CSP met de hash van het inline thema-script wordt bij het bouwen van het image gemaakt (web-csp.mjs -> csp.caddy).
+{
+	admin off
+	auto_https off
+	persist_config off
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:8080 {
+	# Geen toegangslog hier: de edge logt al (zonder persoonsgegevens).
+	respond /healthz "ok" 200
+
+	handle /api/* {
+		# Server-sent events (/api/events) direct doorgeven, niet bufferen.
+		reverse_proxy {$HZ_API_UPSTREAM:api:8700} {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /srv/web
+		import /etc/caddy/csp.caddy
+		header {
+			X-Content-Type-Options "nosniff"
+			X-Frame-Options "DENY"
+			Referrer-Policy "strict-origin-when-cross-origin"
+			Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+			Cross-Origin-Opener-Policy "same-origin"
+		}
+		# Gehashte bestanden mogen een jaar in de cache; index.html nooit (anders mist een collega een uitrol).
+		@hashed path /assets/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@html path / /index.html
+		header @html Cache-Control "no-cache"
+		try_files {path} /index.html
+		encode zstd gzip
+		file_server
+	}
+}

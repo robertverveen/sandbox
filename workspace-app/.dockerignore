@@ -1,0 +1,14 @@
+# Bouwcontext van de images (infra/docker/*.Dockerfile, context = workspace-app/).
+**/node_modules
+**/dist
+.local
+coverage
+playwright-report
+test-results
+**/*.log
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+# Ontsleutelde secrets bestaan alleen op de server in /run/hz; versleutelde (.age) mogen mee in de bundel.
+infra/secrets/*.env

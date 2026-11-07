@@ -1,0 +1,71 @@
+# Foutregistratie (HZW-007): GlitchTip 6, zelf gehost (Sentry-compatibel; geen extra verwerker voor de AVG).
+# Eén container (web en taken samen, bin/run-all-in-one.sh) plus een eigen Postgres; Valkey staat uit (VALKEY_URL
+# leeg), dat is genoeg voor een team van 15. Bereikbaar op https://{HZ_ERRORS_DOMAIN} via de edge.
+# Api en worker sturen fouten met HZ_ERROR_DSN (packages/ops).
+#
+#   docker compose -p hz-ops --env-file /etc/hz/hz.env --env-file /run/hz/ops.env -f compose/ops.yaml up -d
+name: hz-ops
+
+services:
+  gt-db:
+    image: postgres:16.10-alpine
+    restart: unless-stopped
+    command: ['postgres', '-c', 'max_locks_per_transaction=512']
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${HZ_GLITCHTIP_DB_PASSWORD:?}
+      POSTGRES_DB: glitchtip
+    volumes: [gt-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U glitchtip -d glitchtip']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: local
+      options: { max-size: 10m, max-file: '3' }
+
+  glitchtip:
+    image: glitchtip/glitchtip:6.2.6
+    restart: unless-stopped
+    command: ['./bin/run-all-in-one.sh']
+    environment:
+      DATABASE_URL: postgres://glitchtip:${HZ_GLITCHTIP_DB_PASSWORD}@gt-db:5432/glitchtip
+      VALKEY_URL: ''
+      SECRET_KEY: ${HZ_GLITCHTIP_SECRET_KEY:?}
+      PORT: '8000'
+      GLITCHTIP_DOMAIN: https://${HZ_ERRORS_DOMAIN:?}
+      DEFAULT_FROM_EMAIL: ${HZ_ALERT_FROM:-fouten@homezero.nl}
+      # SMTP voor meldingen naar Robert (smtp+tls://gebruiker:wachtwoord@host:587); leeg = alleen in de UI.
+      EMAIL_URL: ${HZ_GLITCHTIP_EMAIL_URL:-consolemail://}
+      ENABLE_USER_REGISTRATION: 'false'
+      ENABLE_ORGANIZATION_CREATION: 'false'
+      GLITCHTIP_MAX_EVENT_LIFE_DAYS: '30'
+    depends_on:
+      gt-db: { condition: service_healthy }
+    volumes: [gt-uploads:/code/uploads]
+    networks:
+      default: {}
+      edge:
+        aliases: [hz-ops-glitchtip]
+    healthcheck:
+      test: ['CMD', 'python3', 'healthcheck.py']
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: local
+      options: { max-size: 10m, max-file: '3' }
+
+volumes:
+  gt-db: {}
+  gt-uploads: {}
+
+networks:
+  default: {}
+  edge:
+    external: true
+    name: hz-edge
