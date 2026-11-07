@@ -1,0 +1,65 @@
+# Slack-app-manifest voor HomeZero Workspace (HZW-033, stuk E3).
+#
+# Gebruik (HUMAN_INPUT, stap C6): api.slack.com/apps -> Create New App -> From a manifest -> workspace HomeZero ->
+# dit bestand plakken. Vervang eerst <domein> door het echte domein van de app (HZW-002/003).
+#
+# - Interne app, alleen een user token (xoxp-): de app leest en markeert namens de collega zelf. Geen bot-gebruiker.
+# - Versturen (chat:write, reactions:write) gebeurt alleen na een klik van een mens in de app; Claude en de worker
+#   versturen nooit iets.
+# - De Events API kent geen *_marked-events (die bestaan alleen in RTM); gelezen op een ander apparaat komt binnen via
+#   de poll van de worker op last_read (elke 3 minuten). De events hieronder melden alleen nieuwe berichten.
+# - Geen geheimen in dit bestand. Na het aanmaken: signing secret -> HZ_SLACK_SIGNING_SECRET (API en worker),
+#   app-level token met scope authorizations:read -> HZ_SLACK_APP_TOKEN (API), client-id en -secret in de secrets.
+_metadata:
+  major_version: 1
+  minor_version: 1
+display_information:
+  name: HomeZero Workspace
+  description: Eén werkplek voor HomeZero-collega's. Leest je Slack met je eigen rechten; verstuurt alleen als jij op Versturen drukt.
+  background_color: '#1f3d2b'
+oauth_config:
+  redirect_urls:
+    # Placeholder: de definitieve callback-URL komt uit het auth-stuk (E1, "Redirect-URL's voor Google, Slack en
+    # Atlassian"). Pas hem hier en in de app-instellingen aan als E1 een ander pad kiest.
+    - https://<domein>/api/connections/slack/callback
+  scopes:
+    user:
+      # Lezen: kanalen, privékanalen, DM's en groeps-DM's (users.conversations, conversations.info/history/replies)
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+      - channels:read
+      - groups:read
+      - im:read
+      - mpim:read
+      # Leescursor zetten (conversations.mark): gelezen en ongelezen, ook op Slack-mobiel
+      - channels:write
+      - groups:write
+      - im:write
+      - mpim:write
+      # Versturen en reageren, alleen na een klik van een mens
+      - chat:write
+      - reactions:read
+      - reactions:write
+      # Inhalen (search.messages), namen (users.list), eigen emoji (emoji.list)
+      - search:read
+      - users:read
+      - emoji:read
+      # Alleen als Robert na de spike HZW-037 kiest voor Slack-to-do's (HZ_SLACK_TODOS=1); ook nodig voor het
+      # proefscript in docs/spike-slack-todos.md. Haal dan het hekje weg:
+      # - reminders:read
+      # - reminders:write
+      # - lists:read
+settings:
+  event_subscriptions:
+    request_url: https://<domein>/api/hooks/slack
+    # User-events: berichten in gesprekken waar de geïnstalleerde collega in zit.
+    user_events:
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

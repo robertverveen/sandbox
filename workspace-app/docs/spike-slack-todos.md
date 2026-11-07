@@ -54,7 +54,8 @@ een rate limit. De provider vertaalt dat naar `AuthError` en `RateLimitError`; d
   leescursor "for whomever owns the token": alles tot en met `ts` is gelezen. De app markeert daarom tot het
   gelezen bericht, niet tot het nieuwste.
 - `channel_marked` (en de andere `*_marked`-events) bestaan alleen voor RTM ("Compatible APIs: RTM"), niet voor de
-  Events API. "Gelezen op een ander apparaat" komt dus via de poll binnen (Slack zonder Events: elke 3 minuten).
+  Events API. "Gelezen op een ander apparaat" komt dus via de poll binnen: de worker vraagt elke 3 minuten, ook
+  met Events, `conversations.info` op voor de gesprekken die bij ons ongelezen staan (buiten de cache om).
 - Een event bevat in `authorizations` maar **één** installatie, ook als meer collega's het zien. Alle installaties
   geeft `apps.event.authorizations.list` met `event_context`; daarvoor is een **app-level token** met
   `authorizations:read` nodig, in de Authorization-header (rate limit 600 per minuut per app per team). Zonder dat

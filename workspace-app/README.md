@@ -159,13 +159,22 @@ echte endpoints.
 
 - **Tokens**: `live/tokens.ts` laadt het token van de collega (`withUserScope`), ververst het op de server en slaat
   het versleuteld op (`dbTokenStore` in `@hz/db`). Ontkoppelen trekt het in (`live/revoke.ts`) en wist token en sync-data.
-- **Versturen alleen na een klik**: `postMessage`, `react`, `createEvent` en `respond` werken alleen binnen een
-  POST/PUT/PATCH/DELETE van een ingelogde collega (`withHumanAction`, gezet door de API). De worker en Claude kunnen
-  dat niet. Gmail maakt alleen concepten.
+- **Versturen alleen na een klik**: `postMessage`, `react`, `createEvent` en `respond` werken alleen binnen de
+  verstuur-routes `sendMessage`, `react`, `createEvent` en `rsvp` van een ingelogde collega (`HUMAN_ACTION_ROUTES` in
+  `apps/api/src/app.ts` zet `withHumanAction`). Elke andere POST (ook `/api/ask` of een MCP-aanroep) krijgt een 403
+  als hij toch iets probeert te versturen. De worker en Claude kunnen het niet. Gmail maakt alleen concepten.
+- **Slack-gelezen-status**: `conversations.mark` zet de leescursor in Slack precies op het gekozen bericht (gelezen én
+  ongelezen) en de app neemt die cursor direct over. Gelezen op een ander apparaat: de Events API heeft geen
+  `*_marked`, dus de worker pollt elke 3 minuten `conversations.info` voor wat bij ons ongelezen staat, buiten de
+  cache om (`pollReadState`). Met Events haalt die poll geen geschiedenis op (nieuwe berichten komen via events),
+  zonder Events ook de verouderde standen. Budget per run: `HZ_SLACK_POLL_BUDGET` (standaard 40 calls); een verzoek
+  van de browser haalt hooguit 20 standen op. Een rate limit gaat door naar de worker (terugval), nooit "gelezen".
+- **Slack-app-manifest**: `infra/slack/manifest.yml` (user-scopes, events, request-URL, redirect-URL als placeholder);
+  `slack-manifest.test.ts` houdt het gelijk met de code.
 - **Sync-motor** (`apps/worker/src/sync.ts`, `sync-db.ts`): planner elke minuut (pg-boss), één run per collega en
   bron (`singletonKey`), terugval bij rate limits (`Retry-After`) en fouten, `needs_reauth` bij een afgewezen token.
   Webhooks (`/api/hooks/slack`, `/api/hooks/google/calendar`, `/api/hooks/google/gmail`) worden gecontroleerd,
-  ontdubbeld (`sync_events`) en zetten een run klaar (`NOTIFY hz_sync`). Nieuwe data: `NOTIFY hz_events` -> SSE
+  ontdubbeld (`sync_events`; Slack per `event_id:collega`) en zetten een run klaar (`NOTIFY hz_sync`). Nieuwe data: `NOTIFY hz_events` -> SSE
   `invalidate`. Stand per bron: `GET /api/sync/status`, nu bijwerken: `POST /api/sync/:provider`.
 - **Database**: `drizzle/0005_e3_sync.sql` (`sync_state`, `sync_jobs`, `sync_events`, alle drie onder RLS).
 - **Starten met live bronnen** (na de mens-stappen in `HUMAN_INPUT.md`):
