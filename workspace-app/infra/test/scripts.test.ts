@@ -119,7 +119,10 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     expect(idx(/compose -p hz-edge .* up -d --wait/)).toBeGreaterThan(-1);
     expect(idx(/compose -p hz-edge .* exec -T caddy caddy reload/)).toBeGreaterThan(-1);
     const pull = idx(/compose -p hz-test .* pull --quiet/);
+    const roles = idx(/compose -p hz-test .* exec -T db \/docker-entrypoint-initdb\.d\/10-hz-roles\.sh/);
     const migrate = idx(/compose -p hz-test .* run --rm migrate/);
+    expect(roles).toBeGreaterThan(pull);
+    expect(migrate).toBeGreaterThan(roles);
     const up = idx(/compose -p hz-test .* up -d --remove-orphans --wait/);
     expect(pull).toBeGreaterThan(-1);
     expect(migrate).toBeGreaterThan(pull);
@@ -198,6 +201,16 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
         .some((c) => /compose -p hz-prod .* (run|up)/.test(c)),
     ).toBe(false);
     expect(t.state('prod', 'current')).toBe('v1.0.0');
+  });
+
+  it('productie start ook GlitchTip (hz-ops) zodra de server-secrets er zijn; test niet', async () => {
+    const t = await setup();
+    expect((await run(script('secrets.sh'), ['gen', 'server'], t.env)).code).toBe(0);
+    expect((await t.deploy('test', 'sha-aaaaaaa')).code).toBe(0);
+    expect(t.docker.calls().some((c) => c.includes('compose -p hz-ops'))).toBe(false);
+    const r = await t.deploy('prod', 'v1.0.0', { HZ_SKIP_PREDEPLOY_BACKUP: '1' });
+    expect(r.code, r.all).toBe(0);
+    expect(t.docker.calls().some((c) => /compose -p hz-ops .*compose\/ops\.yaml up -d/.test(c))).toBe(true);
   });
 
   it('weigert onbekende omgevingen en tags', async () => {

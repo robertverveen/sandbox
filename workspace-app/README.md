@@ -117,6 +117,18 @@ tools/
 e2e/          Playwright-tests (schil, Dagstart, toetsenbord, axe, 400 px)
 ```
 
+## Hosting en uitrol
+
+Eén Hetzner Cloud-server (CX32) met Docker Compose en Caddy, uitgerold door GitHub Actions: test bij elke merge naar
+`main`, productie bij een goedgekeurde release, een preview per pull request, nachtelijke versleutelde back-ups naar
+een Storage Box met maandelijkse hersteltest. Alles staat als code in `infra/` (stuk E0): uitleg en de keuze voor
+Compose + Caddy in [`infra/README.md`](infra/README.md), beheer in [`infra/RUNBOOK.md`](infra/RUNBOOK.md).
+
+```bash
+pnpm --filter @hz/infra test     # infra-tests (schema's, scripts, back-up en verhuizing tegen de lokale Postgres)
+bash infra/scripts/validate.sh   # shellcheck, actionlint, caddy validate, compose config
+```
+
 ## Afspraken in de code
 
 - **Contract eerst.** Routes staan in `packages/shared/src/contract.ts` (methode, pad, zod-schema's, eigenaar-stuk). De

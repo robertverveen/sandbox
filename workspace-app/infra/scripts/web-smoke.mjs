@@ -129,7 +129,10 @@ try {
   const rows = await page.locator('main [data-key], main .row, main li').count();
   check(rows > 0, `Dagstart rendert met data via /api (${rows} regels)`);
   await browser.close();
-  check(problems.length === 0, `geen CSP-overtredingen of consolefouten${problems.length ? ': ' + problems.join(' | ') : ''}`);
+  check(
+    problems.length === 0,
+    `geen CSP-overtredingen of consolefouten${problems.length ? ': ' + problems.join(' | ') : ''}`,
+  );
   check(typeof theme === 'string', 'thema-script draaide (inline script toegestaan door de hash)');
 } catch (e) {
   fails.push(String(e));

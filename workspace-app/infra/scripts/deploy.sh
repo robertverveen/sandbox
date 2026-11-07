@@ -5,7 +5,7 @@
 #   deploy.sh <prod|test> <tag>
 #
 # Stappen: secrets ontsleutelen (age) -> verplichte sleutels controleren -> edge-proxy bijwerken (herladen zonder
-# onderbreking) -> productie: eerst een back-up -> migraties -> containers vervangen en wachten tot ze gezond zijn ->
+# onderbreking) -> productie: eerst een back-up -> rollen gelijkzetten -> migraties -> containers vervangen en wachten tot ze gezond zijn ->
 # health-check via https -> vastleggen. Mislukt iets na het vervangen, dan gaat de vorige versie terug (rollback).
 # Migraties gaan alleen vooruit: schrijf ze uitbreidend (eerst kolom erbij, later pas weg), zie RUNBOOK.md.
 set -euo pipefail
@@ -71,6 +71,12 @@ if ((edge_changed)); then
   log "edge-proxy herladen"
 fi
 
+# Foutregistratie (GlitchTip) hoort bij productie; alleen als de server-secrets ervoor er zijn.
+if [[ "$env" == prod ]] && grep -Eq '^HZ_GLITCHTIP_SECRET_KEY=.+' "$server_env"; then
+  "$HZ_DOCKER" compose -p hz-ops --env-file "$HZ_ETC/hz.env" --env-file "$server_env" -f "$infra/compose/ops.yaml" up -d --remove-orphans ||
+    log "GlitchTip start niet; uitrol gaat door (zie RUNBOOK.md, Monitoring)"
+fi
+
 prev="$(cat "$state/current" 2>/dev/null || true)"
 
 # 3. Productie: eerst een back-up van de huidige database (een migratie gaat alleen vooruit).
@@ -93,7 +99,11 @@ health_ok() {
 }
 
 up() {
+  # Rollen en wachtwoorden elke uitrol gelijkzetten met de secrets (hz-roles.sh is idempotent): een gewisseld
+  # databasewachtwoord gaat zo vanzelf mee, ook op een database van vóór een wijziging aan de rollen.
   compose_app pull --quiet &&
+    compose_app up -d --wait --wait-timeout 120 db &&
+    compose_app exec -T db /docker-entrypoint-initdb.d/10-hz-roles.sh &&
     compose_app run --rm migrate &&
     compose_app up -d --remove-orphans --wait --wait-timeout "${HZ_WAIT_TIMEOUT:-300}"
 }
