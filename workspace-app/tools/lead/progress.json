@@ -1,6 +1,6 @@
 {
- "updated": "7 nov 2026, 15:00",
- "status": "Fundament staat, golf A bouwt",
+ "updated": "7 nov 2026, 22:15",
+ "status": "Golf A gewonnen, klaar voor overdracht",
  "pieces": [
   {
    "id": "F",
@@ -15,37 +15,37 @@
    "id": "E0",
    "naam": "Server en uitrol",
    "stories": "HZW-001–008, 082",
-   "status": "bezig",
-   "ronde": 1,
-   "oordeel": "",
-   "gat": ""
+   "status": "gewonnen",
+   "ronde": 3,
+   "oordeel": "ours",
+   "gat": "Previews hangen in hetzelfde Docker-netwerk als productie en de preview-environment heeft dezelfde Tailscale-OAuth-client als test en productie. Gaat mee in E8 (eigen netwerk per preview, eigen OAuth-client met alleen tag:ci-preview)."
   },
   {
    "id": "E1",
    "naam": "Inloggen en onboarding",
    "stories": "HZW-010–014",
-   "status": "bezig",
-   "ronde": 1,
-   "oordeel": "",
-   "gat": ""
+   "status": "gewonnen",
+   "ronde": 2,
+   "oordeel": "ours",
+   "gat": "Koppelingenscherm zegt in demomodus 'Gevonden' bij GitHub terwijl GitHub niet gekoppeld is. Gaat mee in E4b (Tracker leest dezelfde bron)."
   },
   {
    "id": "E2",
    "naam": "Datamodel en import",
    "stories": "HZW-020–021",
-   "status": "bezig",
-   "ronde": 1,
-   "oordeel": "",
-   "gat": ""
+   "status": "gewonnen",
+   "ronde": 5,
+   "oordeel": "ours",
+   "gat": "Onbekende status van een toezegging wordt bij import 'open'; een gesloten toezegging kan zo terugkomen in de Tracker. Gaat mee in E4b."
   },
   {
    "id": "E3",
    "naam": "Koppelingen en sync",
    "stories": "HZW-030–037",
-   "status": "bezig",
-   "ronde": 1,
-   "oordeel": "",
-   "gat": ""
+   "status": "gewonnen",
+   "ronde": 3,
+   "oordeel": "ours",
+   "gat": "Een Slack-event voor een kanaal dat niemand kent komt in de sync-status van elke collega (metadata, geen inhoud). Gaat mee in E8."
   },
   {
    "id": "E4a",
@@ -135,6 +135,7 @@
   }
  ],
  "log": [
+  "Golf A gewonnen: server en uitrol (ronde 3), inloggen (2), datamodel (5), koppelingen (3). 670 unit-tests groen. Lead: echte contactnamen uit testdata vervangen door verzonnen namen.",
   "Overdrachtsplan klaar (OVERDRACHT.md): na golf A naar een eigen repo robertverveen/homezero-workspace, daarna lokaal verder in Claude Code met Chrome en Tailscale. Overzetscript getest.",
   "Hosting: bestaande Hetzner-server in je eigen tailnet, naast je andere projecten; privacytekst v1 door AI op basis van de privacyverklaring van HomeZero.",
   "Testronde herschreven: setup gaat via Claude in Chrome, jij test alleen 8 kritieke scenario's.",

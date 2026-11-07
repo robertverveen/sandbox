@@ -2,19 +2,73 @@
  "uitleg": "Invoer voor tools/lead/golf-workflow.js, per golf. Start een golf met Workflow({scriptPath: 'tools/lead/golf-workflow.js', args: {wave, base, maxRounds, paths, pieces}}). 'paths' alleen buiten de cloud-sandbox: zie OVERDRACHT.md. Golf A draaide in de cloud (zie progress.json).",
  "golven": {
   "B": [
-   {"id":"E4a","name":"Schil, Dagstart, Planning en Agenda","stories":"HZW-040 t/m HZW-043","port":9100,"notes":"De stories HZW-040 t/m HZW-043. Bouw voort op de schil en Dagstart uit het fundament. Planning met Sprint-tab (g p): Jira uit de contextlaag (product/jira/) plus live wat sinds de laatste nachtrun veranderde; weekplanning met slepen van taken naar dagen en een vrij/bezet-strook. Agenda (g a): alle agenda's uit het werkaccount, ook gedeelde privé-agenda's, met kleur per agenda en per agenda 'overal' of 'alleen in Agenda'; dag- en weekweergave, RSVP, meetingprep met partnercontext. Dagstart: de punten van de fundament-criticus (focusring op de eerste Vandaag-rij bij laden zoals het prototype, help met het blok 'In de plansessie' en g m / g k) en de Persoonlijk-repo-aansporing als die repo ontbreekt. Plansessie zoals in het prototype. Lat: dezelfde schermen in het prototype, blind vergeleken op 1440x1000 en 400x860, licht en donker, demo- en contextdata."},
-   {"id":"E4b","name":"Tracker en weekritme","stories":"HZW-044, HZW-047","port":9400,"notes":"De stories HZW-044 en HZW-047. Tracker (g t) met tabs Taken, Wachten op, Bespreken, Partneracties, Weekdoelen, Afgerond (⇧1-6). Geen eigen takenlijst: Taken = Google Taken (of Slack-to-do's als de spike HZW-037 dat aanraadt) plus taken.md uit de Persoonlijk-repo; Wachten op en Bespreken uit wachten-op.md; Partneracties uit acties.md van de partners (filter eigenaar); Weekdoelen in de app met gezondheid per week. Toevoegen, afvinken en verplaatsen schrijven terug naar de bron: Google Taken via de provider, taken.md en wachten-op.md via de schrijfroute (wachtrij per repo, git pull --rebase, contextcheck.py --push, regelvormen uit _systeem/schema.md en de routine: '- [ ] <wat> [wie:: Naam] [sinds:: ] [reminder:: ] [bron:: link] [klant:: slug]', bespreken '- [ ] <wat> [klant:: slug] [met:: contact]', taken '- [ ] taak [due:: ] [klant:: slug] [sinds:: ]'). Zonder Persoonlijk-repo: aansporing met uitleg en later-knop. Weekritme: weekafsluiting en weekdoelen-check (HZW-047). Tests alleen op tijdelijke kopieën van repo's. Lat: Tracker en weekdoelen in het prototype v17."},
-   {"id":"E4c","name":"Gesprekken en Inhalen","stories":"HZW-045, HZW-046","port":9700,"notes":"De stories HZW-045 en HZW-046. Gesprekken (g c): Slack-kanalen, DM's en threads, en mailthreads die ogen als in Gmail; reageren en reacties zonder Slack te openen; versturen alleen na een klik van een mens op Versturen, Claude maakt hooguit een concept. Inhalen (s) met dezelfde toetsen als het prototype: ← ongelezen laten, → gelezen (echte Slack-gelezen-status via de provider, dus ook gelezen op Slack-mobiel), z ongedaan, w wachten op (ook de 'jij reageerde als laatste'-hint uit v17), b bespreken, 1-5 taak, r reageren, emoji. Doel: ochtend inhalen in minder dan 10 minuten. Lat: Inhalen en Gesprekken in het prototype v17, blind vergeleken, ook op 400px."},
-   {"id":"E4d","name":"Zoeken en palet","stories":"HZW-048","port":10000,"notes":"De story HZW-048. ⌘K-palet met zoeken over taken, berichten, mail, meetings, partners en de contextlaag: komma-verfijning ('Solarwatt, berekening, timeline'), organisaties uit partners/_register.md (aliassen en domeinen), tijdlijn, Gantt, vastzetten. Postgres full-text + pg_trgm + unaccent (geen pgvector; embeddings staan uit). Snel: resultaat binnen 150 ms op de testdata, met test. Lat: het palet van het prototype, dat het onze al op structuur haalt; het onze moet meer en beter vinden met bronvermelding."},
-   {"id":"E6","name":"Contextlaag","stories":"HZW-060 t/m HZW-069","port":10300,"notes":"De stories HZW-060 t/m HZW-069. Contextlaag als bron: lezen uit de repo's (GitHub-provider of lokale clone), partnerpagina (Kern, Stand, Contacten, open acties bij-ons/bij-hen, laatste 3 meetings, log.md als tijdlijn; admin.md nooit richting partner; geheim_voor als harde filter), herkenning van partners op slug, alias en domein, banner bij een gemiste nachtrun (_systeem/status.md ouder dan 36 uur), schrijven naar de contextlaag alleen volgens _systeem/schema.md via de wachtrij per repo met git pull --rebase en contextcheck.py --push (exit 1/2 = niet pushen), nooit regels van anderen herschrijven, aanhouden-regels (aangehouden.md) verwerken in de app met deel/privé. De ochtendbriefing-routine schrijft direct in de app (MCP of API) en draait twee weken dubbel naast de artifact-database met een verschilrapport. Tests alleen op tijdelijke kopieën van de repo's."}
+   {
+    "id": "E4a",
+    "name": "Schil, Dagstart, Planning en Agenda",
+    "stories": "HZW-040 t/m HZW-043",
+    "port": 9100,
+    "notes": "De stories HZW-040 t/m HZW-043. Bouw voort op de schil en Dagstart uit het fundament. Planning met Sprint-tab (g p): Jira uit de contextlaag (product/jira/) plus live wat sinds de laatste nachtrun veranderde; weekplanning met slepen van taken naar dagen en een vrij/bezet-strook. Agenda (g a): alle agenda's uit het werkaccount, ook gedeelde privé-agenda's, met kleur per agenda en per agenda 'overal' of 'alleen in Agenda'; dag- en weekweergave, RSVP, meetingprep met partnercontext. Dagstart: de punten van de fundament-criticus (focusring op de eerste Vandaag-rij bij laden zoals het prototype, help met het blok 'In de plansessie' en g m / g k) en de Persoonlijk-repo-aansporing als die repo ontbreekt. Plansessie zoals in het prototype. Lat: dezelfde schermen in het prototype, blind vergeleken op 1440x1000 en 400x860, licht en donker, demo- en contextdata."
+   },
+   {
+    "id": "E4b",
+    "name": "Tracker en weekritme",
+    "stories": "HZW-044, HZW-047",
+    "port": 9400,
+    "notes": "De stories HZW-044 en HZW-047. Tracker (g t) met tabs Taken, Wachten op, Bespreken, Partneracties, Weekdoelen, Afgerond (⇧1-6). Geen eigen takenlijst: Taken = Google Taken (of Slack-to-do's als de spike HZW-037 dat aanraadt) plus taken.md uit de Persoonlijk-repo; Wachten op en Bespreken uit wachten-op.md; Partneracties uit acties.md van de partners (filter eigenaar); Weekdoelen in de app met gezondheid per week. Toevoegen, afvinken en verplaatsen schrijven terug naar de bron: Google Taken via de provider, taken.md en wachten-op.md via de schrijfroute (wachtrij per repo, git pull --rebase, contextcheck.py --push, regelvormen uit _systeem/schema.md en de routine: '- [ ] <wat> [wie:: Naam] [sinds:: ] [reminder:: ] [bron:: link] [klant:: slug]', bespreken '- [ ] <wat> [klant:: slug] [met:: contact]', taken '- [ ] taak [due:: ] [klant:: slug] [sinds:: ]'). Zonder Persoonlijk-repo: aansporing met uitleg en later-knop. Weekritme: weekafsluiting en weekdoelen-check (HZW-047). Tests alleen op tijdelijke kopieën van repo's. Lat: Tracker en weekdoelen in het prototype v17. Open punten uit golf A die hier horen: (1) import: een onbekende status van een toezegging wordt nu 'open' (status alleen in extra), zodat een gesloten toezegging terugkomt in de Tracker; maak onbekend expliciet en toon het niet als open (E2-criticus). (2) Instellingen > Koppelingen zegt in demomodus bij GitHub 'Gevonden: je taken en wachten op komen uit deze repo' terwijl GitHub niet gekoppeld is en /api/tracker hasPersRepo=false geeft; scherm en bron gelijk trekken, met test (E1-criticus)."
+   },
+   {
+    "id": "E4c",
+    "name": "Gesprekken en Inhalen",
+    "stories": "HZW-045, HZW-046",
+    "port": 9700,
+    "notes": "De stories HZW-045 en HZW-046. Gesprekken (g c): Slack-kanalen, DM's en threads, en mailthreads die ogen als in Gmail; reageren en reacties zonder Slack te openen; versturen alleen na een klik van een mens op Versturen, Claude maakt hooguit een concept. Inhalen (s) met dezelfde toetsen als het prototype: ← ongelezen laten, → gelezen (echte Slack-gelezen-status via de provider, dus ook gelezen op Slack-mobiel), z ongedaan, w wachten op (ook de 'jij reageerde als laatste'-hint uit v17), b bespreken, 1-5 taak, r reageren, emoji. Doel: ochtend inhalen in minder dan 10 minuten. Lat: Inhalen en Gesprekken in het prototype v17, blind vergeleken, ook op 400px."
+   },
+   {
+    "id": "E4d",
+    "name": "Zoeken en palet",
+    "stories": "HZW-048",
+    "port": 10000,
+    "notes": "De story HZW-048. ⌘K-palet met zoeken over taken, berichten, mail, meetings, partners en de contextlaag: komma-verfijning ('Solarwatt, berekening, timeline'), organisaties uit partners/_register.md (aliassen en domeinen), tijdlijn, Gantt, vastzetten. Postgres full-text + pg_trgm + unaccent (geen pgvector; embeddings staan uit). Snel: resultaat binnen 150 ms op de testdata, met test. Lat: het palet van het prototype, dat het onze al op structuur haalt; het onze moet meer en beter vinden met bronvermelding."
+   },
+   {
+    "id": "E6",
+    "name": "Contextlaag",
+    "stories": "HZW-060 t/m HZW-069",
+    "port": 10300,
+    "notes": "De stories HZW-060 t/m HZW-069. Contextlaag als bron: lezen uit de repo's (GitHub-provider of lokale clone), partnerpagina (Kern, Stand, Contacten, open acties bij-ons/bij-hen, laatste 3 meetings, log.md als tijdlijn; admin.md nooit richting partner; geheim_voor als harde filter), herkenning van partners op slug, alias en domein, banner bij een gemiste nachtrun (_systeem/status.md ouder dan 36 uur), schrijven naar de contextlaag alleen volgens _systeem/schema.md via de wachtrij per repo met git pull --rebase en contextcheck.py --push (exit 1/2 = niet pushen), nooit regels van anderen herschrijven, aanhouden-regels (aangehouden.md) verwerken in de app met deel/privé. De ochtendbriefing-routine schrijft direct in de app (MCP of API) en draait twee weken dubbel naast de artifact-database met een verschilrapport. Tests alleen op tijdelijke kopieën van de repo's."
+   }
   ],
   "C": [
-   {"id":"E5","name":"Claude, MCP en skills","stories":"HZW-050 t/m HZW-053 en keuze 12a","port":10600,"notes":"De stories HZW-050 t/m HZW-053 en keuze 12a van de plaat. Anthropic API alleen op de server, prompt caching, model per functie, budget per collega met melding bij 80%. Concepten naar buiten zijn altijd concepten. MCP-server van de workspace (officiële TS-SDK, OAuth 2.1 via de auth-bibliotheek): briefing schrijven, weekdoelen, tracker, item-status, context zoeken, taken lezen/aanmaken/afvinken; token van A kan niet bij B (test). Skills zoals /klant-recap draaien als job in de worker, vanuit het palet te starten, en schrijven via de schrijfroute van de app; resultaat direct zichtbaar in de app. In tests een nep-Anthropic."},
-   {"id":"E7","name":"Mobiel en meldingen","stories":"HZW-070, HZW-071","port":10900,"notes":"De stories HZW-070 en HZW-071. PWA (installeerbaar op iPhone via Zet op beginscherm, offline schil), web push met VAPID (sleutels als secret, human input), meldingen voor taggen, reminders van wachten op en meetings; instellingen per soort melding. Inhalen en Dagstart prettig met de duim op 400px en kleiner. Test met Playwright mobiele emulatie en een nep-pushdienst."},
-   {"id":"E8","name":"Beveiliging en privacy","stories":"HZW-080, HZW-081","port":11200,"notes":"De stories HZW-080 en HZW-081. Beveiligingsreview van de hele app (OWASP ASVS niveau 2 als checklist in docs/security-review.md, met per punt bewijs): RLS op alle tabellen met test A-kan-niet-bij-B, tokens envelope-versleuteld, CSP en security headers, CSRF, rate limits, audit-log, secrets nergens in Git (scanner in CI), afhankelijkheden-scan. Privacy: zie de sectie Privacytekst in BRIEF.md; docs/privacy.md, bewaartermijnen als code (opruimjob), account verwijderen wist alle rijen en tokens (test), uitdienst-procedure. Sign-off van een tweede reviewer is human input."}
+   {
+    "id": "E5",
+    "name": "Claude, MCP en skills",
+    "stories": "HZW-050 t/m HZW-053 en keuze 12a",
+    "port": 10600,
+    "notes": "De stories HZW-050 t/m HZW-053 en keuze 12a van de plaat. Anthropic API alleen op de server, prompt caching, model per functie, budget per collega met melding bij 80%. Concepten naar buiten zijn altijd concepten. MCP-server van de workspace (officiële TS-SDK, OAuth 2.1 via de auth-bibliotheek): briefing schrijven, weekdoelen, tracker, item-status, context zoeken, taken lezen/aanmaken/afvinken; token van A kan niet bij B (test). Skills zoals /klant-recap draaien als job in de worker, vanuit het palet te starten, en schrijven via de schrijfroute van de app; resultaat direct zichtbaar in de app. In tests een nep-Anthropic."
+   },
+   {
+    "id": "E7",
+    "name": "Mobiel en meldingen",
+    "stories": "HZW-070, HZW-071",
+    "port": 10900,
+    "notes": "De stories HZW-070 en HZW-071. PWA (installeerbaar op iPhone via Zet op beginscherm, offline schil), web push met VAPID (sleutels als secret, human input), meldingen voor taggen, reminders van wachten op en meetings; instellingen per soort melding. Inhalen en Dagstart prettig met de duim op 400px en kleiner. Test met Playwright mobiele emulatie en een nep-pushdienst."
+   },
+   {
+    "id": "E8",
+    "name": "Beveiliging en privacy",
+    "stories": "HZW-080, HZW-081",
+    "port": 11200,
+    "notes": "De stories HZW-080 en HZW-081. Beveiligingsreview van de hele app (OWASP ASVS niveau 2 als checklist in docs/security-review.md, met per punt bewijs): RLS op alle tabellen met test A-kan-niet-bij-B, tokens envelope-versleuteld, CSP en security headers, CSRF, rate limits, audit-log, secrets nergens in Git (scanner in CI), afhankelijkheden-scan. Privacy: zie de sectie Privacytekst in BRIEF.md; docs/privacy.md, bewaartermijnen als code (opruimjob), account verwijderen wist alle rijen en tokens (test), uitdienst-procedure. Sign-off van een tweede reviewer is human input. Open punten uit golf A die hier horen: (1) previews: eigen Docker-netwerk per PR, niet hz-workspace-net naast prod-web, test-web en GlitchTip, en een eigen Tailscale-OAuth-client voor de environment preview (alleen tag:ci-preview, ACL alleen naar de preview-rol) zodat een PR geen toegang tot test of productie kan krijgen (E0-criticus). (2) Slack-events van een kanaal dat geen collega kent niet bij elke collega in sync_events/sync_state zetten (metadata-lek tussen collega's, E3-criticus). (3) Registry: de repo wordt robertverveen/homezero-workspace, dus ghcr.io/robertverveen in plaats van ghcr.io/homezerotech in voorbeelden en runbook."
+   }
   ],
   "D": [
-   {"id":"EIND","name":"Hele app tegen de lat","stories":"alle stories","port":11500,"notes":"Eindronde. De builder loopt de hele app door tegen het prototype v17 en de plaat en repareert wat tussen de stukken in valt: consistentie van huisstijl en toetsen over alle schermen, lege en foutstaten, laadtijden, toegankelijkheid (axe) op elk scherm, 400px zonder horizontale scroll, licht en donker, en HUMAN_INPUT.md als één testronde (deel 1-3) met kloppende paden. De criticus vergelijkt elk scherm blind met het prototype en kiest het onze alleen als het op elk scherm minstens gelijk is en op de meeste beter, alle tests groen zijn en elke story uit stories.json af is (op human input na)."}
+   {
+    "id": "EIND",
+    "name": "Hele app tegen de lat",
+    "stories": "alle stories",
+    "port": 11500,
+    "notes": "Eindronde. De builder loopt de hele app door tegen het prototype v17 en de plaat en repareert wat tussen de stukken in valt: consistentie van huisstijl en toetsen over alle schermen, lege en foutstaten, laadtijden, toegankelijkheid (axe) op elk scherm, 400px zonder horizontale scroll, licht en donker, en HUMAN_INPUT.md als één testronde (deel 1-3) met kloppende paden. De criticus vergelijkt elk scherm blind met het prototype en kiest het onze alleen als het op elk scherm minstens gelijk is en op de meeste beter, alle tests groen zijn en elke story uit stories.json af is (op human input na)."
+   }
   ]
  }
 }
