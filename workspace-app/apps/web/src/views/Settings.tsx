@@ -328,7 +328,7 @@ export function Settings() {
         <div className="hz-lead">
           <p>
             {tab === 'koppelingen'
-              ? 'Elke bron koppel je los, met een eigen toestemming, zoals een connector in Claude. Tokens staan versleuteld op de server; je browser ziet ze nooit. Intrekken haalt de app ook bij de bron weg en wist je gegevens van die bron.'
+              ? 'Elke bron koppel je los, met een eigen toestemming, zoals een connector in Claude. Tokens staan versleuteld op de server; je browser ziet ze nooit. Intrekken wist je gegevens van die bron en haalt de app bij de bron weg (bij Google met de laatste Google-bron).'
               : tab === 'apparaten'
                 ? 'Waar je bent ingelogd. Een sessie die op een ander apparaat of in een andere browser opduikt, trekken we meteen in.'
                 : 'Wie in de workspace kan. Eerste login maakt het profiel; blokkeren logt iemand overal uit.'}
