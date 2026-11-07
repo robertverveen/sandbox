@@ -8,15 +8,15 @@ Dit document regelt de overstap. Nu wordt de Workspace gebouwd in een cloudsessi
 |---|---|
 | Wanneer overstappen? | **Na golf A**, als die samengevoegd en groen is. Dan bestaan het runbook, de servervoorcheck, het inloggen en de koppelingen, en kan deel 1 (inrichten via Chrome) starten. Midden in een golf overstappen kost werk: de werkkopieën van de bouwers staan in de cloudcontainer. |
 | Welke repo? | Nieuw en privé: **`robertverveen/homezero-workspace`**. Later naar de HomeZeroTech-organisatie verhuizen kan met één klik (GitHub: Settings, Transfer); de geschiedenis gaat mee. Wil je hem meteen in de organisatie of een andere naam, zeg het vóór stap 2. |
-| Wie doet wat? | Stap 1-2: Claude, in de cloudsessie. Stap 3: jij, ongeveer 20 minuten, eenmalig. Stap 4-6: Claude Code op je laptop, samen met jou. |
+| Wie doet wat? | Stap 1-2: Claude, in de cloudsessie. Stap 3: jij, ongeveer 20 minuten, eenmalig. Stap 4-6: Claude Code (lokaal, of bouwen in de cloud en deel 1 lokaal), samen met jou. |
 | Claude Code of gewone chat? | Zie de tabel hieronder. Kort: bouwen en inrichten in **Claude Code lokaal**, meekijken en beslissen mag in de gewone chat. |
 
 ### Waar doe je wat
 
 | Wat | Waar | Waarom |
 |---|---|---|
-| Bouwen: de golven, builder en criticus (gauntlet loop) | **Claude Code lokaal** (Claude-desktopapp, tab Code, map van de repo) | Heeft bestanden, terminal, Postgres, Playwright en workflows nodig |
-| Deel 1: inrichten via Chrome | **Dezelfde Claude Code-sessie**, met Claude in Chrome aan | Heeft je browser met jouw logins nodig, plus Tailscale-SSH en bestanden uit de repo (runbook, Slack-manifest, redirect-URL's) |
+| Bouwen: de golven, builder en criticus (gauntlet loop) | **Claude Code**: lokaal (aanbevolen) of in de cloud, zie stap 4 | Heeft bestanden, terminal, Postgres, Playwright en workflows nodig; in de cloud loopt het door als je laptop dicht is |
+| Deel 1: inrichten via Chrome | **Claude Code lokaal**, met Claude in Chrome aan; in optie 1 dezelfde sessie als het bouwen | Heeft je browser met jouw logins nodig, plus Tailscale-SSH en bestanden uit de repo (runbook, Slack-manifest, redirect-URL's) |
 | Deel 3: jouw testronde | Jij, in de browser en op je telefoon. Bevindingen zet je in die Claude Code-sessie (één regel per scenario). | Het gaat om jouw ervaring met je echte data |
 | Meekijken, keuzes maken, vragen stellen | Gewone chat of de Claude-app op je telefoon: de voortgangspagina en de architectuurplaat, met opmerkingen erop | Hiervoor is geen code nodig |
 | Ochtendbriefing-routine | Blijft zoals hij is, in de cloud | Verandert pas als HZW-06x (de routine schrijft in de app) live gaat |
@@ -37,7 +37,7 @@ Golf A loopt: datamodel, inloggen, koppelingen, server en uitrol. Als alles gewo
 4. In de sandbox komt een verwijzing naar de nieuwe repo. `workspace-app/` blijft daar staan als archief.
 5. De voortgangspagina en de plaat houden dezelfde links.
 
-Jij hoeft niets te doen, tenzij GitHub vraagt de nieuwe repo toe te voegen aan de Claude GitHub-app. Lukt aanmaken vanuit de cloud niet, dan doe je het lokaal in stap 3 met:
+Jij hoeft niets te doen. Kan ik de nieuwe repo niet bereiken, dan vraag ik je de vier stappen onder "De repo koppelen" in stap 4 te doen (twee minuten). Lukt aanmaken vanuit de cloud niet, dan doe je het lokaal in stap 3 met:
 `gh repo create robertverveen/homezero-workspace --private` en
 `git clone https://github.com/robertverveen/sandbox.git && cd sandbox && git checkout claude/gracious-franklin-igzxj0 && workspace-app/tools/lead/naar-eigen-repo.sh ../homezero-workspace https://github.com/robertverveen/homezero-workspace.git`
 
@@ -72,13 +72,44 @@ pnpm -r typecheck && pnpm -r test
 
 Alles groen? Dan is je laptop klaar. Iets rood: plak de laatste regels van de fout in de startsessie van stap 4, Claude lost het op.
 
-### Stap 4 · Eerste lokale sessie starten (Claude Code)
-1. Open de Claude-desktopapp, kies **Code** en kies de map `~/code/homezero-workspace`.
-2. Zet het toestemmingsniveau op **Auto**, zodat de bouwers niet bij elke stap wachten.
-3. Zorg dat Claude in Chrome verbonden is en Tailscale aan staat.
-4. Vul in de startopdracht hieronder de map met je Tailscale- en servernotities in, en plak hem.
+### Stap 4 · Kies waar Claude Code draait en koppel de repo
 
-**Startopdracht (gauntlet loop en deel 1 in één sessie):**
+Claude Code kan op twee plekken draaien. Beide kies je in de Claude-desktopapp of de Claude-app, tab **Code**, bij het starten van een nieuwe sessie.
+
+| | **Lokaal** (een map op je laptop) | **Cloud** (een Claude-cloudomgeving, zoals nu) |
+|---|---|---|
+| Claude in Chrome en Tailscale | Ja | Nee: de cloud kan niet bij je browser of je tailnet |
+| Laptop dicht | De sessie stopt. Houd hem wakker met `caffeinate -dims` in een Terminal. | Loopt gewoon door |
+| Snelheid | Meer stukken tegelijk (meer processorkernen) | 4 kernen, ongeveer 2 stukken tegelijk |
+| Echte contextdata voor de vergelijking | Je eigen clones | De twee context-repo's koppel je aan de sessie |
+| Repo koppelen | Via git op je laptop | Via de Claude GitHub-app |
+
+**Advies: begin lokaal, met alles in één sessie** (optie 1). Wil je dat het lange bouwen doorloopt terwijl je laptop dicht is, kies dan optie 2: bouwen in de cloud, deel 1 lokaal.
+
+#### De repo koppelen
+
+- **Lokaal:** alleen git op je laptop. Na `gh auth login` (stap 3) en `gh repo clone robertverveen/homezero-workspace` is de map de repo. Claude Code pusht met jouw eigen GitHub-login. Verder hoef je niets te koppelen.
+- **Cloud:** dit loopt via de pagina **GitHub Integration** bij je connectors in claude.ai (instellingen, Connectors, GitHub). Die staat al goed: je GitHub-account is gekoppeld en de Claude GitHub-app is geïnstalleerd op **robertverveen** en op **HomeZeroTech**. Bij een nieuwe repo hoef je hooguit één ding te doen:
+
+  1. Open de pagina **GitHub Integration**.
+  2. Kies onderaan bij **Check repository status** de repo `robertverveen/homezero-workspace`.
+  3. Groen? Dan ben je klaar.
+  4. Niet groen? Dan staat de app op "alleen gekozen repo's":
+     - klik op **robertverveen** (onder Claude GitHub App); je komt dan bij GitHub;
+     - kies bij **Repository access** de optie **Only select repositories**;
+     - kies daar **homezero-workspace** erbij en klik **Save**;
+     - doe stap 2 opnieuw, nu moet hij groen zijn.
+
+  Claude controleert dit in stap 2 zelf, en vraagt het je alleen als de repo niet bereikbaar is.
+
+#### Optie 1 · Alles lokaal, één sessie (aanbevolen)
+
+1. Claude-desktopapp, tab **Code**, nieuwe sessie, kies **lokaal**, en kies de map `~/code/homezero-workspace`.
+2. Toestemmingsniveau: **Auto**, zodat de bouwers niet bij elke stap wachten.
+3. Claude in Chrome verbonden, Tailscale aan, laptop aan de stroom, en in een Terminal `caffeinate -dims` (stoppen met Ctrl-C).
+4. Vul in de opdracht hieronder de map met je Tailscale- en servernotities in, en plak hem.
+
+**Startopdracht optie 1 (gauntlet loop en deel 1 in één sessie):**
 
 ```
 Ga verder met de bouw van de HomeZero Workspace in deze repo. Lees eerst OVERDRACHT.md, BRIEF.md, tools/lead/progress.json en tools/lead/golven.json, en controleer of stap 3 van OVERDRACHT.md klopt op deze laptop.
@@ -96,7 +127,48 @@ Houd de voortgangspagina bij (https://claude.ai/artifact/9aYoGq9PhxXvFQfmFNZr7H,
 Fan out subagents and ultracode.
 ```
 
-### Stap 5 · Deel 1 inrichten (in dezelfde sessie, samen) ⏳
+#### Optie 2 · Bouwen in de cloud, deel 1 lokaal
+
+Twee sessies naast elkaar. Om botsingen te voorkomen, pusht alleen de cloudsessie naar `main`. De lokale sessie werkt op de branch `inrichting` en levert via een pull request aan.
+
+**Cloudsessie (bouwen):**
+1. Claude-app of desktopapp, tab **Code**, nieuwe sessie, kies **cloud**, omgeving **Default** (dezelfde als nu, met Postgres 16).
+2. Repo: **robertverveen/homezero-workspace**, branch `main`. Voeg als extra repo's **HomeZeroTech/homezero-context** en **robertverveen/context-prive** toe; die zijn alleen om te lezen, voor de vergelijking met echte data.
+3. Toestemmingsniveau **Auto**.
+4. Plak:
+
+```
+Ga verder met de bouw van de HomeZero Workspace in deze repo. Draai eerst bash tools/lead/cloud-setup.sh (Postgres-rollen en afhankelijkheden in deze verse container). Lees daarna OVERDRACHT.md, BRIEF.md, tools/lead/progress.json en tools/lead/golven.json. De context-repo's staan naast deze repo in de container: gebruik ze alleen om te lezen.
+
+De lat is het artifact-prototype docs/prototype/index.html (gepubliceerd: https://claude.ai/artifact/4CzejHBSKjJNrvBNESpYw4), geladen met de echte contextdata via tools/bar. Vergelijk daar direct mee, niet met een beschrijving ervan. Klaar is pas als elke story in stories.json af is en elk onderdeel van de plaat docs/prototype/architectuur.html.
+
+Draai de golven die nog niet gewonnen zijn met tools/lead/golf-workflow.js en golven.json: per stuk een builder en een aparte criticus met frisse context. De criticus legt het onze blind naast de lat, labels weg, kiest de betere en noemt het grootste gat. Het is een harde criticus: lof heeft geen zin. Wint het onze niet, dan gaat het terug naar de builder.
+
+/loop op elk stuk tot de criticus het onze blind kiest en alle tests groen zijn. Stop niet eerder.
+
+Alleen jij pusht naar main. Pull requests van de branch inrichting (deel 1, lokaal) voeg je na elke golf samen.
+
+Houd de voortgangspagina bij (https://claude.ai/artifact/9aYoGq9PhxXvFQfmFNZr7H, publiceer met die url) en bundel mensenwerk in HUMAN_INPUT.md.
+
+Fan out subagents and ultracode.
+```
+
+**Lokale sessie (deel 1), zodra je tijd hebt:**
+1. Claude-desktopapp, tab **Code**, nieuwe sessie, kies **lokaal**, en kies de map `~/code/homezero-workspace`.
+2. Claude in Chrome verbonden en Tailscale aan.
+3. Plak:
+
+```
+Voer deel 1 uit van HUMAN_INPUT.md in deze repo, op de branch inrichting (maak hem aan vanaf main en haal main regelmatig binnen).
+Lees eerst OVERDRACHT.md, HUMAN_INPUT.md (tabel "Waar staat wat") en het runbook dat daar genoemd wordt,
+en mijn notities over Tailscale en de Hetzner-server in: <MAP MET JE NOTITIES>.
+De workspace komt op mijn bestaande server, naast mijn andere projecten; die mogen niet geraakt worden.
+Gebruik Claude in Chrome met mijn ingelogde accounts; serverbeheer alleen via Tailscale.
+Vraag mij alleen bij kosten of een toestemmingsscherm. Secrets nooit in Git of in de chat: rechtstreeks in de secret-opslag op de server.
+Werk na elke stap de status in HUMAN_INPUT.md bij, commit op inrichting en open of werk een pull request naar main bij. Push nooit naar main.
+```
+
+### Stap 5 · Deel 1 inrichten (samen, lokaal) ⏳
 Claude werkt deel 1 van `HUMAN_INPUT.md` af: eerst kijken op je server, dan de workspace naast je andere projecten zetten, DNS, Google Cloud, de Slack-app, Atlassian, GitHub, de Anthropic-sleutel en meldingen. Jij keurt alleen goed bij kosten en toestemmingsschermen. Ondertussen lopen golf B (schermen en contextlaag) en daarna golf C (Claude/MCP, mobiel, beveiliging) en de eindronde op de achtergrond.
 
 ### Stap 6 · Jouw testronde (jij, ongeveer 40 minuten) ⏳
