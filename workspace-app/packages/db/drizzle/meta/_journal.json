@@ -36,6 +36,20 @@
       "when": 1794054240785,
       "tag": "0004_app_role",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794056337410,
+      "tag": "0005_e2_datamodel",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794056345382,
+      "tag": "0006_e2_auth_functions",
+      "breakpoints": true
     }
   ]
 }

@@ -1,10 +1,10 @@
 /**
- * Datatoegang voor de API. Alles per gebruiker loopt via withUser (RLS); alleen inloggen en
- * sessies opzoeken gebruiken withPurpose('auth').
+ * Datatoegang voor de API. Alles per gebruiker loopt via withUser (RLS). Inloggen en sessies opzoeken gaan via
+ * SECURITY DEFINER-functies die precies één sleutel opzoeken (geen open SELECT op users of sessions).
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
-import { withPurpose, withUser, type Db } from './client';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { withPurpose, withUser, type Db, type Tx } from './client';
 import { openToken, sealToken } from './crypto';
 import {
   auditLog,
@@ -15,57 +15,116 @@ import {
   pins,
   preferences,
   repoQueue,
-  sessions,
-  users,
   weekdoelen,
 } from './schema';
 
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
-export async function upsertUser(db: Db, email: string, name: string, role: 'admin' | 'member' = 'member') {
-  return withPurpose(db, 'auth', async (tx) => {
-    const found = await tx
-      .select()
-      .from(users)
-      .where(sql`lower(${users.email}) = lower(${email})`);
-    if (found[0]) return found[0];
-    const [u] = await tx.insert(users).values({ email: email.toLowerCase(), name, role }).returning();
-    await tx.insert(auditLog).values({ userId: u!.id, action: 'user.created', target: 'users' });
-    return u!;
+type AuthUserRow = {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'member';
+  blocked_at: Date | string | null;
+  created_at: Date | string;
+};
+const toUser = (r: AuthUserRow) => ({
+  id: r.id,
+  email: r.email,
+  name: r.name,
+  role: r.role,
+  blockedAt: r.blocked_at ? new Date(r.blocked_at) : null,
+  createdAt: new Date(r.created_at),
+});
+export type AuthUser = ReturnType<typeof toUser>;
+
+/**
+ * Inloggen en sessies lopen via SECURITY DEFINER-functies (drizzle/0006_e2_auth_functions.sql): de app-rol heeft
+ * geen open SELECT op users of sessions. Elke functie zoekt precies één sleutel op. De transactie draait als hz_app.
+ */
+const asApp = <T>(db: Db, fn: (tx: Tx) => Promise<T>) => withPurpose(db, 'auth', fn);
+
+/** Gebruiker bij precies één e-mailadres, of null. */
+export async function findUserByEmail(db: Db, email: string): Promise<AuthUser | null> {
+  return asApp(db, async (tx) => {
+    const r = await tx.execute<AuthUserRow>(sql`select * from auth_user_by_email(${email})`);
+    return r.rows[0] ? toUser(r.rows[0]) : null;
   });
 }
 
+export async function upsertUser(db: Db, email: string, name: string, role: 'admin' | 'member' = 'member') {
+  return asApp(db, async (tx) => {
+    const r = await tx.execute<AuthUserRow>(sql`select * from auth_upsert_user(${email}, ${name}, ${role})`);
+    return toUser(r.rows[0]!);
+  });
+}
+
+/** Sessie voor een bestaande gebruiker; het token zelf staat nergens, alleen de sha256-hash. */
 export async function createSession(db: Db, userId: string, userAgent: string, days = 30) {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + days * 864e5);
-  await withPurpose(db, 'auth', async (tx) => {
-    await tx.insert(sessions).values({ userId, tokenHash: hashToken(token), userAgent, expiresAt });
-    await tx.insert(auditLog).values({ userId, action: 'session.created' });
-  });
+  await asApp(db, (tx) =>
+    tx.execute(
+      sql`select auth_create_session(${userId}::uuid, ${hashToken(token)}, ${userAgent}, ${expiresAt.toISOString()}::timestamptz)`,
+    ),
+  );
   return { token, expiresAt };
 }
 
+type AuthSessionRow = {
+  session_id: string;
+  user_id: string;
+  expires_at: Date | string;
+  created_at: Date | string;
+  last_seen_at: Date | string;
+  user_agent: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'member';
+};
+
 /** Sessie bij een cookie-token: geldig, niet ingetrokken, niet verlopen, gebruiker niet geblokkeerd. */
 export async function findSession(db: Db, token: string) {
-  return withPurpose(db, 'auth', async (tx) => {
-    const rows = await tx
-      .select({ session: sessions, user: users })
-      .from(sessions)
-      .innerJoin(users, eq(users.id, sessions.userId))
-      .where(and(eq(sessions.tokenHash, hashToken(token)), isNull(sessions.revokedAt), isNull(users.blockedAt)));
-    const r = rows[0];
-    if (!r || r.session.expiresAt < new Date()) return null;
-    return r;
+  return asApp(db, async (tx) => {
+    const r = (await tx.execute<AuthSessionRow>(sql`select * from auth_session_by_token(${hashToken(token)})`)).rows[0];
+    if (!r) return null;
+    return {
+      session: {
+        id: r.session_id,
+        userId: r.user_id,
+        userAgent: r.user_agent,
+        createdAt: new Date(r.created_at),
+        lastSeenAt: new Date(r.last_seen_at),
+        expiresAt: new Date(r.expires_at),
+      },
+      user: { id: r.user_id, email: r.email, name: r.name, role: r.role, blockedAt: null },
+    };
+  });
+}
+
+/** Laatst gezien bijwerken en desgewenst de sessie verlengen. false als de sessie niet (meer) geldig is. */
+export async function touchSession(db: Db, token: string, expiresAt?: Date) {
+  return asApp(db, async (tx) => {
+    const r = await tx.execute<{ ok: boolean }>(
+      sql`select auth_touch_session(${hashToken(token)}, ${expiresAt ? expiresAt.toISOString() : null}::timestamptz) as ok`,
+    );
+    return r.rows[0]?.ok === true;
   });
 }
 
 export async function revokeSession(db: Db, token: string) {
-  await withPurpose(db, 'auth', (tx) =>
-    tx
-      .update(sessions)
-      .set({ revokedAt: new Date() })
-      .where(eq(sessions.tokenHash, hashToken(token))),
-  );
+  return asApp(db, async (tx) => {
+    const r = await tx.execute<{ ok: boolean }>(sql`select auth_revoke_session(${hashToken(token)}) as ok`);
+    return r.rows[0]?.ok === true;
+  });
+}
+
+/** Worker: id's van actieve collega's (geen e-mail of naam). Per id daarna withUser. */
+export async function activeUserIds(db: Db): Promise<string[]> {
+  return asApp(db, async (tx) => {
+    const r = await tx.execute<{ id: string }>(sql`select id from system_active_user_ids() as id`);
+    return r.rows.map((x) => x.id);
+  });
 }
 
 export async function listItemState(db: Db, userId: string) {

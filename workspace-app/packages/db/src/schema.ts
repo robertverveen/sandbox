@@ -1,6 +1,6 @@
 /**
  * Databaseschema (Postgres 16, Drizzle). De app bewaart alleen wat nergens anders staat:
- * leesstatus en planning (item_state), weekdoelen, briefings, vastgezette zoekopdrachten, voorkeuren, koppelingen (tokens versleuteld), sessies,
+ * leesstatus en planning (item_state), weekdoelen, tracker-items uit het prototype (tracker_items), briefings, vastgezette zoekopdrachten, voorkeuren, koppelingen (tokens versleuteld), sessies,
  * de wachtrij naar de repo's, het auditlog en de zoekindex van de contextlaag.
  * Niet: mailtekst, Slack-geschiedenis, acties (acties.md), taken (Google Taken of taken.md).
  *
@@ -135,9 +135,70 @@ export const weekdoelen = pgTable(
     checks: jsonb('checks').$type<Array<{ d: string; h: string; note?: string }>>().notNull().default([]),
     closedAt: date('closed_at'),
     bron: jsonb('bron').$type<{ label: string; url?: string }>(),
+    /** Doc-id uit de artifact-opslag van het prototype (import HZW-021); leeg voor doelen uit de app. */
+    legacyId: text('legacy_id'),
+    /** Velden uit het prototype zonder eigen kolom (outcomeNote, lastCheck, …); niets gaat verloren bij import. */
+    extra: jsonb('extra').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
-  (t) => [index('weekdoelen_user_week_idx').on(t.userId, t.week)],
+  (t) => [
+    index('weekdoelen_user_week_idx').on(t.userId, t.week),
+    uniqueIndex('weekdoelen_user_legacy_uq').on(t.userId, t.legacyId),
+  ],
+);
+
+/**
+ * Tracker-items die (nog) nergens anders staan: de toezeggingen uit de artifact-opslag van het prototype
+ * (collectie commitments: Ik beloofde, Eigen voornemen, Wachten op, Bespreken). Keuze 10: geen eigen takenlijst;
+ * nieuwe taken gaan naar Google Taken of taken.md, wachten op en bespreken naar wachten-op.md. Deze tabel houdt
+ * wat al bestond en wat nog niet is overgezet (`overgezet`), zodat de collega zijn tracker terugziet (HZW-021).
+ * Weekdoelen en roadmapdoelen staan in `weekdoelen`.
+ */
+export const trackerItems = pgTable(
+  'tracker_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Doc-id uit de artifact-opslag (commitments/<id>); uniek per gebruiker, maakt de import idempotent. */
+    legacyId: text('legacy_id'),
+    stroom: text('stroom', { enum: ['mijn', 'voornemen', 'aan_mij', 'bespreken'] }).notNull(),
+    wat: text('wat').notNull(),
+    aan: text('aan').notNull().default(''),
+    org: text('org').notNull().default(''),
+    status: text('status', {
+      enum: ['open', 'waarschijnlijk_klaar', 'klaar', 'te_laat', 'overgedragen', 'losgelaten'],
+    })
+      .notNull()
+      .default('open'),
+    deadline: date('deadline'),
+    /** Planning (1–5): dag of backlog, zoals item_state voor andere items. */
+    planDate: date('plan_date'),
+    backlog: boolean('backlog').notNull().default(false),
+    moved: integer('moved').notNull().default(0),
+    reminder: date('reminder'),
+    /** Bestemming in de Persoonlijk-repo (taken.md, wachten-op.md) zolang hij nog niet is overgezet. */
+    naar: text('naar'),
+    overgezet: boolean('overgezet').notNull().default(false),
+    /** Gekoppelde Google Taak (dan toont de tracker de taak, niet dit item). */
+    gtask: text('gtask'),
+    /** Item-sleutel van de bron (Slack-bericht, mail) waaruit dit item ontstond. */
+    srcKey: text('src_key'),
+    bron: jsonb('bron').$type<{ label: string; url?: string | null; key?: string }>(),
+    citaat: text('citaat').notNull().default(''),
+    bewijs: text('bewijs'),
+    /** Dag waarop het item ontstond (prototype: created). */
+    created: date('created'),
+    closedAt: date('closed_at'),
+    extra: jsonb('extra').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('tracker_items_user_legacy_uq').on(t.userId, t.legacyId),
+    index('tracker_items_user_status_idx').on(t.userId, t.status),
+  ],
 );
 
 /**
@@ -280,5 +341,6 @@ export const PER_USER_TABLES = [
   'briefings',
   'pins',
   'preferences',
+  'tracker_items',
 ] as const;
 export const ALL_TABLES = ['users', 'sessions', ...PER_USER_TABLES, 'audit_log', 'context_index'] as const;
