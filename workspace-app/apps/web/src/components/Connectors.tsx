@@ -464,12 +464,28 @@ export function CalendarLayers({ onConnect }: { onConnect?: () => void }) {
     setLocal((l) => ({ ...l, [c.id]: full }));
     save.mutate({ [c.id]: full });
   };
+  /** Hele groep in één keer (zoals de lat): alles aan/uit, of alleen in Agenda / ook overal. */
+  const setMany = (cs: CalendarInfo[], patch: { scope?: 'overal' | 'agenda'; hidden?: boolean }) => {
+    const all = Object.fromEntries(cs.map((c) => [c.id, { color: c.color, scope: c.scope, hidden: !c.on, ...patch }]));
+    setLocal((l) => ({ ...l, ...all }));
+    save.mutate(all);
+  };
   return (
     <div className="card calpanel layers">
       {groups.map(([g, label, cs]) => (
         <div className="cp-group" key={g}>
           <div className="cp-head">
             <b>{label}</b>
+            <button type="button" className="btn sm" onClick={() => setMany(cs, { hidden: cs.some((c) => c.on) })}>
+              {cs.some((c) => c.on) ? 'Alles uit' : 'Alles aan'}
+            </button>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => setMany(cs, { scope: cs.every((c) => c.scope === 'agenda') ? 'overal' : 'agenda' })}
+            >
+              {cs.every((c) => c.scope === 'agenda') ? 'Ook overal tonen' : 'Alleen in Agenda'}
+            </button>
           </div>
           {cs.map((c) => (
             <div className="cp-row" key={c.id}>

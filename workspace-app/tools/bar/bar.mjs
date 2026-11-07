@@ -207,6 +207,12 @@ const NAV = {
       go({ view: 'toezeggingen' });
     }),
   chat: (p) => p.evaluate(() => go({ view: 'chat' })),
+  // Stuk E1: het lagenpaneel van Agenda (l), de lat voor de stap Agenda-lagen van de onboarding.
+  lagen: (p) =>
+    p.evaluate(() => {
+      S.calPanel = true;
+      go({ view: 'agenda' });
+    }),
   entity: (p, mode) =>
     p.evaluate(
       (m) =>

@@ -396,13 +396,13 @@ export function Onboarding() {
       </section>
 
       <footer className="ob-foot">
-        <button type="button" className="btn" onClick={back} disabled={idx === 0}>
+        <button type="button" className="btn" onClick={back} disabled={idx === 0} aria-label="Terug">
           <Icon name="chevL" />
-          Terug
+          <span className="ob-long">Terug</span>
         </button>
         <span className="ob-spacer" />
         <button type="button" className="linklike ob-later" onClick={later}>
-          Later afmaken <span className="kbd">l</span>
+          Later<span className="ob-long"> afmaken</span> <span className="kbd">l</span>
         </button>
         {!last && (
           <button type="button" className="btn" onClick={skip} data-action="skip">

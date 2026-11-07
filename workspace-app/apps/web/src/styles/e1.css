@@ -706,7 +706,11 @@ a.tab {
   .set-page .hz-head h1 {
     padding-right: 64px;
   }
-  .ob-foot .kbd {
+  .ob-foot .kbd,
+  .ob-foot .ob-long {
     display: none;
+  }
+  .ob-foot {
+    gap: 8px;
   }
 }

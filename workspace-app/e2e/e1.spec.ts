@@ -134,7 +134,7 @@ test.describe('HZW-013 onboarding-wizard met nep-koppelingen', () => {
     await expect(page.locator('.ob-steps .tab', { hasText: 'Google' })).toHaveClass(/done/);
 
     // Later afmaken: terug naar Dagstart, de zijbalk wijst de weg terug.
-    await page.getByRole('button', { name: /Later afmaken/ }).click();
+    await page.getByRole('button', { name: /^Later/ }).click();
     await expect(page).toHaveURL(/\/dagstart$/);
     await expect(page.locator('.ob-nudge')).toContainText('Inrichten');
     await expect(page.locator('.ob-nudge .count')).toHaveText('3/8');
@@ -167,6 +167,12 @@ test.describe('HZW-013 onboarding-wizard met nep-koppelingen', () => {
     await fam.getByLabel('Kleur van Familie').selectOption({ label: 'Druif' });
     await fam.getByRole('radio', { name: 'Alleen in Agenda' }).click();
     await expect(fam.getByRole('radio', { name: 'Alleen in Agenda' })).toHaveAttribute('aria-checked', 'true');
+    // Hele groep in één keer, zoals in het lagenpaneel van de lat.
+    const lou = page.locator('.cp-group').filter({ has: page.locator('.cp-head b', { hasText: /^Lou$/ }) });
+    await lou.getByRole('button', { name: 'Ook overal tonen' }).click();
+    await expect(lou.getByRole('radio', { name: 'Overal' })).toHaveCount(2);
+    for (const r of await lou.getByRole('radio', { name: 'Overal' }).all())
+      await expect(r).toHaveAttribute('aria-checked', 'true');
     const prefs = await page.evaluate(async () => (await fetch('/api/preferences')).json());
     expect(prefs.calendars['demo-familie@group.calendar.google.com']).toMatchObject({
       color: '#8e24aa',
