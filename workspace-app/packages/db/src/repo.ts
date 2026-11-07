@@ -4,7 +4,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { withIndexer, withPurpose, withUser, type Db, type Tx } from './client';
+import { withIndexer, withPurpose, withUser, withWorker, type Db, type Tx } from './client';
 import { openToken, sealToken } from './crypto';
 import {
   auditLog,
@@ -124,9 +124,12 @@ export async function revokeSession(db: Db, token: string) {
   });
 }
 
-/** Worker: id's van actieve collega's (geen e-mail of naam). Per id daarna withUser. */
+/**
+ * Worker: id's van actieve collega's (geen e-mail of naam). Per id daarna withUser. Alleen als hz_worker (0010): de
+ * worker-login (sql/worker-login.sql) kan dit, de api-login niet (42501).
+ */
 export async function activeUserIds(db: Db): Promise<string[]> {
-  return asApp(db, async (tx) => {
+  return withWorker(db, async (tx) => {
     const r = await tx.execute<{ id: string }>(sql`select id from system_active_user_ids() as id`);
     return r.rows.map((x) => x.id);
   });
@@ -446,6 +449,14 @@ export async function upsertContextIndex(db: Db, rows: ContextIndexRow[]) {
 export async function deleteContextIndexPath(db: Db, path: string) {
   return withIndexer(db, async (tx) => {
     const r = await tx.execute<{ n: number }>(sql`select context_index_delete(${path}) as n`);
+    return r.rows[0]?.n ?? 0;
+  });
+}
+
+/** Eén indexrij weghalen op zijn sleutel (een actie die uit acties.md verdween). Alleen als hz_indexer (0010). */
+export async function deleteContextIndexId(db: Db, id: string) {
+  return withIndexer(db, async (tx) => {
+    const r = await tx.execute<{ n: number }>(sql`select context_index_delete_id(${id}) as n`);
     return r.rows[0]?.n ?? 0;
   });
 }

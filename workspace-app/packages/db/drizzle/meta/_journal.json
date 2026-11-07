@@ -71,6 +71,13 @@
       "when": 1794066875413,
       "tag": "0009_e2_context_index_writer",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794066900000,
+      "tag": "0010_e2_worker_role",
+      "breakpoints": true
     }
   ]
 }

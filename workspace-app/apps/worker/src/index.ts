@@ -1,6 +1,7 @@
 /**
  * Start de worker: `pnpm --filter @hz/worker dev`.
- * - DATABASE_URL: app-tabellen via createDb() als hz_app (productie: de app-login, sql/app-login.sql);
+ * - DATABASE_URL: app-tabellen via createDb() als hz_app (productie: de worker-login, sql/worker-login.sql; lid van
+ *   hz_app en hz_worker, niet de login van de api);
  * - HZ_BOSS_DATABASE_URL: pg-boss in een eigen schema met een eigen login hz_boss (sql/boss-login.sql; productie
  *   verplicht en nooit de migratierol: de worker weigert dan te starten; lokaal = DATABASE_URL).
  */

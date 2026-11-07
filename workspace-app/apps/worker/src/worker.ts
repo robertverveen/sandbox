@@ -6,11 +6,12 @@
  *   productie de login hz_boss (sql/boss-login.sql), eigenaar van alleen dat schema. De worker weigert in productie
  *   een HZ_BOSS_DATABASE_URL waarvan de login eigenaar is van app-tabellen (checkBossConnection); hz_app heeft geen
  *   rechten op het schema;
- * - app-tabellen gaan via createDb() als hz_app (`databaseUrl`, in productie de app-login uit sql/app-login.sql).
+ * - app-tabellen gaan via createDb() als hz_app (`databaseUrl`, in productie de worker-login uit sql/worker-login.sql:
+ *   lid van hz_app en hz_worker; alleen hz_worker mag system_active_user_ids() uitvoeren, de api-login niet).
  *   Jobs die per collega werken zetten zelf withUser(...), zodat RLS ook in de worker geldt.
  */
 import PgBoss from 'pg-boss';
-import { assertBossLoginAt, createDb } from '@hz/db';
+import { assertBossLoginAt, createDb, WORKER_ROLE } from '@hz/db';
 import type { ProviderBundle } from '@hz/providers';
 import { QUEUES, telActies, telWeekdoelen, type TelActiesInput } from './jobs';
 
@@ -18,7 +19,10 @@ export interface WorkerOptions {
   /** Verbinding voor pg-boss (eigen schema). Lokaal hz_dev; productie HZ_BOSS_DATABASE_URL. */
   connectionString: string;
   schema?: string;
-  /** Verbinding voor app-tabellen via createDb() als hz_app. Standaard dezelfde URL als pg-boss (alleen lokaal). */
+  /**
+   * Verbinding voor app-tabellen via createDb() als hz_app; in productie de worker-login (sql/worker-login.sql).
+   * Standaard dezelfde URL als pg-boss (alleen lokaal).
+   */
   databaseUrl?: string;
   bundle: ProviderBundle;
   log?: (msg: string) => void;
@@ -44,8 +48,9 @@ export async function startWorker(opts: WorkerOptions) {
       );
     await checkBossConnection(opts.connectionString, schema);
   }
-  // createDb() controleert in productie zelf de app-login (assertAppLogin) bij elke nieuwe verbinding.
-  const app = createDb(opts.databaseUrl ?? opts.connectionString, 4, { env });
+  // createDb() controleert in productie zelf de login (assertAppLogin) bij elke nieuwe verbinding. De worker-login
+  // (sql/worker-login.sql) mag lid zijn van hz_worker: alleen zo kan telWeekdoelen de id's van collega's opvragen.
+  const app = createDb(opts.databaseUrl ?? opts.connectionString, 4, { env, allowRoles: [WORKER_ROLE] });
   const boss = new PgBoss({ connectionString: opts.connectionString, schema });
   boss.on('error', (e) => log(`fout: ${e.message}`));
   await boss.start();

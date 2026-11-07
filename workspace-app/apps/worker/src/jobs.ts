@@ -42,7 +42,7 @@ export async function telActies(context: ContextProvider, input: TelActiesInput)
 export interface TelWeekdoelenOutput {
   gebruikers: number;
   open: number;
-  /** current_user en session_user in de job: hz_app en de app-login, nooit de eigenaar van de tabellen. */
+  /** current_user en session_user in de job: hz_app en de worker-login, nooit de eigenaar van de tabellen. */
   rol: string;
   login: string;
 }

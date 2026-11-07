@@ -12,7 +12,8 @@
  * withPurpose(): transacties zonder gebruiker. app.purpose opent sinds 0006/0009 niets meer (een GUC kan elke
  * transactie zetten): 'auth' en 'system' geven geen leesrecht op users of sessions, 'index' geen schrijfrecht op
  * context_index. Inloggen en de worker gebruiken SECURITY DEFINER-functies (repo.ts: findSession, upsertUser,
- * activeUserIds, …); schrijven in de contextindex alleen als hz_indexer (createIndexerDb/withIndexer, 0009).
+ * activeUserIds, …); schrijven in de contextindex alleen als hz_indexer (createIndexerDb/withIndexer, 0009); de id's
+ * van alle collega's alleen als hz_worker (withWorker, 0010; alleen de worker-login is daar lid van).
  */
 import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -50,7 +51,12 @@ export interface AppLoginCheck {
   bypassRls: boolean;
   /** Tabellen, views en sequences waarvan de login eigenaar is, direct of via lidmaatschap (SET ROLE). */
   ownedRelations: number;
+  /** Bijzondere rollen waar de login lid van is (hz_worker, hz_indexer); de api-login hoort bij geen van beide. */
+  memberOf: string[];
 }
+
+/** Rollen met een eigen recht naast hz_app; een login mag er alleen lid van zijn als dat zo bedoeld is. */
+export const SPECIAL_ROLES = ['hz_worker', 'hz_indexer'] as const;
 
 /**
  * Wat de login achter DATABASE_URL zelf kan, los van `-c role=hz_app`. De app hoort te verbinden met een login die
@@ -61,9 +67,18 @@ export async function checkAppLogin(
   client: Pick<pg.ClientBase, 'query'>,
   opts: { exceptSchemas?: string[] } = {},
 ): Promise<AppLoginCheck> {
-  const r = await client.query<{ login: string; rolsuper: boolean; rolbypassrls: boolean; owned: number }>(
+  const r = await client.query<{
+    login: string;
+    rolsuper: boolean;
+    rolbypassrls: boolean;
+    owned: number;
+    member_of: string[] | null;
+  }>(
     `
     select session_user::text as login, r.rolsuper, r.rolbypassrls,
+      array(select g.rolname::text from pg_roles g
+             where g.rolname = any($2::text[]) and pg_has_role(session_user, g.oid, 'MEMBER')
+             order by 1) as member_of,
       (select count(*)::int from pg_class c
         where c.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
           and c.relnamespace not in ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
@@ -71,18 +86,25 @@ export async function checkAppLogin(
           and c.relnamespace::regnamespace::text <> all($1::text[])
           and pg_has_role(session_user, c.relowner, 'MEMBER')) as owned
     from pg_roles r where r.rolname = session_user`,
-    [opts.exceptSchemas ?? []],
+    [opts.exceptSchemas ?? [], [...SPECIAL_ROLES]],
   );
   const row = r.rows[0]!;
-  return { login: row.login, superuser: row.rolsuper, bypassRls: row.rolbypassrls, ownedRelations: row.owned };
+  return {
+    login: row.login,
+    superuser: row.rolsuper,
+    bypassRls: row.rolbypassrls,
+    ownedRelations: row.owned,
+    memberOf: row.member_of ?? [],
+  };
 }
 
 export class UnsafeAppLoginError extends Error {
-  constructor(c: AppLoginCheck) {
+  constructor(c: AppLoginCheck, forbidden: string[] = []) {
     const why = [
       c.superuser ? 'is superuser' : '',
       c.bypassRls ? 'heeft BYPASSRLS' : '',
       c.ownedRelations ? `is eigenaar van ${c.ownedRelations} tabel(len) of views (direct of via een rol)` : '',
+      forbidden.length ? `is lid van ${forbidden.join(', ')} (hoort bij een andere login)` : '',
     ].filter(Boolean);
     super(
       `DATABASE_URL: login "${c.login}" ${why.join(', ')}. In productie verbindt de app met een aparte login die alleen ` +
@@ -92,10 +114,15 @@ export class UnsafeAppLoginError extends Error {
   }
 }
 
-/** Gooit UnsafeAppLoginError als de login van deze verbinding RLS zou kunnen omzeilen. */
-export async function assertAppLogin(client: Pick<pg.ClientBase, 'query'>) {
+/**
+ * Gooit UnsafeAppLoginError als de login van deze verbinding RLS zou kunnen omzeilen, of lid is van een bijzondere
+ * rol (hz_worker, hz_indexer) die niet in `allowRoles` staat. Zo weigert de api in productie een login waarmee een
+ * request alle gebruikers-id's zou kunnen opvragen (hz_worker) of de gedeelde index zou kunnen wijzigen (hz_indexer).
+ */
+export async function assertAppLogin(client: Pick<pg.ClientBase, 'query'>, opts: { allowRoles?: string[] } = {}) {
   const c = await checkAppLogin(client);
-  if (c.superuser || c.bypassRls || c.ownedRelations > 0) throw new UnsafeAppLoginError(c);
+  const forbidden = c.memberOf.filter((r) => !(opts.allowRoles ?? []).includes(r));
+  if (c.superuser || c.bypassRls || c.ownedRelations > 0 || forbidden.length) throw new UnsafeAppLoginError(c, forbidden);
   return c;
 }
 
@@ -140,6 +167,11 @@ export async function assertBossLoginAt(url: string, schema: string) {
 export interface CreateDbOptions {
   /** Omgeving voor de productiecontrole (standaard process.env). */
   env?: Record<string, string | undefined>;
+  /**
+   * Bijzondere rollen waar de login in productie lid van mag zijn. De api: geen (standaard). De worker: ['hz_worker']
+   * (sql/worker-login.sql), voor activeUserIds().
+   */
+  allowRoles?: string[];
 }
 
 /**
@@ -148,7 +180,8 @@ export interface CreateDbOptions {
  */
 export function createDb(url = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL, max = 10, opts: CreateDbOptions = {}) {
   const prod = (opts.env ?? process.env).NODE_ENV === 'production';
-  const p = pool(url, max, APP_ROLE, prod ? async (c) => void (await assertAppLogin(c)) : undefined);
+  const allowRoles = opts.allowRoles ?? [];
+  const p = pool(url, max, APP_ROLE, prod ? async (c) => void (await assertAppLogin(c, { allowRoles })) : undefined);
   const db = drizzle(p, { schema });
   return { db, pool: p, close: () => p.end() };
 }
@@ -174,7 +207,12 @@ export function createIndexerDb(
   opts: CreateDbOptions = {},
 ) {
   const prod = (opts.env ?? process.env).NODE_ENV === 'production';
-  const p = pool(url, max, INDEX_ROLE, prod ? async (c) => void (await assertAppLogin(c)) : undefined);
+  const p = pool(
+    url,
+    max,
+    INDEX_ROLE,
+    prod ? async (c) => void (await assertAppLogin(c, { allowRoles: [INDEX_ROLE] })) : undefined,
+  );
   const db = drizzle(p, { schema });
   return { db, pool: p, close: () => p.end() };
 }
@@ -206,6 +244,20 @@ export async function withUser<T>(db: Db, userId: string, fn: (tx: Tx) => Promis
 export async function withIndexer<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
     await tx.execute(sql.raw(`SET LOCAL ROLE ${INDEX_ROLE}`));
+    return fn(tx);
+  });
+}
+
+/** De rol die system_active_user_ids() mag uitvoeren (migratie 0010); alleen de worker-login is er lid van. */
+export const WORKER_ROLE = 'hz_worker';
+
+/**
+ * Transactie als hz_worker: geen tabelrechten, alleen system_active_user_ids(). Faalt met 42501 als de login geen lid
+ * is van hz_worker (zoals de api-login hz_app_login).
+ */
+export async function withWorker<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql.raw(`SET LOCAL ROLE ${WORKER_ROLE}`));
     return fn(tx);
   });
 }

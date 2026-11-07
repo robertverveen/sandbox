@@ -95,7 +95,12 @@ describe('de login zelf: NOINHERIT, alleen lid van hz_app, eigenaar van niets', 
   it('checkAppLogin: de login is nergens eigenaar van; de migratierol wel', async () => {
     const c = await app.pool.connect();
     try {
-      expect(await assertAppLogin(c)).toMatchObject({ login: loginName, ownedRelations: 0, superuser: false });
+      expect(await assertAppLogin(c)).toMatchObject({
+        login: loginName,
+        ownedRelations: 0,
+        superuser: false,
+        memberOf: [], // geen hz_worker (id's van alle collega's) en geen hz_indexer
+      });
     } finally {
       c.release();
     }

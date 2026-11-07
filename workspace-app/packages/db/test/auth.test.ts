@@ -32,6 +32,8 @@ import {
   users,
   withPurpose,
   withUser,
+  withWorker,
+  deleteContextIndexId,
   type Db,
 } from '../src';
 
@@ -200,17 +202,52 @@ describe('SECURITY DEFINER-functies: precies één sleutel', () => {
   });
 
   it('glijdende sessie: touch verlengt een geldige sessie', async () => {
-    const later = new Date(Date.now() + 90 * 864e5);
+    const later = new Date(Date.now() + 20 * 864e5);
     expect(await touchSession(db, tokenB, later)).toBe(true);
     const s = await findSession(db, tokenB);
     expect(Math.abs(s!.session.expiresAt.getTime() - later.getTime())).toBeLessThan(1000);
   });
 
-  it('worker: alleen id’s van actieve collega’s', async () => {
+  it('sessieduur heeft een bovengrens van 30 dagen (touch en aanmaken); een verloopdatum in het verleden weigert', async () => {
+    const max = () => Date.now() + 30 * 864e5;
+    // touch met 10 jaar: gekapt op 30 dagen
+    expect(await touchSession(db, tokenB, new Date(Date.now() + 3650 * 864e5))).toBe(true);
+    const s = await findSession(db, tokenB);
+    expect(s!.session.expiresAt.getTime()).toBeLessThanOrEqual(max() + 1000);
+    expect(s!.session.expiresAt.getTime()).toBeGreaterThan(max() - 60_000);
+    // rechtstreeks via de functie, zoals een auth-bibliotheek dat zou doen: zelfde grens
+    const direct = await withPurpose(db, 'auth', (tx) =>
+      tx.execute<{ ok: boolean }>(
+        sql`select auth_touch_session(${hashToken(tokenB)}, now() + interval '400 days') as ok`,
+      ),
+    );
+    expect(direct.rows[0]!.ok).toBe(true);
+    const exp = await owner.db.execute<{ days: number }>(
+      sql`select extract(epoch from expires_at - now()) / 86400 as days from sessions where token_hash = ${hashToken(tokenB)}`,
+    );
+    expect(Number(exp.rows[0]!.days)).toBeLessThanOrEqual(30.001);
+    // verleden: fout, sessie blijft geldig
+    expect(codeOf(await errOf(touchSession(db, tokenB, new Date(Date.now() - 1000))))).toBe('22023');
+    expect(await findSession(db, tokenB)).not.toBeNull();
+    // aanmaken met 365 dagen: ook gekapt
+    const long = await createSession(db, B, 'lang', 365);
+    const ls = await findSession(db, long.token);
+    expect(ls!.session.expiresAt.getTime()).toBeLessThanOrEqual(max() + 1000);
+  });
+
+  it('worker: alleen id’s van actieve collega’s, alleen als hz_worker', async () => {
+    // db is hier de migratierol (lid van hz_worker); activeUserIds zet SET LOCAL ROLE hz_worker
     const ids = await activeUserIds(db);
     expect(ids).toEqual(expect.arrayContaining([A, B]));
-    const r = await withPurpose(db, 'system', (tx) => tx.execute(sql`select * from system_active_user_ids()`));
+    const r = await withWorker(db, (tx) => tx.execute(sql`select * from system_active_user_ids()`));
     expect(Object.keys(r.rows[0]!)).toEqual(['system_active_user_ids']);
+    // Een gewone request-transactie (hz_app), ook met app.purpose = system of auth: geen recht
+    for (const purpose of ['system', 'auth'] as const) {
+      const e = await errOf(withPurpose(db, purpose, (tx) => tx.execute(sql`select * from system_active_user_ids()`)));
+      expect(codeOf(e), purpose).toBe('42501');
+    }
+    const e = await errOf(withUser(db, A, (tx) => tx.execute(sql`select * from system_active_user_ids()`)));
+    expect(codeOf(e)).toBe('42501');
   });
 
   it('inloggen schrijft het auditlog via de functie (A ziet zijn eigen regels)', async () => {
@@ -359,10 +396,11 @@ describe('contextindex: schrijven alleen als hz_indexer, niet via app.purpose (0
     expect(r.rows[0]!.g).toEqual(['zonnig']);
   });
 
-  it('hz_app mag context_index_upsert en context_index_delete niet aanroepen, ook niet met app.purpose=index', async () => {
+  it('hz_app mag context_index_upsert, context_index_delete en context_index_delete_id niet aanroepen, ook niet met app.purpose=index', async () => {
     for (const q of [
       sql`select * from context_index_upsert(${JSON.stringify([row('partners/zonnig/brief.md', { geheim_voor: [] })])}::jsonb)`,
       sql`select context_index_delete('partners/zonnig/brief.md')`,
+      sql`select context_index_delete_id('partners/zonnig/brief.md')`,
     ]) {
       const e = await errOf(
         withUser(db, A, async (tx) => {
@@ -444,6 +482,10 @@ describe('contextindex: schrijven alleen als hz_indexer, niet via app.purpose (0
       const e3 = await errOf(withIndexer(ix.db, (tx) => tx.execute(sql`update context_index set title = 'x'`)));
       expect(codeOf(e3)).toBe('42501');
       expect(await deleteContextIndexPath(ix.db, 'partners/zon/brief.md')).toBe(1);
+      // Eén rij op zijn sleutel (0010): exact, geen patroon
+      expect(await deleteContextIndexId(ix.db, '%')).toBe(0);
+      expect(await deleteContextIndexId(ix.db, 'partners/zonnig/brief.md')).toBe(1);
+      expect(codeOf(await errOf(deleteContextIndexId(ix.db, ' ')))).toBe('22023');
       expect(codeOf(await errOf(deleteContextIndexPath(ix.db, '%')))).toBe('22023');
     } finally {
       await ix.close();
@@ -465,6 +507,8 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
     'auth_revoke_session',
     'system_active_user_ids',
   ];
+  /** Wie ze mag uitvoeren: alles hz_app, behalve de lijst met alle gebruikers-id's (alleen hz_worker, 0010). */
+  const GRANTEE: Record<string, string> = { system_active_user_ids: 'hz_worker' };
   const FNS_ARR = `{${FNS.join(',')}}`;
 
   it('SECURITY DEFINER, eigenaar is de migratierol (niet hz_app), vast search_path', async () => {
@@ -481,14 +525,16 @@ describe('de functies zelf: eigenaar, rechten en zoekpad', () => {
     }
   });
 
-  it('PUBLIC mag ze niet uitvoeren; hz_app wel', async () => {
+  it('PUBLIC mag ze niet uitvoeren; hz_app wel, system_active_user_ids alleen hz_worker', async () => {
     const r = await owner.db.execute<{ proname: string; grantee: string }>(sql`
       select p.proname, coalesce(nullif(pg_get_userbyid(a.grantee), '-'), 'PUBLIC') as grantee
       from pg_proc p, aclexplode(p.proacl) a
       where p.pronamespace = 'public'::regnamespace and p.proname = any(${FNS_ARR}::text[]) and a.privilege_type = 'EXECUTE'`);
     for (const f of FNS) {
       const grantees = r.rows.filter((x) => x.proname === f).map((x) => x.grantee);
-      expect(grantees, f).toContain('hz_app');
+      const want = GRANTEE[f] ?? 'hz_app';
+      expect(grantees, f).toContain(want);
+      if (want !== 'hz_app') expect(grantees, f).not.toContain('hz_app');
       expect(grantees, f).not.toContain('PUBLIC');
     }
     const pub = await owner.db.execute<{ n: number }>(sql`

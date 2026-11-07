@@ -1,12 +1,15 @@
 /**
  * HZW-020 (stuk E2): de worker gebruikt twee verbindingen, zoals in productie. pg-boss draait in een eigen schema met
  * een eigen login hz_boss (sql/boss-login.sql: eigenaar van alleen dat schema); app-tabellen gaan via createDb() als
- * hz_app met de aparte app-login (sql/app-login.sql). In productie weigert de worker een pg-boss-login die eigenaar is
- * van app-tabellen (de migratierol). Eigen, verse database (hz_e2_test_worker_app).
+ * hz_app met de aparte worker-login (sql/worker-login.sql: lid van hz_app en hz_worker). Alleen hz_worker mag de id's
+ * van alle collega's opvragen (system_active_user_ids, 0010); de api-login (hz_app_login) niet. In productie weigert
+ * de worker een pg-boss-login die eigenaar is van app-tabellen (de migratierol). Eigen, verse database
+ * (hz_e2_test_worker_app).
  */
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  activeUserIds,
   checkAppLogin,
   createDb,
   createOwnerDb,
@@ -15,7 +18,9 @@ import {
   UnsafeBossLoginError,
   upsertUser,
   weekdoelen,
+  withPurpose,
   withUser,
+  withWorker,
 } from '@hz/db';
 import { createProviders } from '@hz/providers';
 import { QUEUES } from '../src/jobs';
@@ -31,6 +36,8 @@ const withLogin = (login: string) => {
   return u.toString();
 };
 const APP_URL = withLogin(process.env.HZ_TEST_APP_LOGIN ?? 'hz_app_login:hz_app_login');
+const WORKER_URL = withLogin(process.env.HZ_TEST_WORKER_LOGIN ?? 'hz_worker_login:hz_worker_login');
+const WORKER_LOGIN = new URL(WORKER_URL).username;
 const BOSS_URL = withLogin(process.env.HZ_TEST_BOSS_LOGIN ?? 'hz_boss:hz_boss_test');
 const BOSS_LOGIN = new URL(BOSS_URL).username;
 const SCHEMA = 'pgboss_e2_test';
@@ -74,7 +81,7 @@ beforeAll(async () => {
   w = await startWorker({
     connectionString: BOSS_URL,
     schema: SCHEMA,
-    databaseUrl: APP_URL,
+    databaseUrl: WORKER_URL,
     bundle: createProviders({}),
     log: (m) => logs.push(m),
     env: PROD,
@@ -95,18 +102,18 @@ async function waitFor(queue: string, id: string) {
 }
 
 describe('worker: pg-boss apart, app-tabellen als hz_app', () => {
-  it('een job op app-tabellen draait als hz_app via de app-login en telt per collega onder RLS', async () => {
+  it('een job op app-tabellen draait als hz_app via de worker-login en telt per collega onder RLS', async () => {
     const id = await w.sendTelWeekdoelen();
     const job = await waitFor(QUEUES.telWeekdoelen, id!);
     expect(job?.state).toBe('completed');
-    expect(job?.output).toEqual({ gebruikers: 2, open: 3, rol: 'hz_app', login: 'hz_app_login' });
+    expect(job?.output).toEqual({ gebruikers: 2, open: 3, rol: 'hz_app', login: WORKER_LOGIN });
     expect(logs.some((l) => l.includes('3 open bij 2'))).toBe(true);
   }, 30_000);
 
   it('de app-verbinding van de worker is geen eigenaar van iets, ook niet van het pg-boss-schema', async () => {
     const r = await w.db.execute<{ cu: string; su: string }>(sql`select current_user as cu, session_user as su`);
-    expect(r.rows[0]).toEqual({ cu: 'hz_app', su: 'hz_app_login' });
-    const app = createDb(APP_URL, 1);
+    expect(r.rows[0]).toEqual({ cu: 'hz_app', su: WORKER_LOGIN });
+    const app = createDb(WORKER_URL, 1);
     const c = await app.pool.connect();
     try {
       expect((await checkAppLogin(c)).ownedRelations).toBe(0);
@@ -148,13 +155,84 @@ describe('worker: pg-boss apart, app-tabellen als hz_app', () => {
   });
 });
 
+describe('worker-rol: alleen de worker-login kent de id’s van alle collega’s (0010)', () => {
+  type E = { code?: string; cause?: { code?: string } };
+  const codeOf = (e: E | null) => e?.cause?.code ?? e?.code;
+
+  it('de api-login (hz_app_login) kan system_active_user_ids() niet uitvoeren, ook niet met app.purpose', async () => {
+    const api = createDb(APP_URL, 1);
+    try {
+      const plain = await activeUserIds(api.db).then(
+        () => null,
+        (e: E) => e,
+      );
+      expect(codeOf(plain)).toBe('42501');
+      for (const purpose of ['system', 'auth'] as const) {
+        const e = await withPurpose(api.db, purpose, (tx) => tx.execute(sql`select * from system_active_user_ids()`)).then(
+          () => null,
+          (x: E) => x,
+        );
+        expect(codeOf(e), purpose).toBe('42501');
+      }
+      // en worden kan hij het ook niet
+      const e = await api.db.execute(sql`set role hz_worker`).then(
+        () => null,
+        (x: E) => x,
+      );
+      expect(codeOf(e)).toBe('42501');
+    } finally {
+      await api.close();
+    }
+  });
+
+  it('de worker-login wel, als hz_worker; hz_worker zelf heeft geen tabelrechten', async () => {
+    const wk = createDb(WORKER_URL, 1);
+    try {
+      expect((await activeUserIds(wk.db)).length).toBe(2);
+      const e = await withWorker(wk.db, (tx) => tx.execute(sql`select * from weekdoelen`)).then(
+        () => null,
+        (x: E) => x,
+      );
+      expect(codeOf(e)).toBe('42501');
+    } finally {
+      await wk.close();
+    }
+  });
+
+  it('in productie weigert createDb() voor de api een login die lid is van hz_worker; de worker staat hem toe', async () => {
+    const asApi = createDb(WORKER_URL, 1, { env: PROD });
+    try {
+      const e = await asApi.db.execute(sql`select 1`).then(
+        () => null,
+        (x: Error & { cause?: Error }) => x.cause ?? x,
+      );
+      expect(e).toMatchObject({ name: 'UnsafeAppLoginError', message: expect.stringMatching(/lid van hz_worker/) });
+    } finally {
+      await asApi.close();
+    }
+    const asWorker = createDb(WORKER_URL, 1, { env: PROD, allowRoles: ['hz_worker'] });
+    try {
+      expect((await asWorker.db.execute(sql`select 1 as x`)).rows[0]).toEqual({ x: 1 });
+    } finally {
+      await asWorker.close();
+    }
+    // De api-login zelf is in productie in orde (alleen hz_app)
+    const api = createDb(APP_URL, 1, { env: PROD });
+    try {
+      expect((await api.db.execute(sql`select 1 as x`)).rows[0]).toEqual({ x: 1 });
+    } finally {
+      await api.close();
+    }
+  });
+});
+
 describe('worker: productiecontrole van de pg-boss-login', () => {
   it('weigert in productie een HZ_BOSS_DATABASE_URL van de migratierol (eigenaar van app-tabellen)', async () => {
     await expect(
       startWorker({
         connectionString: OWNER_URL,
         schema: 'pgboss_e2_geweigerd',
-        databaseUrl: APP_URL,
+        databaseUrl: WORKER_URL,
         bundle: createProviders({}),
         env: PROD,
       }),

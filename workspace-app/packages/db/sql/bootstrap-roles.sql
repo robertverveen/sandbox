@@ -1,6 +1,7 @@
 -- Eenmalig, door een databasebeheerder (superuser of rol met CREATEROLE), per Postgres-server.
 -- Maakt de runtime-rol van de app aan: geen login, geen superuser, geen BYPASSRLS, eigenaar van niets.
--- En de rol hz_indexer (schrijven in de contextindex, alleen via SECURITY DEFINER-functies). Idempotent.
+-- En de rollen hz_indexer (schrijven in de contextindex, alleen via SECURITY DEFINER-functies) en hz_worker
+-- (id's van actieve collega's voor de worker). Idempotent.
 -- De migratierol (lokaal en in CI: hz_dev) blijft eigenaar van alle tabellen en wordt lid van hz_app,
 -- zodat withUser/withPurpose per transactie `SET LOCAL ROLE hz_app` kunnen doen.
 --
@@ -28,4 +29,12 @@ BEGIN
   END IF;
   ALTER ROLE hz_indexer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
   EXECUTE format('GRANT hz_indexer TO %I', m);
+  -- hz_worker (stuk E2, migratie 0010): de enige rol die system_active_user_ids() mag uitvoeren (de id's van alle
+  -- actieve collega's). NOLOGIN, geen tabelrechten; de worker verbindt met een eigen login die lid is van hz_app en
+  -- hz_worker (sql/worker-login.sql). De api-login niet. De migratierol wordt lid voor beheer en tests.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hz_worker') THEN
+    CREATE ROLE hz_worker NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  ALTER ROLE hz_worker NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+  EXECUTE format('GRANT hz_worker TO %I', m);
 END $$;
