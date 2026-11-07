@@ -105,7 +105,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: api
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: workspace-app
           file: workspace-app/infra/docker/api.Dockerfile
@@ -118,7 +118,7 @@ jobs:
           cache-from: type=gha,scope=hz-api
           cache-to: type=gha,mode=max,scope=hz-api
       - id: worker
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: workspace-app
           file: workspace-app/infra/docker/worker.Dockerfile
@@ -131,7 +131,7 @@ jobs:
           cache-from: type=gha,scope=hz-worker
           cache-to: type=gha,mode=max,scope=hz-worker
       - id: web
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: workspace-app
           file: workspace-app/infra/docker/web.Dockerfile
