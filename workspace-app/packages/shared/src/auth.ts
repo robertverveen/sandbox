@@ -170,6 +170,9 @@ export interface ProviderCatalogEntry {
   revoke: string;
 }
 
+const GOOGLE_PER_APP =
+  ' Google trekt per app in, niet per bron: de laatste Google-bron die je ontkoppelt, haalt de app uit je Google-account.';
+
 export const PROVIDER_CATALOG: Record<ProviderName, ProviderCatalogEntry> = {
   google_tasks: {
     provider: 'google_tasks',
@@ -183,7 +186,7 @@ export const PROVIDER_CATALOG: Record<ProviderName, ProviderCatalogEntry> = {
     never: ['Taken van collega’s lezen', 'Iets delen buiten je eigen account'],
     scopes: ['https://www.googleapis.com/auth/tasks'],
     recommended: true,
-    revoke: 'Het token wordt bij Google ingetrokken en uit de workspace gewist, met je planning van taken.',
+    revoke: 'Het token wordt gewist, met je planning van taken.' + GOOGLE_PER_APP,
   },
   calendar: {
     provider: 'calendar',
@@ -201,7 +204,7 @@ export const PROVIDER_CATALOG: Record<ProviderName, ProviderCatalogEntry> = {
       'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
       'https://www.googleapis.com/auth/calendar.freebusy',
     ],
-    revoke: 'Het token wordt bij Google ingetrokken; je agendakleuren en -lagen worden gewist.',
+    revoke: 'Het token wordt gewist, met je agendakleuren en -lagen.' + GOOGLE_PER_APP,
   },
   gmail: {
     provider: 'gmail',
@@ -215,7 +218,7 @@ export const PROVIDER_CATALOG: Record<ProviderName, ProviderCatalogEntry> = {
     never: ['Mailtekst opslaan', 'Zelf mail versturen'],
     scopes: ['https://www.googleapis.com/auth/gmail.modify'],
     optional: true,
-    revoke: 'Het token wordt bij Google ingetrokken; leesstatus en planning van mail worden gewist.',
+    revoke: 'Het token wordt gewist, met leesstatus en planning van mail.' + GOOGLE_PER_APP,
   },
   slack: {
     provider: 'slack',
@@ -278,7 +281,8 @@ export const PROVIDER_CATALOG: Record<ProviderName, ProviderCatalogEntry> = {
     ],
     never: ['In HomeZero-context schrijven zonder de contextcheck', 'Regels van anderen herschrijven'],
     scopes: ['contents:read (HomeZero-context)', 'contents:write (eigen Persoonlijk-repo)', 'metadata:read'],
-    revoke: 'De toestemming wordt bij GitHub ingetrokken (grant verwijderd) en het token gewist.',
+    revoke:
+      'De toestemming wordt bij GitHub ingetrokken (grant verwijderd) en het token gewist; je taken en wachten op uit de Persoonlijk-repo verdwijnen uit de app.',
   },
   wispr: {
     provider: 'wispr',
@@ -319,7 +323,20 @@ export const DisconnectResult = z.object({
   /** Aantal gewiste rijen eigen data (leesstatus, planning, agenda-instellingen). */
   wiped: z.number().int().nonnegative().optional(),
   note: z.string().optional(),
+  /**
+   * Google trekt toestemming per app (client) in, niet per bron. Zijn er nog andere Google-bronnen op dezelfde
+   * client gekoppeld, dan wordt alleen dit token gewist en blijven die werken; hier staan ze.
+   */
+  keptFor: z.array(ProviderName).optional(),
+  /** Bronnen die door het intrekken bij de bron ook hun toegang kwijt zijn en nu "Opnieuw verbinden" vragen. */
+  needsReauth: z.array(ProviderName).optional(),
 });
+
+/**
+ * Voorvoegsels van itemstate-sleutels voor regels uit de Persoonlijk-repo: `tm:` taken.md, `wo:` wachten-op.md
+ * (Open en Bespreken), `pers:` overig. GitHub ontkoppelen wist ze (stuk E1); de Tracker gebruikt ze.
+ */
+export const PERS_KEY_PREFIXES = ['tm:', 'wo:', 'pers:'] as const;
 
 export const OwnGoogleClient = z.object({
   clientId: z

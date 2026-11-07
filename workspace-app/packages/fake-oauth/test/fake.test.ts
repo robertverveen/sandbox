@@ -33,7 +33,7 @@ describe('nep-autorisatieserver', () => {
       await fetch(`${f.url}/google/authorize?client_id=c&redirect_uri=http://app/cb&scope=openid%20email`)
     ).text();
     expect(page).toContain('robert@homezero.nl');
-    expect(page).toContain('robert.prive@gmail.com');
+    expect(page).toContain('robert.prive@example.com');
   });
 
   it('PKCE wordt gecontroleerd en een code werkt maar één keer', async () => {
@@ -101,5 +101,43 @@ describe('nep-autorisatieserver', () => {
       form({ grant_type: 'refresh_token', refresh_token: t.refresh_token, client_id: 'c', client_secret: 's' }),
     );
     expect(refresh.status).toBe(400);
+  });
+
+  it('Google trekt per client en gebruiker in: één token intrekken raakt Taken, Agenda en Gmail samen', async () => {
+    async function grant(scope: string, client = 'c', account = 'robert') {
+      const r = await fetch(
+        `${f.url}/google/authorize`,
+        form({ client_id: client, redirect_uri: 'http://app/cb', state: 's', account, scope, access_type: 'offline' }),
+      );
+      const c = new URL(r.headers.get('location')!).searchParams.get('code')!;
+      const tok = await fetch(
+        `${f.url}/google/token`,
+        form({
+          grant_type: 'authorization_code',
+          code: c,
+          client_id: client,
+          client_secret: 's',
+          redirect_uri: 'http://app/cb',
+        }),
+      );
+      return ((await tok.json()) as { refresh_token: string }).refresh_token;
+    }
+    const refreshOk = async (rt: string, client = 'c') =>
+      (
+        await fetch(
+          `${f.url}/google/token`,
+          form({ grant_type: 'refresh_token', refresh_token: rt, client_id: client, client_secret: 's' }),
+        )
+      ).status === 200;
+    const taken = await grant('https://www.googleapis.com/auth/tasks');
+    const gmail = await grant('https://www.googleapis.com/auth/gmail.modify');
+    const eigen = await grant('https://www.googleapis.com/auth/tasks', 'eigen-project');
+    const lisanne = await grant('https://www.googleapis.com/auth/tasks', 'c', 'lisanne');
+    expect((await fetch(`${f.url}/google/revoke`, form({ token: gmail }))).status).toBe(200);
+    // Zelfde client en gebruiker: ook Taken is weg (zoals bij Google).
+    expect(await refreshOk(taken)).toBe(false);
+    // Andere client (eigen Google-project) of andere gebruiker: blijft werken.
+    expect(await refreshOk(eigen, 'eigen-project')).toBe(true);
+    expect(await refreshOk(lisanne)).toBe(true);
   });
 });

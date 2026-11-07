@@ -187,7 +187,7 @@ describe('HZW-010 inloggen met Google (nep-OIDC)', () => {
       expect(b.session).toBeUndefined();
       expect((await b.req('GET', '/api/session')).status).toBe(401);
       expect(
-        await auth.userByEmail(account === 'prive' ? 'robert.prive@gmail.com' : `${account}@homezero.nl`),
+        await auth.userByEmail(account === 'prive' ? 'robert.prive@example.com' : `${account}@homezero.nl`),
       ).toBeNull();
       expect((auth as MemoryAuthStore).auditLog.find((a) => a.action === 'login.refused')?.target).toBe(reason);
     });
@@ -245,6 +245,20 @@ describe('HZW-010 inloggen met Google (nep-OIDC)', () => {
     expect(() =>
       loadConfig({ ...prod, NODE_ENV: 'production', HZ_OAUTH_ENDPOINTS: 'http://127.0.0.1:1' } as never),
     ).toThrow(/HZ_OAUTH_ENDPOINTS/);
+    // In development: een geblokkeerde collega komt ook via de dev-login niet binnen (403, geen sessie).
+    const { browser } = setup();
+    const robert = browser();
+    await robert.req('POST', '/api/auth/dev-login', {});
+    const lisanne = browser(SAFARI_IOS);
+    await lisanne.req('POST', '/api/auth/dev-login', { email: 'lisanne@homezero.nl' });
+    const lid = routes.session.response.parse(await (await lisanne.req('GET', '/api/session')).json()).user.id;
+    expect((await robert.req('POST', `/api/admin/members/${lid}/block`, { blocked: true })).status).toBe(200);
+    const again = browser(SAFARI_IOS);
+    const refused = await again.req('POST', '/api/auth/dev-login', { email: 'lisanne@homezero.nl' });
+    expect(refused.status).toBe(403);
+    expect(await refused.text()).toContain('Geblokkeerd');
+    expect(again.session).toBeUndefined();
+    expect((await again.req('GET', '/api/session')).status).toBe(401);
   });
 });
 
@@ -595,6 +609,93 @@ describe('HZW-014 koppelingen: verbinden, intrekken (token weg, data weg), opnie
     expect(await detail(b, 'google_tasks')).toMatchObject({ status: 'needs_reauth' });
   });
 
+  it('nieuwe collega zonder koppelingen ziet geen items van bronnen met een OAuth-flow; na koppelen wel', async () => {
+    const { browser } = setup();
+    const b = browser();
+    await googleLogin(b, 'lisanne');
+    const all = await details(b);
+    for (const p of ['google_tasks', 'calendar', 'gmail', 'slack', 'jira', 'github'] as const)
+      expect(all.find((c) => c.provider === p)).toMatchObject({ status: 'disconnected', oauth: true });
+    const dag = routes.dagstart.response.parse(await (await b.req('GET', '/api/dagstart')).json());
+    const types = new Set(dag.items.map((i) => i.type));
+    for (const t of ['task', 'mail', 'meeting', 'slack', 'jira']) expect(types.has(t as never), t).toBe(false);
+    expect(dag.sprint.issues).toEqual([]);
+    expect(dag.context.pers).toBeNull();
+    const agenda = routes.agenda.response.parse(await (await b.req('GET', '/api/agenda')).json());
+    expect(agenda.events).toEqual([]);
+    expect(agenda.calendars).toEqual([]);
+    const tasks = routes.tasks.response.parse(await (await b.req('GET', '/api/tasks')).json());
+    expect(tasks.tasks).toEqual([]);
+    const tracker = routes.tracker.response.parse(await (await b.req('GET', '/api/tracker')).json());
+    expect(tracker).toMatchObject({ hasPersRepo: false, taken: [] });
+    const convs = routes.conversations.response.parse(await (await b.req('GET', '/api/conversations')).json());
+    expect(convs.conversations).toEqual([]);
+    expect((await b.req('GET', '/api/conversations/sl:CDEMOFEEN')).status).toBe(409);
+    expect((await b.req('POST', '/api/tasks', { title: 'Nieuwe taak' })).status).toBe(409);
+    // Alleen Google Taken koppelen: taken verschijnen, de rest blijft leeg.
+    await connect(b, 'google_tasks', 'allow', '/welkom?stap=google');
+    const after = routes.dagstart.response.parse(await (await b.req('GET', '/api/dagstart')).json());
+    expect(after.items.some((i) => i.type === 'task')).toBe(true);
+    expect(after.items.some((i) => i.type === 'mail' || i.type === 'slack' || i.type === 'jira')).toBe(false);
+  });
+
+  it('Google deelt één client: Gmail intrekken laat Taken werken; de laatste Google-bron trekt de app echt in', async () => {
+    const { browser, auth, connections } = setup();
+    const b = browser();
+    await googleLogin(b, 'robert');
+    const uid = routes.session.response.parse(await (await b.req('GET', '/api/session')).json()).user.id;
+    await connect(b, 'google_tasks');
+    await connect(b, 'gmail');
+    const tasksTok = JSON.parse((await auth.readSecret(uid, 'google_tasks'))!) as {
+      refresh_token: string;
+      expires_at: number;
+    };
+    const gmailTok = JSON.parse((await auth.readSecret(uid, 'gmail'))!) as { refresh_token: string };
+    const off = routes.disconnect.response.parse(await (await b.req('DELETE', '/api/connections/gmail')).json());
+    // Niet bij Google ingetrokken (dat zou Taken ook raken), wel gewist, met uitleg.
+    expect(off).toMatchObject({ ok: true, revokedAtProvider: false, keptFor: ['google_tasks'] });
+    expect(off.note).toContain('Taken blijft werken');
+    expect(await auth.readSecret(uid, 'gmail')).toBeNull();
+    expect((await detail(b, 'gmail')).status).toBe('disconnected');
+    // Taken werkt nog: status gekoppeld en verversen bij Google lukt.
+    expect((await detail(b, 'google_tasks')).status).toBe('connected');
+    expect(fake.tokens.find((t) => t.token === tasksTok.refresh_token)!.revoked).toBe(false);
+    expect(await connections.accessToken(uid, 'google_tasks', tasksTok.expires_at)).toBeTruthy();
+    const dag = routes.dagstart.response.parse(await (await b.req('GET', '/api/dagstart')).json());
+    expect(dag.items.some((i) => i.type === 'task')).toBe(true);
+    expect(dag.items.some((i) => i.type === 'mail')).toBe(false);
+    // Laatste Google-bron: nu wel intrekken, en Google haalt alle tokens van de app weg (ook het oude Gmail-token).
+    const last = routes.disconnect.response.parse(
+      await (await b.req('DELETE', '/api/connections/google_tasks')).json(),
+    );
+    expect(last.revokedAtProvider).toBe(true);
+    expect(last.keptFor).toBeUndefined();
+    const robertGoogle = fake.tokens.filter(
+      (t) =>
+        t.family === 'google' &&
+        t.email === 'robert@homezero.nl' &&
+        t.clientId === 'workspace-test.apps.googleusercontent.com' &&
+        !t.scope.includes('openid'),
+    );
+    expect(robertGoogle.find((t) => t.token === gmailTok.refresh_token)!.revoked).toBe(true);
+    expect(robertGoogle.every((t) => t.revoked)).toBe(true);
+  });
+
+  it('Google intrekken met een Google-bron die al niet meer werkte: die vraagt meteen "Opnieuw verbinden"', async () => {
+    const { browser, auth } = setup();
+    const b = browser();
+    await googleLogin(b, 'robert');
+    const uid = routes.session.response.parse(await (await b.req('GET', '/api/session')).json()).user.id;
+    await connect(b, 'google_tasks');
+    await connect(b, 'calendar');
+    await auth.setConnectionError(uid, 'google_tasks', 'error', 'tijdelijke fout');
+    const off = routes.disconnect.response.parse(await (await b.req('DELETE', '/api/connections/calendar')).json());
+    expect(off).toMatchObject({ revokedAtProvider: true, needsReauth: ['google_tasks'] });
+    expect((await detail(b, 'google_tasks')).status).toBe('needs_reauth');
+    const dag = routes.dagstart.response.parse(await (await b.req('GET', '/api/dagstart')).json());
+    expect(dag.items.some((i) => i.type === 'task')).toBe(false);
+  });
+
   it('Google Taken via een eigen Google-project: client-ID en geheim versleuteld, de flow gebruikt die client', async () => {
     const { browser } = setup();
     const b = browser();
@@ -649,12 +750,15 @@ describe('HZW-014 koppelingen: verbinden, intrekken (token weg, data weg), opnie
     expect((await detail(b, 'jira')).status).toBe('disconnected');
   });
 
-  it('GitHub: account, Persoonlijk-repo wel/niet gevonden met opdracht voor Claude, intrekken verwijdert de grant', async () => {
-    const { browser } = setup();
+  it('GitHub: account, Persoonlijk-repo wel/niet gevonden met opdracht voor Claude, intrekken verwijdert de grant en de Persoonlijk-data', async () => {
+    const { browser, store } = setup();
     const b = browser();
     await googleLogin(b, 'robert');
+    const uid = routes.session.response.parse(await (await b.req('GET', '/api/session')).json()).user.id;
     let pr = routes.persRepo.response.parse(await (await b.req('GET', '/api/github/persoonlijk')).json());
     expect(pr.prompt).toContain('robert@homezero.nl');
+    // Nog niet gekoppeld: geen Persoonlijk-data.
+    expect(routes.dagstart.response.parse(await (await b.req('GET', '/api/dagstart')).json()).context.pers).toBeNull();
     await connect(b, 'github');
     expect((await detail(b, 'github')).account).toBe('robert');
     await b.req('PATCH', '/api/onboarding', { persRepo: 'HomeZeroTech/persoonlijk-robert' });
@@ -664,10 +768,31 @@ describe('HZW-014 koppelingen: verbinden, intrekken (token weg, data weg), opnie
     pr = routes.persRepo.response.parse(await (await b.req('GET', '/api/github/persoonlijk')).json());
     expect(pr.status).toBe('missing');
     expect(pr.prompt).toContain('HomeZeroTech/bestaat-niet');
+    // Gekoppeld: taken en wachten op uit de Persoonlijk-repo staan in Dagstart en Tracker.
+    const dag = async () => routes.dagstart.response.parse(await (await b.req('GET', '/api/dagstart')).json());
+    const tracker = async () => routes.tracker.response.parse(await (await b.req('GET', '/api/tracker')).json());
+    expect((await dag()).context.pers).toBeTruthy();
+    expect((await tracker()).hasPersRepo).toBe(true);
+    expect((await tracker()).takenMd).toBeTruthy();
+    // Eigen data van die regels (leesstatus, planning) en van een andere bron.
+    await b.req('PUT', '/api/itemstate/tm:offerte-nakijken', { read: true });
+    await b.req('PUT', '/api/itemstate/wo:reactie-lisanne', { read: true });
+    await b.req('PUT', '/api/itemstate/e5', { read: true });
     const tok = fake.tokens.filter((t) => t.family === 'github' && t.kind === 'access' && !t.revoked).at(-1)!;
     const off = routes.disconnect.response.parse(await (await b.req('DELETE', '/api/connections/github')).json());
     expect(off.revokedAtProvider).toBe(true);
+    expect(off.wiped).toBe(2);
     expect(fake.tokens.find((t) => t.token === tok.token)!.revoked).toBe(true);
+    // Na ontkoppelen: geen Persoonlijk-data meer in Dagstart en Tracker, en de bijbehorende itemstate is weg.
+    expect((await dag()).context.pers).toBeNull();
+    const tr = await tracker();
+    expect(tr.hasPersRepo).toBe(false);
+    expect(tr.takenMd).toBeNull();
+    const states = await store.itemStates(uid);
+    expect(states['tm:offerte-nakijken']).toBeUndefined();
+    expect(states['wo:reactie-lisanne']).toBeUndefined();
+    expect(states['e5']?.read).toBe(true);
+    expect((await detail(b, 'github')).status).toBe('disconnected');
   });
 
   it('weigeren bij de bron, verlopen of andermans state: niets gekoppeld', async () => {

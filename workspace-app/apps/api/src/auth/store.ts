@@ -397,6 +397,9 @@ export class MemoryAuthStore implements AuthStore {
   }
   async setConnectionError(userId: string, provider: string, status: 'error' | 'needs_reauth', error: string) {
     this.errors.set(`${userId}:${provider}`, { status, error });
+    // Zelfde status in de app-opslag, zodat de schermen de bron niet meer lezen (zoals de tabel connections).
+    const st = (await this.app.connections(userId))[provider as ProviderName];
+    if (st) await this.app.setConnection(userId, provider as ProviderName, { ...st, status });
   }
   async audit(userId: string | null, action: string, target?: string) {
     this.auditLog.push({ userId, action, target, at: new Date() });

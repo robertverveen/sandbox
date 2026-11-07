@@ -7,6 +7,7 @@ import { deleteCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import {
   OnboardingPatch,
+  PERS_KEY_PREFIXES,
   PROVIDER_CATALOG,
   PROVIDER_ORDER,
   Weekritme,
@@ -72,6 +73,8 @@ const KEY_PREFIXES: Partial<Record<ProviderName, string[]>> = {
   slack: ['sl:'],
   jira: ['jr:'],
   wispr: ['wm:'],
+  // Persoonlijk-repo: leesstatus en planning van regels uit taken.md en wachten-op.md.
+  github: [...PERS_KEY_PREFIXES],
 };
 
 export const OWN_CLIENT = 'google_tasks:client';
@@ -147,7 +150,8 @@ export function connectionsService(d: E1Deps) {
     const type = ITEM_TYPE[p];
     let keys: string[] = [];
     if (type) {
-      const r = await collect(ctx);
+      // Alle items die de bron kan leveren (ook als hij net op 'opnieuw verbinden' staat), om hun sleutels te vinden.
+      const r = await collect({ ...ctx, hasFlow: async () => false });
       const pool = type === 'meeting' ? r.agenda : r.items;
       keys = pool.filter((i) => i.type === type).map(stateKey);
     }
@@ -184,7 +188,26 @@ export function connectionsService(d: E1Deps) {
     }
   }
 
-  return { details, wipe, oauth, ownClient, accessToken };
+  /**
+   * Andere Google-bronnen met een echt token op dezelfde OAuth-client. Google trekt per client en gebruiker in:
+   * het intrek-endpoint aanroepen met één token haalt ook hun toegang weg.
+   */
+  async function googleSiblings(userId: string, p: ProviderName, clientId: string) {
+    const recs = await auth.connectionRecords(userId);
+    const out: Array<{ provider: ProviderName; connected: boolean }> = [];
+    for (const q of PROVIDER_ORDER) {
+      if (q === p || PROVIDER_CATALOG[q].family !== 'google') continue;
+      const r = recs.find((x) => x.provider === q);
+      if (!r?.hasToken || r.status === 'disconnected') continue;
+      const t = parseStored(await auth.readSecret(userId, q).catch(() => null));
+      if (!t || t.fixture) continue;
+      if ((await oauth(userId, q))?.client.id !== clientId) continue;
+      out.push({ provider: q, connected: r.status === 'connected' });
+    }
+    return out;
+  }
+
+  return { details, wipe, oauth, ownClient, accessToken, googleSiblings };
 }
 
 export function persRepoPrompt(user: User, repo: string | null) {
@@ -409,8 +432,18 @@ export function registerE1(onAny: (name: string, h: Handler) => void, d: E1Deps)
     const wiped = await svc.wipe(ctx, p);
     let revokedAtProvider = false;
     let note = cat.revoke;
+    let keptFor: ProviderName[] | undefined;
+    let needsReauth: ProviderName[] | undefined;
     const o = token && !token.fixture ? await svc.oauth(ctx.user.id, p) : null;
-    if (o && token) {
+    // Google: Taken, Agenda en Gmail delen één client, en Google trekt per client en gebruiker in.
+    const siblings = o?.family === 'google' ? await svc.googleSiblings(ctx.user.id, p, o.client.id) : [];
+    const stillConnected = siblings.filter((x) => x.connected).map((x) => x.provider);
+    if (o && token && stillConnected.length) {
+      // Niet intrekken bij Google: dan zouden de andere bronnen ook hun toegang kwijt zijn. Alleen dit token wissen.
+      keptFor = stillConnected;
+      const names = stillConnected.map((x) => PROVIDER_CATALOG[x].label).join(' en ');
+      note = `${cat.label} is ontkoppeld en het token gewist. Google trekt toestemming per app in, niet per bron: ${names} blijft werken. De app verdwijnt uit je Google-account als je ook ${names} ontkoppelt.`;
+    } else if (o && token) {
       try {
         revokedAtProvider = await revokeAtProvider(d.fetch, o, token);
       } catch {
@@ -418,10 +451,23 @@ export function registerE1(onAny: (name: string, h: Handler) => void, d: E1Deps)
       }
       if (!revokedAtProvider && o.revokeUrl)
         note = `Intrekken bij ${cat.label} lukte niet; het token is wel gewist. Trek de toegang ook in bij ${cat.label} zelf.`;
+      // Google-bronnen op dezelfde client die al niet meer werkten, zijn hun token nu zeker kwijt.
+      if (revokedAtProvider && siblings.length) {
+        needsReauth = siblings.map((x) => x.provider);
+        for (const q of needsReauth)
+          await auth.setConnectionError(ctx.user.id, q, 'needs_reauth', 'Toegang ingetrokken bij Google');
+      }
     }
     await auth.clearConnection(ctx.user.id, p);
-    bus.invalidate(ctx.user.id, 'connections', 'items', 'dagstart', 'agenda', 'conversations', 'tasks');
-    return { ok: true as const, revokedAtProvider, wiped, note };
+    bus.invalidate(ctx.user.id, 'connections', 'items', 'dagstart', 'agenda', 'conversations', 'tasks', 'tracker');
+    return {
+      ok: true as const,
+      revokedAtProvider,
+      wiped,
+      note,
+      ...(keptFor ? { keptFor } : {}),
+      ...(needsReauth ? { needsReauth } : {}),
+    };
   });
 
   onAny('wipeConnectionData', async ({ params }, _c, ctx) => {

@@ -8,7 +8,16 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { streamSSE } from 'hono/streaming';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { routes, type RouteDef, type RouteName, type Routes, type SessionInfo, type User } from '@hz/shared';
+import {
+  PROVIDER_CATALOG,
+  routes,
+  type ProviderName,
+  type RouteDef,
+  type RouteName,
+  type Routes,
+  type SessionInfo,
+  type User,
+} from '@hz/shared';
 import { ctxAge, freeSlots, localISO, orgFromText, orgIndex, ymd } from '@hz/shared/logic';
 import { planRepoWrite, RepoWriteError } from '@hz/context';
 import { parseMasterKey } from '@hz/db';
@@ -20,7 +29,16 @@ import { DbAuthStore, MemoryAuthStore, type AuthStore } from './auth/store';
 import type { Fetch } from './auth/oauth';
 import type { Config } from './config';
 import { EventBus } from './events';
-import { catchCount, collect, firstName, myPartnerActies, slimContext, type Ctx } from './services';
+import {
+  catchCount,
+  collect,
+  firstName,
+  myPartnerActies,
+  persFor,
+  readableSources,
+  slimContext,
+  type Ctx,
+} from './services';
 import { DbStore, type AppStore } from './store';
 
 export const VERSION = '0.1.0';
@@ -156,11 +174,19 @@ export function createApp(deps: AppDeps) {
         body = def.body.parse(raw ?? {});
       }
       const user = c.get('user');
-      const out = await handler({ params, query, body } as Input<N>, c, { bundle, store, user });
+      // Stuk E1: een bron met een OAuth-flow levert alleen iets als de collega hem gekoppeld heeft.
+      const hasFlow = async (p: ProviderName) => !!user && !!(await connections?.oauth(user.id, p));
+      const out = await handler({ params, query, body } as Input<N>, c, { bundle, store, user, hasFlow });
       if (out instanceof Response) return out;
       return c.json(out as object);
     });
   }
+
+  /** Stuk E1: een niet-gekoppelde bron leest niets en schrijft niets (409). */
+  const need = async (ctx: Ctx, p: ProviderName) => {
+    if (!(await readableSources(ctx))(p))
+      throw new HTTPException(409, { message: `${PROVIDER_CATALOG[p].label} is niet gekoppeld` });
+  };
 
   /* ---------- Gezondheid en sessie ---------- */
   on('health', async () => {
@@ -217,7 +243,11 @@ export function createApp(deps: AppDeps) {
     const [briefing, weekdoelen, sprint, states] = await Promise.all([
       store.latestBriefing(ctx.user.id),
       store.weekdoelen(ctx.user.id),
-      bundle.providers.jira.activeSprint().catch(() => ({ sprint: null, issues: [] })),
+      readableSources(ctx).then((ok) =>
+        ok('jira')
+          ? bundle.providers.jira.activeSprint().catch(() => ({ sprint: null, issues: [] }))
+          : { sprint: null, issues: [] },
+      ),
       store.itemStates(ctx.user.id),
     ]);
     const decided = Object.fromEntries(
@@ -286,29 +316,35 @@ export function createApp(deps: AppDeps) {
   });
 
   /* ---------- Taken en sprint ---------- */
-  on('tasks', async () => ({
-    lists: await bundle.providers.tasks.listTaskLists(),
-    tasks: await bundle.providers.tasks.listTasks(),
-  }));
+  on('tasks', async (_i, _c, ctx) =>
+    (await readableSources(ctx))('google_tasks')
+      ? { lists: await bundle.providers.tasks.listTaskLists(), tasks: await bundle.providers.tasks.listTasks() }
+      : { lists: [], tasks: [] },
+  );
   on('addTask', async ({ body }, _c, ctx) => {
+    await need(ctx, 'google_tasks');
     const t = await bundle.providers.tasks.addTask(body);
     bus.invalidate(ctx.user.id, 'tasks', 'items', 'dagstart');
     return t;
   });
   on('updateTask', async ({ params, body }, _c, ctx) => {
+    await need(ctx, 'google_tasks');
     const t = await bundle.providers.tasks.updateTask(params.id, body);
     bus.invalidate(ctx.user.id, 'tasks', 'items', 'dagstart');
     return t;
   });
-  on('sprint', () => bundle.providers.jira.activeSprint());
+  on('sprint', async (_i, _c, ctx) =>
+    (await readableSources(ctx))('jira') ? bundle.providers.jira.activeSprint() : { sprint: null, issues: [] },
+  );
 
   /* ---------- Tracker en weekdoelen ---------- */
   on('tracker', async (_i, _c, ctx) => {
-    const snap = await bundle.providers.context.snapshot();
+    const [snap, ok] = await Promise.all([bundle.providers.context.snapshot(), readableSources(ctx)]);
+    const pers = persFor(snap, ok);
     return {
-      hasPersRepo: !!snap.pers,
-      taken: await bundle.providers.tasks.listTasks(),
-      takenMd: snap.pers,
+      hasPersRepo: !!pers,
+      taken: ok('google_tasks') ? await bundle.providers.tasks.listTasks() : [],
+      takenMd: pers,
       partneracties: myPartnerActies(snap, ctx.user),
       weekdoelen: await store.weekdoelen(ctx.user.id),
     };
@@ -335,14 +371,23 @@ export function createApp(deps: AppDeps) {
     if (!m) throw new HTTPException(400, { message: 'Onbekende gesprekssleutel' });
     return { kind: m[1] as 'sl' | 'ml', id: m[2]! };
   };
-  on('conversations', async () => ({
-    conversations: [
-      ...(await bundle.providers.slack.listConversations()),
-      ...(await bundle.providers.gmail.listConversations()),
-    ],
-  }));
-  on('conversation', async ({ params }) => {
-    const { kind, id } = splitKey(params.key);
+  /** splitKey plus: de bron (Slack of Gmail) moet gekoppeld zijn (stuk E1). */
+  const convKey = async (ctx: Ctx, key: string) => {
+    const k = splitKey(key);
+    await need(ctx, k.kind === 'sl' ? 'slack' : 'gmail');
+    return k;
+  };
+  on('conversations', async (_i, _c, ctx) => {
+    const ok = await readableSources(ctx);
+    return {
+      conversations: [
+        ...(ok('slack') ? await bundle.providers.slack.listConversations() : []),
+        ...(ok('gmail') ? await bundle.providers.gmail.listConversations() : []),
+      ],
+    };
+  });
+  on('conversation', async ({ params }, _c, ctx) => {
+    const { kind, id } = await convKey(ctx, params.key);
     if (kind === 'sl') {
       const conv = (await bundle.providers.slack.listConversations()).find((c) => c.key === params.key);
       if (!conv) throw new HTTPException(404, { message: 'Onbekend gesprek' });
@@ -353,13 +398,13 @@ export function createApp(deps: AppDeps) {
     if (!conv || !mail) throw new HTTPException(404, { message: 'Onbekend gesprek' });
     return { conversation: conv, messages: [], mail };
   });
-  on('thread', async ({ params }) => {
-    const { kind, id } = splitKey(params.key);
+  on('thread', async ({ params }, _c, ctx) => {
+    const { kind, id } = await convKey(ctx, params.key);
     if (kind !== 'sl') throw new HTTPException(400, { message: 'Threads bestaan alleen in Slack' });
     return { key: params.key, rootTs: params.ts, messages: await bundle.providers.slack.thread(id, params.ts) };
   });
   on('markRead', async ({ params, body }, _c, ctx) => {
-    const { kind, id } = splitKey(params.key);
+    const { kind, id } = await convKey(ctx, params.key);
     if (kind === 'sl') {
       const last = (await bundle.providers.slack.history(id)).at(-1);
       if (last && body.read) await bundle.providers.slack.markRead(id, last.ts);
@@ -368,7 +413,7 @@ export function createApp(deps: AppDeps) {
     return { ok: true as const };
   });
   on('sendMessage', async ({ params, body }, _c, ctx) => {
-    const { kind, id } = splitKey(params.key);
+    const { kind, id } = await convKey(ctx, params.key);
     let ts: string;
     if (kind === 'sl') ts = (await bundle.providers.slack.postMessage(id, body.text, body.threadTs)).ts;
     else ts = (await bundle.providers.gmail.reply(id, body.text, { replyAll: !!body.replyAll })).id;
@@ -377,7 +422,7 @@ export function createApp(deps: AppDeps) {
     return { ok: true as const, ts };
   });
   on('react', async ({ params, body }, _c, ctx) => {
-    const { kind, id } = splitKey(params.key);
+    const { kind, id } = await convKey(ctx, params.key);
     if (kind !== 'sl') throw new HTTPException(400, { message: 'Reacties bestaan alleen in Slack' });
     await bundle.providers.slack.react(id, body.ts, body.name);
     bus.invalidate(ctx.user.id, 'conversations');
@@ -432,9 +477,10 @@ export function createApp(deps: AppDeps) {
       const text = hay(`${it.title} ${'body' in it ? (it.body ?? '') : ''}`);
       return keywords.every((k) => text.includes(k)) && (entities.length || keywords.length);
     });
+    const ok = await readableSources(ctx);
     const convs = [
-      ...(await bundle.providers.slack.listConversations()),
-      ...(await bundle.providers.gmail.listConversations()),
+      ...(ok('slack') ? await bundle.providers.slack.listConversations() : []),
+      ...(ok('gmail') ? await bundle.providers.gmail.listConversations() : []),
     ].filter(
       (c) =>
         (entities.length && entities.some((e) => c.entities.includes(e))) ||

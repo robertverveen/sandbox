@@ -46,7 +46,7 @@ export const DEFAULT_ACCOUNTS: FakeAccount[] = [
   {
     id: 'prive',
     sub: '100000000000000000003',
-    email: 'robert.prive@gmail.com',
+    email: 'robert.prive@example.com',
     name: 'Robert Privé',
     email_verified: true,
     note: 'privé-account',
@@ -349,8 +349,17 @@ export async function startFakeOAuth(opts: FakeOAuthOptions = {}): Promise<FakeO
     return { access, scope: r.scope };
   }
 
+  /**
+   * Intrekken zoals de echte bron: Google trekt de hele toestemming van de app in (alle tokens van dezelfde client
+   * en dezelfde gebruiker, dus Taken, Agenda en Gmail samen); Slack en GitHub alleen die ene grant.
+   */
   const revokeGrant = (t: IssuedToken) => {
-    for (const x of tokens) if (x.grantId === t.grantId) x.revoked = true;
+    for (const x of tokens)
+      if (
+        x.grantId === t.grantId ||
+        (t.family === 'google' && x.family === 'google' && x.clientId === t.clientId && x.email === t.email)
+      )
+        x.revoked = true;
   };
 
   const server = createServer(async (req, res) => {
