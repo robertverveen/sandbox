@@ -273,7 +273,7 @@ export class LiveGmail implements GmailProvider {
       'Content-Type: text/plain; charset="UTF-8"',
       'Content-Transfer-Encoding: 8bit',
       '',
-      text,
+      text.replace(/\r?\n/g, '\r\n'),
     ].join('\r\n');
     const d = await this.http.json<{ id: string }>('/users/me/drafts', {
       method: 'POST',
