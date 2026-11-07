@@ -11,7 +11,7 @@ import * as dbm from '@hz/db';
 import { createApp, SESSION_COOKIE } from '../src/app';
 import { loadConfig } from '../src/config';
 import { checkGoogleClaims, deviceLabel, judgeSession, safeReturnTo, uaFamily } from '../src/auth/checks';
-import type { MemoryAuthStore} from '../src/auth/store';
+import type { MemoryAuthStore } from '../src/auth/store';
 import { type AuthStore } from '../src/auth/store';
 import { DbStore, MemoryStore, type AppStore } from '../src/store';
 
@@ -685,6 +685,12 @@ describe('HZW-014 koppelingen: verbinden, intrekken (token weg, data weg), opnie
     const hijack = await l.req('GET', `/api/connections/slack/callback?code=x&state=${state}`);
     expect(hijack.headers.get('location')).toBe('/instellingen/koppelingen?fout=verlopen');
     expect((await detail(l, 'slack')).status).toBe('disconnected');
+    // Terugkeer van de bron zonder sessie: naar het inlogscherm, niet een JSON-fout.
+    const anon = browser();
+    const noSession = await anon.req('GET', `/api/connections/slack/callback?code=x&state=${state}`);
+    expect(noSession.status).toBe(302);
+    expect(noSession.headers.get('location')).toBe('/login');
+    expect((await a.req('PATCH', '/api/onboarding', { persRepo: 'HomeZeroTech/..' })).status).toBe(400);
     // Open redirect via returnTo kan niet.
     const evil = await a.req('POST', '/api/connections/slack/connect', { returnTo: 'https://evil.example' });
     expect(evil.status).toBe(200);

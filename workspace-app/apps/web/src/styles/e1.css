@@ -714,3 +714,17 @@ a.tab {
     gap: 8px;
   }
 }
+
+/* Donker: "Gekoppeld" en "beheerder" leesbaar (het prototype zet witte tekst op een lichtblauwe chip). */
+:root[data-theme='dark'] .conn .chip.ok,
+:root[data-theme='dark'] .set-page .chip.ok {
+  background: color-mix(in srgb, var(--blue-500, #0022c4) 55%, var(--panel));
+  color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .conn .chip.ok,
+  :root:not([data-theme='light']) .set-page .chip.ok {
+    background: color-mix(in srgb, var(--blue-500, #0022c4) 55%, var(--panel));
+    color: #fff;
+  }
+}

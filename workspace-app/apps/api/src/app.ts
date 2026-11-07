@@ -124,6 +124,9 @@ export function createApp(deps: AppDeps) {
     const r = token ? await resolveSession(auth, token, c.req.header('user-agent') ?? '') : null;
     if (!r?.user || !token) {
       if (token) deleteCookie(c, SESSION_COOKIE, { path: '/' });
+      // Terugkeer van een bron (OAuth) zonder geldige sessie: een browsernavigatie, dus naar het inlogscherm.
+      if (c.req.method === 'GET' && /\/api\/connections\/[^/]+\/callback$/.test(c.req.path))
+        return c.redirect('/login', 302);
       const why = r?.reason === 'ander-apparaat' ? ' (sessie op een ander apparaat gebruikt en ingetrokken)' : '';
       return c.json({ error: 'unauthenticated', message: `Log in om verder te gaan.${why}` }, 401);
     }

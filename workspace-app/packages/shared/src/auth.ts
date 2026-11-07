@@ -139,7 +139,7 @@ export const OnboardingPatch = z.object({
   weekritme: Weekritme.optional(),
   persRepo: z
     .string()
-    .regex(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/, 'Gebruik eigenaar/naam')
+    .regex(/^[A-Za-z0-9-]+\/(?!\.{1,2}$)[A-Za-z0-9._-]+$/, 'Gebruik eigenaar/naam')
     .nullable()
     .optional(),
 });
