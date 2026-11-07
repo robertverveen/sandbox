@@ -75,12 +75,13 @@ describe('configuratie (HZW-006)', () => {
       loadConfig({ NODE_ENV: 'production' });
     } catch (e) {
       expect((e as ConfigError).missing).toEqual(
-        expect.arrayContaining(['DATABASE_URL', 'HZ_TOKEN_KEY', 'HZ_STORE=db']),
+        expect.arrayContaining(['DATABASE_URL', 'HZ_AUTH_DATABASE_URL', 'HZ_TOKEN_KEY', 'HZ_STORE=db']),
       );
     }
     const ok = loadConfig({
       NODE_ENV: 'production',
       DATABASE_URL: 'postgres://x',
+      HZ_AUTH_DATABASE_URL: 'postgres://y',
       HZ_STORE: 'db',
       HZ_TOKEN_KEY: Buffer.alloc(32, 1).toString('base64'),
     });

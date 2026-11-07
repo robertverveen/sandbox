@@ -10,9 +10,11 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "generate": "drizzle-kit generate",
-    "migrate": "tsx src/migrate-cli.ts"
+    "migrate": "tsx src/migrate-cli.ts",
+    "import:prototype": "tsx src/import-cli.ts"
   },
   "dependencies": {
+    "@hz/shared": "workspace:*",
     "drizzle-orm": "0.44.7",
     "pg": "8.16.3"
   },

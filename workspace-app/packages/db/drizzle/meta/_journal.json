@@ -36,6 +36,69 @@
       "when": 1794054240785,
       "tag": "0004_app_role",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794056337410,
+      "tag": "0005_e2_datamodel",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794056345382,
+      "tag": "0006_e2_auth_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794066808520,
+      "tag": "0007_e2_import_app_wins",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794066840673,
+      "tag": "0008_e2_auth_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794066875413,
+      "tag": "0009_e2_context_index_writer",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794066900000,
+      "tag": "0010_e2_worker_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794066950000,
+      "tag": "0011_e2_auth_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794076082424,
+      "tag": "0012_e2_briefing_extra",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794086000000,
+      "tag": "0013_e2_no_temp",
+      "breakpoints": true
     }
   ]
 }

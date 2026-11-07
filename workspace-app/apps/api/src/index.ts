@@ -17,7 +17,10 @@ try {
 }
 
 const bundle = createProviders(process.env);
-const store: AppStore = config.HZ_STORE === 'db' ? new DbStore(config.DATABASE_URL!) : new MemoryStore(bundle.dataset);
+const store: AppStore =
+  config.HZ_STORE === 'db'
+    ? new DbStore(config.DATABASE_URL!, config.HZ_AUTH_DATABASE_URL)
+    : new MemoryStore(bundle.dataset);
 const { app } = createApp({ config, bundle, store });
 
 const server = serve({ fetch: app.fetch, port: config.HZ_API_PORT, hostname: '127.0.0.1' }, (info) => {

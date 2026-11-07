@@ -11,6 +11,8 @@ const Env = z.object({
   /** memory (standaard) of db (Postgres met RLS). */
   HZ_STORE: z.enum(['memory', 'db']).default('memory'),
   DATABASE_URL: z.string().optional(),
+  /** Login voor inloggen en sessies (alleen hz_auth, sql/auth-login.sql). Lokaal standaard DATABASE_URL. */
+  HZ_AUTH_DATABASE_URL: z.string().optional(),
   /** 32 bytes base64: hoofdsleutel voor de envelope-versleuteling van koppel-tokens. */
   HZ_TOKEN_KEY: z.string().optional(),
   /** Inloggen als vaste testgebruiker (tot het auth-stuk er is). Nooit in productie. */
@@ -36,6 +38,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (prod) {
     const missing: string[] = [];
     if (!c.DATABASE_URL) missing.push('DATABASE_URL');
+    if (!c.HZ_AUTH_DATABASE_URL) missing.push('HZ_AUTH_DATABASE_URL');
     if (!c.HZ_TOKEN_KEY || Buffer.from(c.HZ_TOKEN_KEY, 'base64').length !== 32) missing.push('HZ_TOKEN_KEY');
     if (c.HZ_STORE !== 'db') missing.push('HZ_STORE=db');
     if (c.HZ_DEV_LOGIN === '1') missing.push('HZ_DEV_LOGIN mag niet aan in productie');

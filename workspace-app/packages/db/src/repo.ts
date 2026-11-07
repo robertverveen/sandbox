@@ -1,10 +1,10 @@
 /**
- * Datatoegang voor de API. Alles per gebruiker loopt via withUser (RLS); alleen inloggen en
- * sessies opzoeken gebruiken withPurpose('auth').
+ * Datatoegang voor de API. Alles per gebruiker loopt via withUser (RLS). Inloggen en sessies opzoeken gaan via
+ * SECURITY DEFINER-functies die precies één sleutel opzoeken (geen open SELECT op users of sessions).
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
-import { withPurpose, withUser, type Db } from './client';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { withAuth, withIndexer, withUser, withWorker, type Db, type Tx } from './client';
 import { openToken, sealToken } from './crypto';
 import {
   auditLog,
@@ -15,57 +15,138 @@ import {
   pins,
   preferences,
   repoQueue,
-  sessions,
-  users,
+  trackerItems,
   weekdoelen,
 } from './schema';
 
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
-export async function upsertUser(db: Db, email: string, name: string, role: 'admin' | 'member' = 'member') {
-  return withPurpose(db, 'auth', async (tx) => {
-    const found = await tx
-      .select()
-      .from(users)
-      .where(sql`lower(${users.email}) = lower(${email})`);
-    if (found[0]) return found[0];
-    const [u] = await tx.insert(users).values({ email: email.toLowerCase(), name, role }).returning();
-    await tx.insert(auditLog).values({ userId: u!.id, action: 'user.created', target: 'users' });
-    return u!;
+type AuthUserRow = {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'member';
+  blocked_at: Date | string | null;
+  created_at: Date | string;
+};
+const toUser = (r: AuthUserRow) => ({
+  id: r.id,
+  email: r.email,
+  name: r.name,
+  role: r.role,
+  blockedAt: r.blocked_at ? new Date(r.blocked_at) : null,
+  createdAt: new Date(r.created_at),
+});
+export type AuthUser = ReturnType<typeof toUser>;
+
+/**
+ * Inloggen en sessies lopen via SECURITY DEFINER-functies (drizzle/0006_e2_auth_functions.sql): geen open SELECT op
+ * users of sessions. Elke functie zoekt precies één sleutel op. Sinds 0011 alleen als hz_auth: `db` is de verbinding
+ * van createAuthDb() (HZ_AUTH_DATABASE_URL, sql/auth-login.sql), of lokaal de migratierol. Met de api-login
+ * (hz_app_login) of de worker-login faalt elke functie hieronder met 42501.
+ */
+const asAuth = <T>(db: Db, fn: (tx: Tx) => Promise<T>) => withAuth(db, fn);
+
+/** Gebruiker bij precies één e-mailadres, of null. */
+export async function findUserByEmail(db: Db, email: string): Promise<AuthUser | null> {
+  return asAuth(db, async (tx) => {
+    const r = await tx.execute<AuthUserRow>(sql`select * from auth_user_by_email(${email})`);
+    return r.rows[0] ? toUser(r.rows[0]) : null;
   });
 }
 
+/**
+ * Gebruiker opzoeken of aanmaken (na de checks van de server). Altijd als 'member' en alleen voor een domein uit
+ * auth_domains (standaard homezero.nl); anders faalt hij (42501). Admin wordt je alleen via sql/set-role.sql.
+ */
+export async function upsertUser(db: Db, email: string, name: string) {
+  return asAuth(db, async (tx) => {
+    const r = await tx.execute<AuthUserRow>(sql`select * from auth_upsert_user(${email}, ${name})`);
+    return toUser(r.rows[0]!);
+  });
+}
+
+/** Sessie voor een bestaande gebruiker; het token zelf staat nergens, alleen de sha256-hash. */
 export async function createSession(db: Db, userId: string, userAgent: string, days = 30) {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + days * 864e5);
-  await withPurpose(db, 'auth', async (tx) => {
-    await tx.insert(sessions).values({ userId, tokenHash: hashToken(token), userAgent, expiresAt });
-    await tx.insert(auditLog).values({ userId, action: 'session.created' });
-  });
+  await asAuth(db, (tx) =>
+    tx.execute(
+      sql`select auth_create_session(${userId}::uuid, ${hashToken(token)}, ${userAgent}, ${expiresAt.toISOString()}::timestamptz)`,
+    ),
+  );
   return { token, expiresAt };
 }
 
+type AuthSessionRow = {
+  session_id: string;
+  user_id: string;
+  expires_at: Date | string;
+  created_at: Date | string;
+  last_seen_at: Date | string;
+  user_agent: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'member';
+};
+
 /** Sessie bij een cookie-token: geldig, niet ingetrokken, niet verlopen, gebruiker niet geblokkeerd. */
 export async function findSession(db: Db, token: string) {
-  return withPurpose(db, 'auth', async (tx) => {
-    const rows = await tx
-      .select({ session: sessions, user: users })
-      .from(sessions)
-      .innerJoin(users, eq(users.id, sessions.userId))
-      .where(and(eq(sessions.tokenHash, hashToken(token)), isNull(sessions.revokedAt), isNull(users.blockedAt)));
-    const r = rows[0];
-    if (!r || r.session.expiresAt < new Date()) return null;
-    return r;
+  return asAuth(db, async (tx) => {
+    const r = (await tx.execute<AuthSessionRow>(sql`select * from auth_session_by_token(${hashToken(token)})`)).rows[0];
+    if (!r) return null;
+    return {
+      session: {
+        id: r.session_id,
+        userId: r.user_id,
+        userAgent: r.user_agent,
+        createdAt: new Date(r.created_at),
+        lastSeenAt: new Date(r.last_seen_at),
+        expiresAt: new Date(r.expires_at),
+      },
+      user: { id: r.user_id, email: r.email, name: r.name, role: r.role, blockedAt: null },
+    };
+  });
+}
+
+/** Laatst gezien bijwerken en desgewenst de sessie verlengen. false als de sessie niet (meer) geldig is. */
+export async function touchSession(db: Db, token: string, expiresAt?: Date) {
+  return asAuth(db, async (tx) => {
+    const r = await tx.execute<{ ok: boolean }>(
+      sql`select auth_touch_session(${hashToken(token)}, ${expiresAt ? expiresAt.toISOString() : null}::timestamptz) as ok`,
+    );
+    return r.rows[0]?.ok === true;
   });
 }
 
 export async function revokeSession(db: Db, token: string) {
-  await withPurpose(db, 'auth', (tx) =>
-    tx
-      .update(sessions)
-      .set({ revokedAt: new Date() })
-      .where(eq(sessions.tokenHash, hashToken(token))),
-  );
+  return asAuth(db, async (tx) => {
+    const r = await tx.execute<{ ok: boolean }>(sql`select auth_revoke_session(${hashToken(token)}) as ok`);
+    return r.rows[0]?.ok === true;
+  });
+}
+
+/**
+ * Een eigen sessie intrekken vanuit een request (uitloggen op een ander apparaat), als hz_app binnen de sessie van de
+ * gebruiker (runWithSession). Alleen een eigen, nog niet ingetrokken sessie; false als dat niet zo is. Sinds 0013 heeft
+ * hz_app geen UPDATE-recht meer op sessions: een ingetrokken sessie kan een request niet terughalen.
+ */
+export async function revokeOwnSession(db: Db, userId: string, sessionId: string) {
+  return withUser(db, userId, async (tx) => {
+    const r = await tx.execute<{ ok: boolean }>(sql`select auth_revoke_own_session(${sessionId}::uuid) as ok`);
+    return r.rows[0]?.ok === true;
+  });
+}
+
+/**
+ * Worker: id's van actieve collega's (geen e-mail of naam). Per id daarna withUser. Alleen als hz_worker (0010): de
+ * worker-login (sql/worker-login.sql) kan dit, de api-login niet (42501).
+ */
+export async function activeUserIds(db: Db): Promise<string[]> {
+  return withWorker(db, async (tx) => {
+    const r = await tx.execute<{ id: string }>(sql`select id from system_active_user_ids() as id`);
+    return r.rows.map((x) => x.id);
+  });
 }
 
 export async function listItemState(db: Db, userId: string) {
@@ -343,18 +424,54 @@ export async function countQueuedIds(db: Db, userId: string, slug: string, yyyym
 
 export type ContextIndexRow = typeof contextIndex.$inferInsert;
 
-/** Alleen met purpose 'index' (RLS); de indexjob roept dit aan na elke push (HZW-060). */
+/** Rij voor context_index_upsert (snake_case, zoals de kolommen). */
+export const toIndexJson = (r: ContextIndexRow) => ({
+  id: r.id,
+  kind: r.kind,
+  slug: r.slug ?? null,
+  path: r.path,
+  title: r.title,
+  body: r.body ?? '',
+  data: r.data ?? {},
+  geheim_voor: r.geheimVoor ?? [],
+  commit: r.commit ?? null,
+});
+
+/** Rijen schrijven via context_index_upsert; geeft de rijen terug die echt nieuw of gewijzigd zijn. */
+export async function indexUpsertTx(tx: Tx, rows: ContextIndexRow[]) {
+  if (!rows.length) return [];
+  for (const r of rows)
+    if (/(^|\/)admin\.md($|#)/i.test(r.path) || /(^|\/)admin\.md($|#)/i.test(r.id))
+      throw new Error('admin.md hoort nooit in de index');
+  const res = await tx.execute<{ row_id: string; was_inserted: boolean }>(
+    sql`select row_id, was_inserted from context_index_upsert(${JSON.stringify(rows.map(toIndexJson))}::jsonb)`,
+  );
+  return res.rows.map((x) => ({ id: x.row_id, inserted: x.was_inserted }));
+}
+
+/**
+ * Contextindex bijwerken (de indexjob na elke push, HZW-060). Alleen als hz_indexer: geef een verbinding van
+ * createIndexerDb() (productie: HZ_INDEX_DATABASE_URL). De app-login kan dit niet (migratie 0009). admin.md weigert
+ * zowel deze functie als de database zelf.
+ */
 export async function upsertContextIndex(db: Db, rows: ContextIndexRow[]) {
   if (!rows.length) return 0;
-  return withPurpose(db, 'index', async (tx) => {
-    for (const r of rows) {
-      if (/(^|\/)admin\.md$/i.test(r.path)) throw new Error('admin.md hoort nooit in de index');
-      await tx
-        .insert(contextIndex)
-        .values(r)
-        .onConflictDoUpdate({ target: contextIndex.id, set: { ...r, updatedAt: new Date() } });
-    }
-    return rows.length;
+  return withIndexer(db, async (tx) => (await indexUpsertTx(tx, rows)).length);
+}
+
+/** Alle rijen van één bestand uit de index halen (bestand weg of hernoemd). Alleen als hz_indexer. */
+export async function deleteContextIndexPath(db: Db, path: string) {
+  return withIndexer(db, async (tx) => {
+    const r = await tx.execute<{ n: number }>(sql`select context_index_delete(${path}) as n`);
+    return r.rows[0]?.n ?? 0;
+  });
+}
+
+/** Eén indexrij weghalen op zijn sleutel (een actie die uit acties.md verdween). Alleen als hz_indexer (0010). */
+export async function deleteContextIndexId(db: Db, id: string) {
+  return withIndexer(db, async (tx) => {
+    const r = await tx.execute<{ n: number }>(sql`select context_index_delete_id(${id}) as n`);
+    return r.rows[0]?.n ?? 0;
   });
 }
 
@@ -377,3 +494,28 @@ export async function searchContextIndex(db: Db, userId: string, q: string, limi
       .limit(limit),
   );
 }
+
+/* ---------- Tracker-items uit het prototype (HZW-021) ---------- */
+
+export type TrackerItemRow = typeof trackerItems.$inferSelect;
+
+/** Tracker-items van een collega (geïmporteerd uit de artifact-opslag), oudste eerst. */
+export async function listTrackerItems(db: Db, userId: string) {
+  return withUser(db, userId, (tx) =>
+    tx.select().from(trackerItems).orderBy(asc(trackerItems.created), asc(trackerItems.createdAt)),
+  );
+}
+
+/**
+ * Zichtbaar in de tracker, zoals commitVisible() in het prototype: niet de oude canvas-items (sinds 5 nov in
+ * wachten-op.md), niet wat al naar de repo is overgezet, en geen taak die al in Google Taken staat.
+ */
+export const trackerItemVisible = (
+  r: Pick<TrackerItemRow, 'stroom' | 'overgezet' | 'gtask' | 'bron'> & { extra?: unknown },
+) =>
+  !(r.bron?.label === 'Canvas Wachten op' && (r.stroom === 'aan_mij' || r.stroom === 'bespreken')) &&
+  !r.overgezet &&
+  // gtask: de taak-id; extra.gtask: een koppeling uit het prototype zonder bruikbare id (die verbergt hij ook)
+  !((r.stroom === 'mijn' || r.stroom === 'voornemen') && (r.gtask || hasExtraGtask(r.extra)));
+const hasExtraGtask = (x: unknown) =>
+  !!x && typeof x === 'object' && !Array.isArray(x) && !!(x as Record<string, unknown>).gtask;

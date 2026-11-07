@@ -37,6 +37,20 @@ describe('CI-workflow', () => {
     expect(text).toMatch(/-v migrator=hz_dev -f packages\/db\/sql\/bootstrap-roles\.sql/);
   });
 
+  it('maakt de logins die de tests als productie gebruiken: app, auth, indexer, worker en pg-boss (stuk E2)', () => {
+    expect(text).toMatch(/-v login=hz_app_login -v password=hz_app_login -f packages\/db\/sql\/app-login\.sql/);
+    expect(text).toMatch(/-v login=hz_auth_login -v password=hz_auth_login -f packages\/db\/sql\/auth-login\.sql/);
+    expect(text).toMatch(
+      /-v login=hz_worker_login -v password=hz_worker_login -f packages\/db\/sql\/worker-login\.sql/,
+    );
+    expect(text).toMatch(
+      /-v login=hz_indexer_login -v password=hz_indexer_login -f packages\/db\/sql\/indexer-login\.sql/,
+    );
+    expect(text).toMatch(
+      /-v login=hz_boss -v password=hz_boss_test -v schema=pgboss -f packages\/db\/sql\/boss-login\.sql/,
+    );
+  });
+
   it('draait lint, typecheck, test, build en e2e', () => {
     for (const step of ['pnpm lint', 'pnpm typecheck', 'pnpm test', 'pnpm build', 'pnpm test:e2e'])
       expect(text).toContain(`- run: ${step}`);

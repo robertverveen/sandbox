@@ -434,6 +434,11 @@ export type Briefing = z.infer<typeof Briefing>;
 export const WeekdoelCheck = z.object({ d: IsoDate, h: Health, note: z.string().optional() });
 export const Weekdoel = z.object({
   id: z.string(),
+  /**
+   * Doc-id uit de artifact-opslag van het prototype (import HZW-021). Dan is de item-sleutel `cm:<legacyId>`, zoals
+   * in het prototype, zodat leesstatus en planning (itemstate) aan het weekdoel blijven hangen. PATCH gebruikt `id`.
+   */
+  legacyId: z.string().optional(),
   wat: z.string(),
   /** weekdoel of roadmap-doel */
   soort: z.enum(['weekdoel', 'roadmap']).default('weekdoel'),

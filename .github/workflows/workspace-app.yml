@@ -38,11 +38,17 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: workspace-app/pnpm-lock.yaml
-      - name: Rollen in Postgres (hz_dev zonder superuser, runtime-rol hz_app)
+      - name: Rollen in Postgres (hz_dev zonder superuser, hz_app, hz_indexer, hz_worker en hz_auth, logins voor app, auth, indexer, worker en pg-boss)
         run: |
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE hz_dev LOGIN PASSWORD 'hz_dev' CREATEDB NOSUPERUSER NOCREATEROLE NOBYPASSRLS"
           psql -h localhost -U postgres -v migrator=hz_dev -f packages/db/sql/bootstrap-roles.sql
-          psql -h localhost -U postgres -tAc "select rolname, rolsuper, rolbypassrls from pg_roles where rolname in ('hz_dev', 'hz_app')"
+          psql -h localhost -U postgres -v login=hz_app_login -v password=hz_app_login -f packages/db/sql/app-login.sql
+          psql -h localhost -U postgres -v login=hz_indexer_login -v password=hz_indexer_login -f packages/db/sql/indexer-login.sql
+          psql -h localhost -U postgres -v login=hz_worker_login -v password=hz_worker_login -f packages/db/sql/worker-login.sql
+          psql -h localhost -U postgres -v login=hz_auth_login -v password=hz_auth_login -f packages/db/sql/auth-login.sql
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE hz_ci_boss OWNER hz_dev"
+          psql -h localhost -U postgres -d hz_ci_boss -v login=hz_boss -v password=hz_boss_test -v schema=pgboss -f packages/db/sql/boss-login.sql
+          psql -h localhost -U postgres -tAc "select rolname, rolsuper, rolbypassrls, rolinherit from pg_roles where rolname in ('hz_dev', 'hz_app', 'hz_app_login', 'hz_indexer', 'hz_indexer_login', 'hz_worker', 'hz_worker_login', 'hz_auth', 'hz_auth_login', 'hz_boss')"
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm format:check

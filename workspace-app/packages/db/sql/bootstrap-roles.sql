@@ -1,5 +1,8 @@
 -- Eenmalig, door een databasebeheerder (superuser of rol met CREATEROLE), per Postgres-server.
 -- Maakt de runtime-rol van de app aan: geen login, geen superuser, geen BYPASSRLS, eigenaar van niets.
+-- En de rollen hz_indexer (schrijven in de contextindex, alleen via SECURITY DEFINER-functies) en hz_worker
+-- (id's van actieve collega's voor de worker; namens een collega werken met app.user_id) en hz_auth (inloggen en
+-- sessies, alleen via de auth_*-functies; migratie 0011). Idempotent.
 -- De migratierol (lokaal en in CI: hz_dev) blijft eigenaar van alle tabellen en wordt lid van hz_app,
 -- zodat withUser/withPurpose per transactie `SET LOCAL ROLE hz_app` kunnen doen.
 --
@@ -19,4 +22,29 @@ BEGIN
     RAISE EXCEPTION 'migratierol % bestaat niet', m;
   END IF;
   EXECUTE format('GRANT hz_app TO %I', m);
+  -- hz_indexer (stuk E2, migratie 0009): de enige rol die in de contextindex mag schrijven, via
+  -- context_index_upsert/context_index_delete. NOLOGIN; de indexer verbindt met een eigen login die lid is
+  -- (sql/indexer-login.sql). De migratierol wordt lid voor beheer en tests.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hz_indexer') THEN
+    CREATE ROLE hz_indexer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  ALTER ROLE hz_indexer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+  EXECUTE format('GRANT hz_indexer TO %I', m);
+  -- hz_worker (stuk E2, migratie 0010): de enige rol die system_active_user_ids() mag uitvoeren (de id's van alle
+  -- actieve collega's). NOLOGIN, geen tabelrechten; de worker verbindt met een eigen login die lid is van hz_app en
+  -- hz_worker (sql/worker-login.sql). De api-login niet. De migratierol wordt lid voor beheer en tests.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hz_worker') THEN
+    CREATE ROLE hz_worker NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  ALTER ROLE hz_worker NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+  EXECUTE format('GRANT hz_worker TO %I', m);
+  -- hz_auth (stuk E2, migratie 0011): de enige rol die de auth_*-functies mag uitvoeren (gebruiker opzoeken of
+  -- aanmaken, sessie aanmaken, opzoeken, verlengen en intrekken). NOLOGIN, geen tabelrechten; de sessie-middleware en
+  -- de adapter van de auth-bibliotheek verbinden met een eigen login die alleen hier lid van is (sql/auth-login.sql).
+  -- De api-login (hz_app_login) niet: een request kan dus geen gebruiker opzoeken of een sessie maken.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hz_auth') THEN
+    CREATE ROLE hz_auth NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  ALTER ROLE hz_auth NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+  EXECUTE format('GRANT hz_auth TO %I', m);
 END $$;
