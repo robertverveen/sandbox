@@ -158,7 +158,8 @@ jobs:
           done
           echo "digests=${out# }" >> "$GITHUB_OUTPUT"
 
-  # Release: geen nieuwe build. De images van deze commit (getest op test) krijgen de releasetag.
+  # Release: geen nieuwe build. De images van deze commit (getest op test) krijgen de releasetag. Dat is alleen een
+  # label in de registry voor mensen: de server rolt de digests uit die hij bij de uitrol naar test vastlegde.
   retag:
     needs: meta
     if: github.event_name == 'release'
