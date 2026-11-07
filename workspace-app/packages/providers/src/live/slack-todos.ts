@@ -1,7 +1,9 @@
 /**
  * HZW-037 (spike): Slack-to-do's als takenbron, achter de vlag HZ_SLACK_TODOS=1. Zie docs/spike-slack-todos.md.
  *
- * - Herinneringen (reminders.list, user token, scope reminders:read): open herinneringen als taken.
+ * - Herinneringen (reminders.list, user token, scope reminders:read): open herinneringen als taken. Let op: volgens
+ *   de officiële documentatie zijn de reminders-methoden sinds maart 2023 "degraded or useless" en komt wat via
+ *   Later wordt bewaard niet mee; daarom staat dit achter een vlag en is het advies: niet bouwen.
  * - Slack Lists (slackLists.items.list, scope lists:read): items van de lijsten die de collega koppelt (list-id's;
  *   er is geen methode om "al mijn lijsten" op te vragen). Kolomvormen verschillen per lijst, dus defensief lezen.
  * - "Later" (bewaarde items): geen publieke API; niet ondersteund.

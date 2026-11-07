@@ -151,7 +151,7 @@ echte endpoints.
 | Google Agenda | `google-calendar.ts` | alle agenda's (ook gedeelde privé en Lou), incrementele sync met `syncToken` (410 -> volledig), reageren, vrije tijden, afspraak maken (wandklok + `timeZone`), push via `events.watch` |
 | Google Taken | `google-tasks.ts` | meerdere lijsten, toevoegen, datum, afvinken, Backlog-lijst (`tasks.move`), pollen met `updatedMin` |
 | Gmail | `gmail.ts` | threads, volledige thread (datum uit de Date-header), gelezen/ongelezen (terug te draaien), antwoord als **concept** in Gmail (nooit versturen), `history.list` en Pub/Sub |
-| Slack | `slack.ts` | kanalen, DM's, threads, zoeken, echte gelezen-status (`last_read`, `conversations.mark`, `*_marked`-events), reacties, eigen emoji |
+| Slack | `slack.ts` | kanalen, DM's, threads, zoeken, echte gelezen-status (`last_read`, `conversations.mark` tot het gelezen bericht; gelezen elders via de poll, `*_marked` is alleen RTM), reacties, eigen emoji |
 | Jira | `jira.ts` | lopende sprint van HOM, storypoints, Tester; contextlaag eerst (`product/jira/`), daarna alleen `updated >= vorige sync`; per issue `source` laag/live |
 | Wispr | `wispr.ts` | meetings uit de laag plus live (MCP) alleen na de laatste nachtrun (`_systeem/routines/<voornaam>.md`) |
 | GitHub | `github.ts` | contextlaag en Persoonlijk-repo lezen via git trees/blobs, alleen gewijzigde bestanden, nooit `admin.md` |
