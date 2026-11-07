@@ -1,5 +1,5 @@
 {
- "updated": "7 nov 2026, 14:20",
+ "updated": "7 nov 2026, 15:00",
  "status": "Fundament staat, golf A bouwt",
  "pieces": [
   {
@@ -135,6 +135,7 @@
   }
  ],
  "log": [
+  "Overdrachtsplan klaar (OVERDRACHT.md): na golf A naar een eigen repo robertverveen/homezero-workspace, daarna lokaal verder in Claude Code met Chrome en Tailscale. Overzetscript getest.",
   "Hosting: bestaande Hetzner-server in je eigen tailnet, naast je andere projecten; privacytekst v1 door AI op basis van de privacyverklaring van HomeZero.",
   "Testronde herschreven: setup gaat via Claude in Chrome, jij test alleen 8 kritieke scenario's.",
   "Fundament gewonnen in ronde 2: 160 unit-tests en 17 e2e-tests groen, criticus koos het onze blind (Dagstart gelijk in licht, beter in donker en in de help).",
