@@ -127,7 +127,7 @@ footer { color: var(--muted); font-size: 13px; }
         <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--muted)"/></marker></defs>
         <!-- server -->
         <rect x="200" y="30" width="440" height="510" rx="18" fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="1.5"/>
-        <text x="220" y="56" font-size="14" font-weight="600" fill="var(--ink)">Hetzner Cloud CX32 · homezero.verveen.me</text>
+        <text x="220" y="56" font-size="14" font-weight="600" fill="var(--ink)">Bestaande Hetzner-server (tailnet) · homezero.verveen.me</text>
         <text x="220" y="74" font-size="12" fill="var(--muted)">Docker via Coolify, alles in containers, verhuisbaar</text>
         <!-- verbindingen -->
         <g fill="none" stroke="var(--muted)" stroke-width="1.3">
@@ -184,6 +184,7 @@ footer { color: var(--muted); font-size: 13px; }
 
       <details class="card" id="d-host"><summary><span class="id">01</span><h3>Hosting: Hetzner Cloud met Coolify</h3><span class="summary-pills"><span class="pill voorstel">Voorstel</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span class="choice">CX32 in Neurenberg of Falkenstein, containers, preview per PR</span></summary>
         <div class="body"><div><h4>Waarom</h4><p>Eén goedkope EU-server is genoeg voor een intern team van rond de 15 mensen. Coolify geeft automatische TLS, deploy vanuit GitHub en een preview per pull request, en dat is precies wat de story-werkwijze (zelftest plus menselijke review op een preview) nodig heeft.</p></div>
+          <div><h4>Op de bestaande server, via Tailscale (besloten 7 nov)</h4><p>Geen nieuwe CX32: de workspace draait op de bestaande Hetzner-server van Robert, die al in zijn tailnet zit, naast andere projecten. Eigen geïsoleerde stack (eigen compose-project, netwerk, Postgres en limieten), aangesloten op de reverse proxy die er al draait. Beheer alleen via Tailscale, publiek alleen 443 voor de app. Een voorcheck in het uitrolscript stopt als iets botst met de andere projecten. Wordt de server te klein of willen we bedrijfsdata los van hobbyprojecten, dan verhuist de stack met hetzelfde script naar een eigen server (HZW-082).</p></div>
           <div class="tbl"><table><thead><tr><th>Optie</th><th>Voor</th><th>Tegen</th></tr></thead><tbody>
             <tr class="chosen"><td>Hetzner + Coolify</td><td>Previews per PR, UI voor secrets en logs, makkelijk verhuizen</td><td>Extra laag om bij te houden; Coolify zelf moet ook updates krijgen</td></tr>
             <tr><td>Hetzner + Compose + Caddy</td><td>Minimaal, alles in de repo</td><td>Previews zelf bouwen; meer handwerk per deploy</td></tr>

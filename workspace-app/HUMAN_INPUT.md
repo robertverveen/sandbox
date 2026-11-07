@@ -9,30 +9,46 @@ Status per stap: ⏳ in aanbouw · ✅ klaar om te testen · ✔️ getest. De l
 
 Bouwers: zet nieuwe punten in de **Bijlage** onderaan, niet in deel 1-3. De lead verdeelt ze over de delen.
 
+## Overstappen naar je laptop en een eigen repo
+
+Zie **`OVERDRACHT.md`**: wanneer je overstapt, welke downloads je nodig hebt, en de startopdracht voor Claude Code. Die opdracht laat de bouw doorlopen en doet deel 1 hieronder in dezelfde sessie.
+
 ---
 
 ## Deel 1 - Claude regelt dit via Chrome
 
-**Voorbereiding (eenmalig, 2 minuten).** Open een sessie in de Claude-desktopapp met Claude in Chrome aan, en wees in Chrome ingelogd op:
-- Google met robert@homezero.nl
-- Slack HomeZero
-- Atlassian
-- GitHub
-- Hetzner
-- de DNS-beheerder van homezero.nl
+### Zo start je deel 1
 
-Zeg dan: "voer deel 1 van HUMAN_INPUT.md uit".
+Deel 1 draai je lokaal in Claude Code, met Claude in Chrome en Tailscale aan, na de overstap uit `OVERDRACHT.md`. De startopdracht in stap 4 daarvan bevat deel 1 al. Daarvoor heb je klaar:
+- Claude in Chrome verbonden en Tailscale aan;
+- ingelogd in Chrome op: Google (robert@homezero.nl), Slack HomeZero (jij keurt als admin goed), Atlassian, GitHub, Hetzner, Tailscale en de DNS-beheerder van verveen.me;
+- de map met je notities over Tailscale en de server, die je in de startopdracht invult.
 
-Claude stopt alleen bij een betaalscherm of een toestemmingsscherm en vraagt dan in één zin of het door mag. Secrets gaan direct van het ene scherm naar de secret-opslag op de server. Ze komen nooit in Git of in de chat.
+Claude stopt alleen bij een betaalscherm of een toestemmingsscherm. Secrets gaan rechtstreeks naar de secret-opslag op de server, nooit in Git of in de chat. Na elke stap werkt Claude de status hieronder bij.
+
+**Waar staat wat** (de lead werkt dit bij als golf A is samengevoegd)
+
+| Wat | Waar in de repo | Status |
+|---|---|---|
+| Dit stappenplan | `workspace-app/HUMAN_INPUT.md` (na de overstap: `HUMAN_INPUT.md`) | ✅ |
+| Overstap, downloads, startopdracht | `workspace-app/OVERDRACHT.md` | ✅ |
+| Runbook (server, uitrol, back-up, herstel, verhuizen) | `workspace-app/infra/` (exacte bestand volgt uit E0) | ⏳ |
+| Cloud-init en Tailscale-aanmelding van de server | `workspace-app/infra/` | ⏳ |
+| Coolify- of Compose-config, Caddy | `workspace-app/infra/` | ⏳ |
+| Slack-app-manifest | volgt uit E3 | ⏳ |
+| Redirect-URL's voor Google, Slack en Atlassian | volgt uit E1 | ⏳ |
+| GitHub Actions | `.github/workflows/` (hoofdmap van de repo) | ✅ CI · ⏳ uitrol |
+| Lijst van secrets met naam en bron | volgt uit E0 | ⏳ |
 
 | # | Wat Claude doet | Jij doet | Stories | Status |
 |---|---|---|---|---|
-| C1 | **Server.** Hetzner Cloud: server CX32 aanmaken met de cloud-init uit `infra/`, firewall, SSH-sleutel. Wachtwoordlogin uit. | "Ja" bij de kosten die Hetzner toont | HZW-002 | ⏳ |
-| C2 | **Back-ups.** Hetzner Storage Box bestellen, sub-account voor back-ups, sleutel in de secret-opslag. Daarna één keer back-up en herstel draaien. | "Ja" bij de kosten | HZW-008 | ⏳ |
-| C3 | **DNS.** Records voor `workspace.homezero.nl` en `preview.workspace.homezero.nl` naar de server. Controle: beide openen met slotje. | Niets | HZW-003 | ⏳ |
-| C4 | **Coolify.** Openen en koppelen aan de GitHub-repo, met productie en preview per PR. Secrets zetten: `HZ_TOKEN_KEY` (Claude maakt hem aan), database-wachtwoorden en de sleutels uit C5-C9. De databaserollen `hz_app` en `hz_app_login` maakt het uitrolscript zelf. | Niets | HZW-004, 005, 006, 020 | ⏳ |
+| C0 | **Eerst kijken, niets wijzigen.** Je notities op je laptop over Tailscale en de Hetzner-server lezen. Via Tailscale op de server kijken wat er draait: reverse proxy, poorten, Docker-netwerken, mappen, vrij geheugen en schijf. Daarna een kort plan: waar de workspace naast je andere projecten komt en wat er niet mag botsen. | Akkoord op dat plan (één zin) | HZW-002 | ⏳ |
+| C1 | **Server klaarmaken.** Op je bestaande server: eigen gebruiker en map, eigen compose-project, netwerk, Postgres en limieten. Aansluiten op de reverse proxy die er al draait. Eerst de voorcheck (droog), pas dan uitrollen. Je andere projecten blijven ongemoeid. Beheer alleen via Tailscale, publiek alleen 443. | Niets | HZW-002 | ⏳ |
+| C2 | **Back-ups.** Aansluiten op de back-up die je server al heeft. Is die er niet, dan een Hetzner Storage Box met eigen sub-account. Daarna één keer back-up en herstel van de workspace-database draaien. | "Ja" bij de kosten, alleen als er een Storage Box bij moet | HZW-008 | ⏳ |
+| C3 | **DNS.** Records voor `homezero.verveen.me` en `*.test.homezero.verveen.me` (previews) naar de server, bij de DNS-beheerder van verveen.me. Controle: beide openen met slotje. | Niets | HZW-003 | ⏳ |
+| C4 | **Uitrol.** Productie en preview per PR inrichten op de manier die bij je server past: Coolify als dat er al draait, anders Compose met de proxy die er staat. Secrets zetten: `HZ_TOKEN_KEY` (Claude maakt hem aan), database-wachtwoorden en de sleutels uit C5-C9. De databaserollen `hz_app` en `hz_app_login` maakt het uitrolscript zelf. | Niets | HZW-004, 005, 006, 020 | ⏳ |
 | C5 | **Google Cloud.** Project "HomeZero Workspace" aanmaken. Toestemmingsscherm op **Intern**, zodat alleen @homezero.nl erin kan. Web-client met de redirect-URL's. Agenda-, Taken- en Gmail-API aanzetten. | "Ja" op het toestemmingsscherm. Kun je geen project maken, zie D1. | HZW-010, 030, 031, 032 | ⏳ |
-| C6 | **Slack.** Interne app aanmaken uit het manifest in de repo, met user-token-scopes. Installeren in HomeZero. | "Toestaan" klikken. Zijn apps afgeschermd, zie D2. | HZW-033 | ⏳ |
+| C6 | **Slack.** Interne app aanmaken uit het manifest in de repo, met user-token-scopes. Installeren en als admin goedkeuren in HomeZero, met jouw account. | "Toestaan" klikken | HZW-033 | ⏳ |
 | C7 | **Atlassian.** 3LO-app in de developer console, alleen leesrechten, callback-URL. | Niets | HZW-034 | ⏳ |
 | C8 | **GitHub.** GitHub App voor de contextlaag (lezen) en voor de Persoonlijk-repo's (schrijven via de app). | "Install" klikken op de repo's | HZW-036, 060 | ⏳ |
 | C9 | **Anthropic.** API-sleutel voor de workspace, met een maandbudget. | Het budgetbedrag noemen | HZW-050 | ⏳ |
@@ -44,18 +60,16 @@ Claude stopt alleen bij een betaalscherm of een toestemmingsscherm en vraagt dan
 | # | Wat | Wie | Stories | Status |
 |---|---|---|---|---|
 | D1 | Alleen nodig als C5 vastloopt: als Google Workspace-beheerder het interne OAuth-project toestaan (Admin console, Beveiliging, API-beheer) | Beheerder Google Workspace | HZW-010 | ⏳ |
-| D2 | Alleen nodig als C6 vastloopt: de Slack-app goedkeuren | Slack-beheerder | HZW-033 | ⏳ |
-| D3 | Een collega (niet jij) doorloopt de onboarding zonder uitleg en meldt waar hij of zij twijfelde (5 minuten) | Een collega | HZW-013 | ⏳ |
-| D4 | Tweede reviewer tekent af op de beveiligingsstories (checklist in `docs/security-review.md`) | Een tweede reviewer | HZW-080, 081 en de MCP-story | ⏳ |
-| D5 | Akkoord vanuit legal op de privacytekst | Rens of Mike | HZW-081 | ⏳ |
-| D6 | Twee weken dubbel landen: de nachtroutine schrijft naast de artifact-database ook in de app. Daarna één blik op het verschilrapport. | Niemand (loopt vanzelf); jij leest het rapport | HZW-06x | ⏳ |
+| D2 | Een collega (niet jij) doorloopt de onboarding zonder uitleg en meldt waar hij of zij twijfelde (5 minuten) | Een collega | HZW-013 | ⏳ |
+| D3 | Tweede reviewer tekent af op de beveiligingsstories (checklist in `docs/security-review.md`) | Een tweede reviewer | HZW-080, 081 en de MCP-story | ⏳ |
+| D4 | Twee weken dubbel landen: de nachtroutine schrijft naast de artifact-database ook in de app. Daarna één blik op het verschilrapport. | Niemand (loopt vanzelf); jij leest het rapport | HZW-06x | ⏳ |
 
 ## Deel 3 - De testronde (ongeveer 40 minuten)
 
 Doe dit op je laptop in Chrome, met je telefoon erbij. Werkt iets niet, schrijf dan het scenarionummer en één zin in de chat, bijvoorbeeld "T4: gelezen in de app, niet in Slack". Meer is niet nodig: Claude reproduceert het zelf.
 
 ### T1 · Inloggen (3 min) ⏳
-1. Open een incognitovenster en ga naar `https://workspace.homezero.nl`.
+1. Open een incognitovenster en ga naar `https://homezero.verveen.me`.
 2. Klik **Inloggen met Google** en kies robert@homezero.nl. ✔ Je komt op Dagstart.
 3. Nieuw incognitovenster, nu met een privé-Gmailadres. ✔ Je wordt geweigerd met een duidelijke melding.
 4. Log in op je telefoon. Klik op je laptop bij je profiel op **Overal uitloggen**. ✔ De telefoon vraagt bij de volgende klik opnieuw om in te loggen.
