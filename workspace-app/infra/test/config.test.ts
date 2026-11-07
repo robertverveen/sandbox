@@ -208,16 +208,18 @@ describe('compose (HZW-002, HZW-004, HZW-005)', () => {
     expect(r.cap_drop).toEqual(['ALL']);
   });
 
-  it('images met vaste versies (geen latest), app-images uit de registry met de uitroltag', () => {
+  it('images met vaste versies (geen latest), app-images per digest of PR-tag', () => {
     for (const f of FULL)
       for (const [n, s] of Object.entries(compose(f).services)) {
         expect(s.image, `${f}/${n}`).toBeTruthy();
         expect(s.image, `${f}/${n}`).not.toMatch(/:latest$|^[^:]+$/);
       }
     const s = compose('app.yaml').services;
-    expect(s.api!.image).toBe('${HZ_REGISTRY}/hz-api:${HZ_TAG}');
-    expect(s.worker!.image).toBe('${HZ_REGISTRY}/hz-worker:${HZ_TAG}');
-    expect(s.web!.image).toBe('${HZ_REGISTRY}/hz-web:${HZ_TAG}');
+    // Per digest (test/productie, vastgelegd door hz-ssh-dispatch) of per PR-tag (preview): nooit vast op een tag.
+    expect(s.migrate!.image).toBe('${HZ_IMAGE_API:?HZ_IMAGE_API ontbreekt}');
+    expect(s.api!.image).toBe('${HZ_IMAGE_API:?HZ_IMAGE_API ontbreekt}');
+    expect(s.worker!.image).toBe('${HZ_IMAGE_WORKER:?HZ_IMAGE_WORKER ontbreekt}');
+    expect(s.web!.image).toBe('${HZ_IMAGE_WEB:?HZ_IMAGE_WEB ontbreekt}');
   });
 
   it('elke variabele in app.yaml komt uit de secrets (prod.keys), hz.env of deploy.sh/preview.sh', () => {
@@ -448,10 +450,21 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
     expect(d.on.push.branches).toEqual(['main']);
     expect(d.on.release.types).toEqual(['published']);
     const build = d.jobs.build;
-    expect(build.strategy.matrix.image).toEqual(['api', 'worker', 'web']);
-    const push = build.steps.find((s: { uses?: string }) => s.uses?.startsWith('docker/build-push-action'));
-    expect(push.with.push).toBe(true);
-    expect(push.with.tags).toContain('/hz-${{ matrix.image }}:${{ needs.meta.outputs.sha_tag }}');
+    const pushes = build.steps.filter((s: { uses?: string }) => s.uses?.startsWith('docker/build-push-action'));
+    expect(pushes.map((p: { id: string }) => p.id)).toEqual(['api', 'worker', 'web']);
+    for (const p of pushes) {
+      expect(p.with.push).toBe(true);
+      expect(p.with.tags).toContain(`/hz-${p.id}:\${{ needs.meta.outputs.sha_tag }}`);
+      expect(p.with.file).toBe(`workspace-app/infra/docker/${p.id}.Dockerfile`);
+    }
+    // De digests uit deze run gaan mee naar de server (die legt ze vast; tags in de registry zijn overschrijfbaar).
+    expect(build.outputs.digests).toBe('${{ steps.d.outputs.digests }}');
+    const dstep = build.steps.find((s: { id?: string }) => s.id === 'd');
+    expect(dstep.env).toEqual({
+      API: '${{ steps.api.outputs.digest }}',
+      WORKER: '${{ steps.worker.outputs.digest }}',
+      WEB: '${{ steps.web.outputs.digest }}',
+    });
     expect(JSON.stringify(d.jobs.meta)).toContain('ghcr.io/${OWNER,,}');
     // Release bouwt niet opnieuw: de geteste images krijgen de releasetag.
     expect(d.jobs.retag.if).toBe("github.event_name == 'release'");
@@ -461,8 +474,15 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
     const meta = JSON.stringify(d.jobs.meta);
     expect(meta).toContain('environment=production');
     expect(meta).toContain('environment=test');
+    // Wat de server te horen krijgt: test met de digests van de build, productie de release plus de sha die op test
+    // stond, handmatig productie alleen een bestaande v-tag.
+    expect(meta).toContain('command=deploy prod $RELEASE_TAG $sha_tag');
+    expect(meta).toContain('command=deploy test $sha_tag');
+    expect(meta).toContain('command=deploy prod $INPUT_TAG');
+    expect(meta).toContain('productie: alleen een bestaande releasetag');
     const steps = JSON.stringify(d.jobs.deploy.steps);
-    expect(steps).toContain('ci-ssh.sh \\"$HOST\\" deploy \\"$target\\" \\"$TAG\\"');
+    expect(steps).toContain('ci-ssh.sh \\"$HOST\\" $COMMAND $DIGESTS');
+    expect(steps).toContain('${{ needs.build.outputs.digests }}');
     expect(steps).toContain('/api/health');
     expect(steps).toContain('tls-check.sh');
   });
@@ -478,6 +498,61 @@ describe('GitHub Actions (HZW-001, HZW-004, HZW-005)', () => {
     expect(p.jobs.up.environment.url).toBe(
       'https://pr-${{ github.event.pull_request.number }}.${{ vars.HZ_TEST_DOMAIN }}',
     );
+    // Beide jobs in de environment 'preview', als gebruiker hz-preview met de preview-sleutel.
+    for (const j of ['up', 'down']) {
+      expect(p.jobs[j].environment.name, j).toBe('preview');
+      const st = JSON.stringify(p.jobs[j].steps);
+      expect(st, j).toContain('"HZ_SSH_USER":"hz-preview"');
+      expect(st, j).toContain('${{ secrets.HZ_PREVIEW_SSH_KEY }}');
+    }
+  });
+
+  it('secrets per doel (HZW-004): sleutels en Tailscale alleen in een environment, preview nooit bij test of productie', () => {
+    const SECRET = /secrets\.(TS_OAUTH_\w+|HZ_DEPLOY_SSH_KEY\w*|HZ_PREVIEW_SSH_KEY)/g;
+    const used: Record<string, Set<string>> = {};
+    for (const f of names)
+      for (const [job, j] of Object.entries(wf(f).jobs as Record<string, { environment?: { name: string } }>)) {
+        const found = [...JSON.stringify(j).matchAll(SECRET)].map((m) => m[1]!);
+        if (!found.length) continue;
+        // Wie een sleutel of de Tailscale-client gebruikt, staat in een environment (anders zou het een repo-secret
+        // moeten zijn, en die kan elke pull request lezen).
+        expect(j.environment?.name, `${f}/${job}`).toBeTruthy();
+        used[`${f}/${job}`] = new Set(found);
+      }
+    expect(Object.fromEntries(Object.entries(used).map(([k, v]) => [k, [...v].sort()]))).toEqual({
+      'workspace-deploy.yml/deploy': ['HZ_DEPLOY_SSH_KEY_PROD', 'HZ_DEPLOY_SSH_KEY_TEST', 'TS_OAUTH_CLIENT_ID', 'TS_OAUTH_SECRET'],
+      'workspace-preview.yml/up': ['HZ_PREVIEW_SSH_KEY', 'TS_OAUTH_CLIENT_ID', 'TS_OAUTH_SECRET'],
+      'workspace-preview.yml/down': ['HZ_PREVIEW_SSH_KEY', 'TS_OAUTH_CLIENT_ID', 'TS_OAUTH_SECRET'],
+      'workspace-server-check.yml/check': ['HZ_DEPLOY_SSH_KEY_TEST', 'TS_OAUTH_CLIENT_ID', 'TS_OAUTH_SECRET'],
+    });
+    // De productiesleutel alleen als de environment production is.
+    const key = JSON.stringify(wf('workspace-deploy.yml').jobs.deploy.steps);
+    expect(key).toContain(
+      "needs.meta.outputs.environment == 'production' && secrets.HZ_DEPLOY_SSH_KEY_PROD || secrets.HZ_DEPLOY_SSH_KEY_TEST",
+    );
+    expect(wf('workspace-server-check.yml').jobs.check.environment.name).toBe('test');
+  });
+
+  it('gereedschap uit een download alleen na een sha256-controle (geen curl | tar)', () => {
+    let downloads = 0;
+    for (const f of names)
+      for (const j of Object.values(wf(f).jobs as Record<string, { steps?: Step[] }>))
+        for (const st of j.steps ?? []) {
+          const run = st.run ?? '';
+          expect(run, `${f}: ${st.name}`).not.toMatch(/curl [^\n]*\|\s*(sudo )?(tar|sh|bash)\b/);
+          for (const m of run.matchAll(/curl -fsSL -o "([^"]+)"/g)) {
+            downloads++;
+            const file = m[1]!;
+            const check = run.indexOf(`sha256sum -c -`, m.index);
+            const use = run.indexOf(`tar -xzf "${file}"`);
+            expect(check, `${f}: ${file} zonder sha256-controle`).toBeGreaterThan(m.index!);
+            expect(use, `${f}: ${file} gebruikt vóór de controle`).toBeGreaterThan(check);
+            expect(run).toMatch(new RegExp(`echo "\\$\\{\\w+_SHA256\\}  ${file.replace(/\$/g, '\\$')}" \\| sha256sum -c -`));
+          }
+        }
+    expect(downloads).toBe(3); // caddy (app, infra) en actionlint (infra)
+    for (const f of ['workspace-app.yml', 'workspace-infra.yml'])
+      expect(JSON.stringify(wf(f))).toMatch(/"CADDY_SHA256":"[0-9a-f]{64}"/);
   });
 
   it('servercontrole: wekelijks, van buiten vóór de Tailscale-stap, van binnen via het tailnet, uitkomst in het issue', () => {
@@ -618,7 +693,7 @@ describe('cloud-init: alleen een optie voor een eigen server (HZW-082)', () => {
   it('daarna precies dezelfde stap als op de bestaande server: server-setup.sh met een eigen edge; bestanden exact uit de repo', () => {
     const setup = doc.runcmd.find((c: string[]) => Array.isArray(c) && c[0]?.endsWith('/scripts/server-setup.sh'));
     expect(setup.slice(1, 3)).toEqual(['--proxy', 'eigen']);
-    expect(setup).toEqual(expect.arrayContaining(['--domain', 'homezero.verveen.me', '--deploy-key']));
+    expect(setup).toEqual(expect.arrayContaining(['--domain', 'homezero.verveen.me', '--deploy-key-prod']));
     expect(files.get('/root/hz-workspace-setup/deploy.pub')!.content).toBe(`${base.deployKey}\n`);
     const tgz = files.get('/root/hz-workspace-setup/infra.tar.gz')!;
     expect(tgz.encoding).toBe('b64');

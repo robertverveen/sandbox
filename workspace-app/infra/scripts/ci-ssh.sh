@@ -3,13 +3,14 @@
 # De job is eerst een tijdelijke, getagde Tailscale-node geworden (tailscale/github-action, tag:ci, ephemeral; de
 # ACL laat tag:ci alleen bij poort 22 van de server, infra/tailscale/acl.hujson). Dit script weigert elk doel dat
 # niet naar een tailnet-adres wijst (100.64.0.0/10 of fd7a:115c:a1e0::/48), en verbindt met dat adres zelf, met
-# een vaste host-sleutel (known_hosts) en de CI-sleutel die op de server alleen hz-ssh-dispatch mag draaien.
+# een vaste host-sleutel (known_hosts) en een CI-sleutel die op de server alleen hz-ssh-dispatch met één vaste rol
+# mag draaien (test, prod of preview; zie hz-ssh-dispatch.sh).
 #
-#   ci-ssh.sh <host> <opdracht...>        bijv. ci-ssh.sh "$HZ_DEPLOY_HOST" deploy test sha-abc1234
+#   ci-ssh.sh <host> <opdracht...>        bijv. ci-ssh.sh "$HZ_DEPLOY_HOST" deploy test sha-abc1234 <digests>
 #
 # stdin gaat door (het registry-token voor hz-ssh-dispatch). Omgeving: HZ_SSH_KEY (standaard ~/.ssh/hz_deploy),
-# HZ_SSH_KNOWN_HOSTS (standaard ~/.ssh/known_hosts), HZ_SSH_USER (standaard hz-workspace). Voor tests: HZ_SSH
-# (in plaats van ssh) en HZ_RESOLVE (in plaats van getent ahosts).
+# HZ_SSH_KNOWN_HOSTS (standaard ~/.ssh/known_hosts), HZ_SSH_USER (standaard hz-workspace; previews: hz-preview).
+# Voor tests: HZ_SSH (in plaats van ssh) en HZ_RESOLVE (in plaats van getent ahosts).
 set -euo pipefail
 HZ_SCRIPT=ci-ssh
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,6 +21,7 @@ host="${1:-}"
 shift || true
 (($#)) || die "gebruik: ci-ssh.sh <host> <opdracht...>"
 [[ "$host" =~ ^[A-Za-z0-9.:-]+$ ]] || die "ongeldige host: ${host:-<leeg>}"
+[[ "${HZ_SSH_USER:-hz-workspace}" == hz-workspace || "${HZ_SSH_USER:-}" == hz-preview ]] || die "ongeldige gebruiker: $HZ_SSH_USER"
 
 tailnet() {
   local a="$1" o2

@@ -8,6 +8,7 @@
 #   docker compose config  app, ops, router (met elke proxyvariant) en edge met voorbeeldwaarden
 #   systemd-analyze        kalenders van de timers
 #   cloud-init             renderen met voorbeeldwaarden (het schema controleert de vitest-test)
+#   prettier --check       de hele app (zelfde stap als pnpm format:check in workspace-app.yml)
 set -uo pipefail
 infra="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app="$(dirname "$infra")"
@@ -42,6 +43,14 @@ else missing actionlint; fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+
+# Zelfde opmaakcontrole als workspace-app.yml (pnpm format:check): rood daar = rood hier.
+if [[ -x "$app/node_modules/.bin/prettier" ]]; then
+  if (cd "$app" && node_modules/.bin/prettier --check . >"$tmp/prettier.log" 2>&1); then ok "prettier --check (format:check)"; else
+    bad "prettier --check (format:check): draai pnpm format of zet een map van anderen in .prettierignore"
+    grep -E '^\[warn\]' "$tmp/prettier.log" | head -n 10
+  fi
+else missing prettier; fi
 
 if have caddy; then
   # shellcheck disable=SC2016 # een bcrypt-hash bevat letterlijke $-tekens
@@ -81,12 +90,14 @@ else missing caddy; fi
 
 if have docker && docker compose version >/dev/null 2>&1; then
   c="$infra/compose"
+  d64="$(printf '0%.0s' {1..64})"
   for files in "app.yaml" "ops.yaml" "router.yaml router-network.yaml" "router.yaml router-loopback.yaml" \
     "router.yaml router-network.yaml router-traefik.yaml" "edge.yaml"; do
     args=()
     for f in $files; do args+=(-f "$c/$f"); done
     if env HZ_INSTANCE=hz-workspace-prod HZ_PG_SUPERUSER_PASSWORD=x HZ_PG_MIGRATOR_PASSWORD=x HZ_PG_APP_PASSWORD=x HZ_PG_BACKUP_PASSWORD=x \
-      HZ_REGISTRY=ghcr.io/homezerotech HZ_TAG=sha-0000000 HZ_APP_ENV_FILE=/dev/null HZ_ENVIRONMENT=production \
+      HZ_REGISTRY=ghcr.io/homezerotech HZ_TAG=sha-0000000 HZ_IMAGE_API=ghcr.io/homezerotech/hz-api@sha256:"$d64" \
+      HZ_IMAGE_WORKER=ghcr.io/homezerotech/hz-worker@sha256:"$d64" HZ_IMAGE_WEB=ghcr.io/homezerotech/hz-web:pr-1-abcdef1 HZ_APP_ENV_FILE=/dev/null HZ_ENVIRONMENT=production \
       HZ_PUBLIC_URL=https://homezero.verveen.me HZ_DOMAIN=homezero.verveen.me HZ_TEST_DOMAIN=test.homezero.verveen.me \
       HZ_ERRORS_DOMAIN=fouten.homezero.verveen.me HZ_ACME_EMAIL=ops@example.nl HZ_PREVIEW_HASH=x \
       HZ_GLITCHTIP_DB_PASSWORD=x HZ_GLITCHTIP_SECRET_KEY=x HZ_PROXY_NETWORK=caddy HZ_ROUTER_PORT=18780 \

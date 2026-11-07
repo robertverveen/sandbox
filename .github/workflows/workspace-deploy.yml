@@ -1,12 +1,17 @@
 # Uitrol van de HomeZero Workspace (HZW-004).
-#   push naar main          -> images bouwen (ghcr.io/<org>/hz-{api,worker,web}:sha-<commit>) -> uitrol naar test
-#   release gepubliceerd     -> dezelfde images (al getest op test) krijgen de releasetag -> uitrol naar productie,
-#                               pas na goedkeuring in de omgeving 'production' (één klik: Review deployments, Approve)
-#   handmatig (dispatch)     -> een bestaande tag opnieuw uitrollen naar test of productie (ook: terugzetten)
-# De runner komt als tijdelijke Tailscale-node (tag:ci, ephemeral) in het tailnet en geeft de server alleen
-# "deploy <omgeving> <tag>" via SSH op het tailnet-adres (ci-ssh.sh weigert een publiek adres; op de server mag de
-# sleutel alleen hz-ssh-dispatch). Nooit publieke SSH (HZW-004). Het registry-token is de GITHUB_TOKEN van deze run
-# (alleen lezen) en verloopt na de job.
+#   push naar main          -> images bouwen (ghcr.io/<org>/hz-{api,worker,web}:sha-<commit>) -> uitrol naar test,
+#                               met de digests uit de build-job (de server legt ze vast; tags zijn overschrijfbaar)
+#   release gepubliceerd     -> dezelfde images (al groen op test) krijgen de releasetag -> uitrol naar productie,
+#                               pas na goedkeuring in de omgeving 'production' (één klik: Review deployments, Approve);
+#                               de server neemt de images die bij die commit op test groen waren, niets anders
+#   handmatig (dispatch)     -> test: een sha-tag die al eens op test stond; productie: een v-tag die al eens op
+#                               productie stond (terugzetten). Een nieuwe release gaat alleen via een GitHub-release.
+# Secrets per environment, nooit op repo-niveau (een workflow van een pull request kan repo-secrets lezen):
+#   test        HZ_DEPLOY_SSH_KEY_TEST, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET   (deployment branch: alleen main)
+#   production  HZ_DEPLOY_SSH_KEY_PROD, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET   (required reviewer; main en tags v*)
+# Op de server mag elke sleutel alleen hz-ssh-dispatch met zijn eigen rol (test of prod). De runner komt als
+# tijdelijke Tailscale-node (tag:ci, ephemeral) in het tailnet; ci-ssh.sh weigert een publiek adres. Nooit publieke
+# SSH (HZW-004). Het registry-token is de GITHUB_TOKEN van deze run (alleen lezen) en verloopt na de job.
 name: workspace-deploy
 on:
   push:
@@ -47,6 +52,7 @@ jobs:
       tag: ${{ steps.m.outputs.tag }}
       environment: ${{ steps.m.outputs.environment }}
       build: ${{ steps.m.outputs.build }}
+      command: ${{ steps.m.outputs.command }}
     steps:
       - id: m
         env:
@@ -63,16 +69,24 @@ jobs:
           case "$EVENT" in
             release)
               [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::releasetag moet vX.Y.Z zijn"; exit 1; }
-              echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"; echo "environment=production" >> "$GITHUB_OUTPUT"; echo "build=false" >> "$GITHUB_OUTPUT" ;;
+              # De server neemt de images die bij deze commit op test groen waren (deploy prod <v> <sha>).
+              { echo "tag=$RELEASE_TAG"; echo "environment=production"; echo "build=false"; echo "command=deploy prod $RELEASE_TAG $sha_tag"; } >> "$GITHUB_OUTPUT" ;;
             workflow_dispatch)
-              tag="${INPUT_TAG:-$sha_tag}"
-              [[ "$tag" =~ ^(sha-[0-9a-f]{7,40}|v[0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::ongeldige tag"; exit 1; }
-              echo "tag=$tag" >> "$GITHUB_OUTPUT"; echo "environment=$INPUT_ENV" >> "$GITHUB_OUTPUT"
-              if [[ -z "$INPUT_TAG" ]]; then echo "build=true" >> "$GITHUB_OUTPUT"; else echo "build=false" >> "$GITHUB_OUTPUT"; fi ;;
+              if [[ "$INPUT_ENV" == production ]]; then
+                # Alleen een release die al eens op productie stond (terugzetten of opnieuw); de server controleert dat.
+                [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::productie: alleen een bestaande releasetag vX.Y.Z; een nieuwe release gaat via GitHub Releases"; exit 1; }
+                { echo "tag=$INPUT_TAG"; echo "environment=production"; echo "build=false"; echo "command=deploy prod $INPUT_TAG"; } >> "$GITHUB_OUTPUT"
+              else
+                tag="${INPUT_TAG:-$sha_tag}"
+                [[ "$tag" =~ ^sha-[0-9a-f]{7,40}$ ]] || { echo "::error::test: alleen sha-<commit>"; exit 1; }
+                { echo "tag=$tag"; echo "environment=test"; echo "command=deploy test $tag"; } >> "$GITHUB_OUTPUT"
+                if [[ -z "$INPUT_TAG" ]]; then echo "build=true" >> "$GITHUB_OUTPUT"; else echo "build=false" >> "$GITHUB_OUTPUT"; fi
+              fi ;;
             *)
-              echo "tag=$sha_tag" >> "$GITHUB_OUTPUT"; echo "environment=test" >> "$GITHUB_OUTPUT"; echo "build=true" >> "$GITHUB_OUTPUT" ;;
+              { echo "tag=$sha_tag"; echo "environment=test"; echo "build=true"; echo "command=deploy test $sha_tag"; } >> "$GITHUB_OUTPUT" ;;
           esac
 
+  # Eén job, drie images na elkaar: zo komen de digests als outputs mee naar de uitrol (een matrix kan dat niet).
   build:
     needs: meta
     if: needs.meta.outputs.build == 'true'
@@ -80,9 +94,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        image: [api, worker, web]
+    outputs:
+      digests: ${{ steps.d.outputs.digests }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -91,18 +104,59 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - id: api
+        uses: docker/build-push-action@v6
         with:
           context: workspace-app
-          file: workspace-app/infra/docker/${{ matrix.image }}.Dockerfile
+          file: workspace-app/infra/docker/api.Dockerfile
           push: true
-          tags: ${{ needs.meta.outputs.registry }}/hz-${{ matrix.image }}:${{ needs.meta.outputs.sha_tag }}
+          tags: ${{ needs.meta.outputs.registry }}/hz-api:${{ needs.meta.outputs.sha_tag }}
           build-args: HZ_RELEASE=${{ needs.meta.outputs.sha_tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=hz-${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=hz-${{ matrix.image }}
+          cache-from: type=gha,scope=hz-api
+          cache-to: type=gha,mode=max,scope=hz-api
+      - id: worker
+        uses: docker/build-push-action@v6
+        with:
+          context: workspace-app
+          file: workspace-app/infra/docker/worker.Dockerfile
+          push: true
+          tags: ${{ needs.meta.outputs.registry }}/hz-worker:${{ needs.meta.outputs.sha_tag }}
+          build-args: HZ_RELEASE=${{ needs.meta.outputs.sha_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=hz-worker
+          cache-to: type=gha,mode=max,scope=hz-worker
+      - id: web
+        uses: docker/build-push-action@v6
+        with:
+          context: workspace-app
+          file: workspace-app/infra/docker/web.Dockerfile
+          push: true
+          tags: ${{ needs.meta.outputs.registry }}/hz-web:${{ needs.meta.outputs.sha_tag }}
+          build-args: HZ_RELEASE=${{ needs.meta.outputs.sha_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=hz-web
+          cache-to: type=gha,mode=max,scope=hz-web
+      - id: d
+        name: Digests voor de server (api worker web)
+        working-directory: .
+        env:
+          API: ${{ steps.api.outputs.digest }}
+          WORKER: ${{ steps.worker.outputs.digest }}
+          WEB: ${{ steps.web.outputs.digest }}
+        run: |
+          out=""
+          for d in "$API" "$WORKER" "$WEB"; do
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::geen geldige digest: $d"; exit 1; }
+            out="$out ${d#sha256:}"
+          done
+          echo "digests=${out# }" >> "$GITHUB_OUTPUT"
 
   # Release: geen nieuwe build. De images van deze commit (getest op test) krijgen de releasetag.
   retag:
@@ -146,27 +200,30 @@ jobs:
       - name: Tailscale (tijdelijke node met tag:ci; de ACL laat alleen SSH naar de server toe)
         uses: tailscale/github-action@v3
         with:
+          # Environment-secrets van test of production (niet op repo-niveau).
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-      - name: SSH-sleutel van de uitrol (op de server alleen hz-ssh-dispatch)
+      - name: SSH-sleutel van deze omgeving (op de server alleen hz-ssh-dispatch test of prod)
         working-directory: .
         env:
-          KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
+          KEY: ${{ needs.meta.outputs.environment == 'production' && secrets.HZ_DEPLOY_SSH_KEY_PROD || secrets.HZ_DEPLOY_SSH_KEY_TEST }}
           KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
         run: |
+          [[ -n "$KEY" ]] || { echo "::error::geen SSH-sleutel in deze environment (HZ_DEPLOY_SSH_KEY_TEST of _PROD)"; exit 1; }
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
       - name: Uitrol op de server via het tailnet (met voorcheck, health-check en rollback)
         env:
           HOST: ${{ vars.HZ_DEPLOY_HOST }}
-          ENVIRONMENT: ${{ needs.meta.outputs.environment }}
-          TAG: ${{ needs.meta.outputs.tag }}
+          COMMAND: ${{ needs.meta.outputs.command }}
+          DIGESTS: ${{ needs.build.outputs.digests }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          target="test"; [[ "$ENVIRONMENT" == production ]] && target="prod"
-          printf '%s\n' "$GH_TOKEN" | bash infra/scripts/ci-ssh.sh "$HOST" deploy "$target" "$TAG"
+          # Een verse build van main gaat met zijn digests mee: de server legt ze vast en draait daarna alleen die.
+          # shellcheck disable=SC2086 # opdracht en digests zijn losse woorden
+          printf '%s\n' "$GH_TOKEN" | bash infra/scripts/ci-ssh.sh "$HOST" $COMMAND $DIGESTS
       - name: Health-check en TLS van buitenaf
         env:
           DOMAIN: ${{ needs.meta.outputs.environment == 'production' && vars.HZ_DOMAIN || vars.HZ_TEST_DOMAIN }}

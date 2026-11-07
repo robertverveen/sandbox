@@ -13,7 +13,7 @@
  *
  *   node infra/cloud-init/render.mjs \
  *     --domain proef.homezero.nl --acme-email robert@homezero.nl --registry ghcr.io/homezerotech \
- *     --admin-keys ~/.ssh/id_ed25519.pub --deploy-key hz_deploy.pub --tailscale-authkey-file ts.key \
+ *     --admin-keys ~/.ssh/id_ed25519.pub --deploy-key hz_ci_prod.pub --tailscale-authkey-file ts.key \
  *     --out user-data.yaml
  *
  * Een tweede server of een ander domein is alleen andere waarden, geen codewijziging.
@@ -115,7 +115,9 @@ export function renderCloudInit(o) {
     o.acmeEmail,
     '--registry',
     o.registry,
-    '--deploy-key',
+    // Eigen server (proefverhuizing): alleen de uitrolsleutel van productie; test en preview komen er pas bij als de
+    // server de hoofdserver wordt (server-setup.sh opnieuw met --deploy-key-test en --preview-key).
+    '--deploy-key-prod',
     '/root/hz-workspace-setup/deploy.pub',
   ];
 

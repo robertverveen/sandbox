@@ -4,7 +4,8 @@
 #   docker compose -p <instantie> --env-file /srv/hz-workspace/etc/hz.env --env-file <secrets> -f compose/app.yaml up -d
 #
 # Variabelen (interpolatie): uit /srv/hz-workspace/etc/hz.env (niet geheim), de ontsleutelde secrets in
-# /run/hz-workspace (geheim) en wat deploy.sh zelf zet (HZ_INSTANCE, HZ_TAG, HZ_PUBLIC_URL, HZ_APP_ENV_FILE). api en
+# /run/hz-workspace (geheim) en wat deploy.sh zelf zet (HZ_INSTANCE, HZ_TAG, HZ_PUBLIC_URL, HZ_APP_ENV_FILE, en de
+# images HZ_IMAGE_API/_WORKER/_WEB: bij test en productie per digest, bij een preview per PR-tag). api en
 # worker krijgen alleen de app-secrets (HZ_APP_ENV_FILE, zonder databasewachtwoorden); de database alleen de zijne.
 #
 # Naast andere projecten op dezelfde server (HZW-002): een eigen projectnaam (hz-workspace-*), een eigen netwerk
@@ -61,7 +62,7 @@ services:
 
   migrate:
     <<: *app
-    image: ${HZ_REGISTRY:?}/hz-api:${HZ_TAG:?}
+    image: ${HZ_IMAGE_API:?HZ_IMAGE_API ontbreekt}
     restart: 'no'
     mem_limit: 256m
     cpus: 0.5
@@ -73,14 +74,14 @@ services:
 
   api:
     <<: *app
-    image: ${HZ_REGISTRY}/hz-api:${HZ_TAG}
+    image: ${HZ_IMAGE_API:?HZ_IMAGE_API ontbreekt}
     mem_limit: ${HZ_MEM_API:-512m}
     cpus: ${HZ_CPUS_API:-1.0}
     env_file: ['${HZ_APP_ENV_FILE:?HZ_APP_ENV_FILE ontbreekt}']
     environment:
       NODE_ENV: ${HZ_NODE_ENV:-production}
       HZ_ENVIRONMENT: ${HZ_ENVIRONMENT:?}
-      HZ_RELEASE: ${HZ_TAG}
+      HZ_RELEASE: ${HZ_TAG:?HZ_TAG ontbreekt}
       HZ_STORE: db
       HZ_API_HOST: 0.0.0.0
       HZ_API_PORT: '8700'
@@ -104,7 +105,7 @@ services:
 
   worker:
     <<: *app
-    image: ${HZ_REGISTRY}/hz-worker:${HZ_TAG}
+    image: ${HZ_IMAGE_WORKER:?HZ_IMAGE_WORKER ontbreekt}
     mem_limit: ${HZ_MEM_WORKER:-512m}
     cpus: ${HZ_CPUS_WORKER:-1.0}
     env_file: ['${HZ_APP_ENV_FILE}']
@@ -128,7 +129,7 @@ services:
 
   web:
     <<: *app
-    image: ${HZ_REGISTRY}/hz-web:${HZ_TAG}
+    image: ${HZ_IMAGE_WEB:?HZ_IMAGE_WEB ontbreekt}
     mem_limit: 128m
     cpus: 0.5
     environment:

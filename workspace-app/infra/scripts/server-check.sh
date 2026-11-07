@@ -397,11 +397,22 @@ if [[ -z "$extern" ]]; then
   fi
 
   # --- Gebruiker en systemd-units --------------------------------------------------------------------------------
-  pw="$(grep -E '^hz-workspace:' "$root/etc/passwd" 2>/dev/null || true)"
-  if [[ -n "$pw" && "$(cut -d: -f6 <<<"$pw")" != /srv/hz-workspace ]]; then
-    pre FOUT gebruiker "hz-workspace bestaat al met een andere thuismap ($(cut -d: -f6 <<<"$pw"))"
+  # hz-workspace (uitrol) en hz-preview (previews, zonder toegang tot de age-sleutel), elk met een vaste thuismap.
+  bad=()
+  okmsg=()
+  for uh in hz-workspace:/srv/hz-workspace hz-preview:/srv/hz-workspace/previews; do
+    u="${uh%%:*}"
+    pw="$(grep -E "^$u:" "$root/etc/passwd" 2>/dev/null || true)"
+    if [[ -n "$pw" && "$(cut -d: -f6 <<<"$pw")" != "${uh#*:}" ]]; then
+      bad+=("$u bestaat al met een andere thuismap ($(cut -d: -f6 <<<"$pw"))")
+    else
+      okmsg+=("$u ${pw:+bestaat (van ons)}${pw:-is vrij}")
+    fi
+  done
+  if ((${#bad[@]})); then
+    pre FOUT gebruiker "$(printf '%s; ' "${bad[@]}" | sed 's/; $//')"
   else
-    pre OK gebruiker "hz-workspace ${pw:+bestaat (van ons)}${pw:-is vrij}"
+    pre OK gebruiker "$(printf '%s, ' "${okmsg[@]}" | sed 's/, $//')"
   fi
   bad=()
   for u in "$root"/etc/systemd/system/hz-workspace-*; do

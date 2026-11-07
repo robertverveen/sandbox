@@ -20,6 +20,10 @@ defaults:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    # De sleutel van test mag ook 'check' (alleen lezen); hij en de Tailscale-client staan in de environment 'test'
+    # (alleen main), niet op repo-niveau.
+    environment:
+      name: test
     steps:
       - uses: actions/checkout@v4
       - name: Van buiten (poorten, TLS en doorsturen)
@@ -45,10 +49,10 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-      - name: SSH-sleutel van de uitrol (op de server alleen hz-ssh-dispatch)
+      - name: SSH-sleutel van test (op de server alleen hz-ssh-dispatch test)
         working-directory: .
         env:
-          KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
+          KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY_TEST }}
           KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh

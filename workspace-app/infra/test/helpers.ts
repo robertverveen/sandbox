@@ -126,6 +126,7 @@ export function sshPublicKey(comment = 'test@hz'): string {
  *   FAKE_DOCKER_HEALTH        uitvoer van 'compose exec web wget ... /api/health'
  *   FAKE_DOCKER_UNHEALTHY     uitvoer van 'ps --filter health=unhealthy'
  *   FAKE_DOCKER_BUNDLE        map die 'docker cp <cid>:/app/bundle/.' kopieert
+ *   FAKE_DOCKER_IMAGES        uitvoer van 'image ls <repo> --digests': regels "tag digest", gescheiden door ';'
  *   FAKE_DOCKER_PS, FAKE_DOCKER_NETWORKS, FAKE_DOCKER_VOLUMES   bestanden met de uitvoer van 'ps -a', 'network ls',
  *                             'volume ls' (tab-gescheiden, zoals server-check.sh ze opvraagt)
  */
@@ -137,7 +138,7 @@ export function fakeDocker(dir: string): { bin: string; log: string; calls(): st
     bin,
     `#!/usr/bin/env bash
 set -u
-printf '%s | tag=%s instance=%s env=%s url=%s node_env=%s devlogin=%s appenv=%s edge=%s cfg=%s\\n' "$*" "\${HZ_TAG:-}" "\${HZ_INSTANCE:-}" "\${HZ_ENVIRONMENT:-}" "\${HZ_PUBLIC_URL:-}" "\${HZ_NODE_ENV:-}" "\${HZ_DEV_LOGIN:-}" "\${HZ_APP_ENV_FILE:-}" "\${HZ_EDGE_DIR:-}" "\${DOCKER_CONFIG:-}" >> "${log}"
+printf '%s | tag=%s instance=%s env=%s url=%s node_env=%s devlogin=%s appenv=%s edge=%s cfg=%s img=%s\\n' "$*" "\${HZ_TAG:-}" "\${HZ_INSTANCE:-}" "\${HZ_ENVIRONMENT:-}" "\${HZ_PUBLIC_URL:-}" "\${HZ_NODE_ENV:-}" "\${HZ_DEV_LOGIN:-}" "\${HZ_APP_ENV_FILE:-}" "\${HZ_EDGE_DIR:-}" "\${DOCKER_CONFIG:-}" "\${HZ_IMAGE_API:-}" >> "${log}"
 args=" $* "
 case "$args" in
   *" network inspect "*) [[ -f "${dir}/net" ]] || exit 1; exit 0 ;;
@@ -146,7 +147,7 @@ case "$args" in
   *" create "*) echo cid123; exit 0 ;;
   *" cp cid123:/app/bundle/. "*) dest="\${@: -1}"; cp -R "\${FAKE_DOCKER_BUNDLE:?}/." "$dest"; exit 0 ;;
   *" ps --filter health=unhealthy "*) printf '%s' "\${FAKE_DOCKER_UNHEALTHY:-}"; exit 0 ;;
-  *" image ls "*) printf '%s\n' \${FAKE_DOCKER_IMAGE_TAGS:-}; exit 0 ;;
+  *" image ls "*) [[ -n "\${FAKE_DOCKER_IMAGES:-}" ]] && printf '%s\n' "\${FAKE_DOCKER_IMAGES}" | tr ';' '\n'; exit 0 ;;
   *" ps -a --format "*) [[ -n "\${FAKE_DOCKER_PS:-}" ]] && cat "$FAKE_DOCKER_PS"; exit 0 ;;
   *" network ls --format "*) [[ -n "\${FAKE_DOCKER_NETWORKS:-}" ]] && cat "$FAKE_DOCKER_NETWORKS"; exit 0 ;;
   *" volume ls --format "*) [[ -n "\${FAKE_DOCKER_VOLUMES:-}" ]] && cat "$FAKE_DOCKER_VOLUMES"; exit 0 ;;

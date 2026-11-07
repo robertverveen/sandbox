@@ -4,6 +4,7 @@
  * servercontrole (HZW-002), TLS en doorsturen (HZW-003), uptime-hartslag (HZW-007), forced command voor CI.
  */
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer as createHttps } from 'node:https';
 import { createServer as createHttp, request as httpRequest, type Server } from 'node:http';
@@ -38,6 +39,17 @@ import {
 } from './helpers';
 
 const mode = (p: string) => (statSync(p).mode & 0o777).toString(8);
+const REG = 'ghcr.io/homezerotech';
+/** Synthetische digest (64 hex) per tag en image. */
+const dg = (tag: string, img: string) => createHash('sha256').update(`${tag}/${img}`).digest('hex');
+/** Vastgelegde images van een tag, zoals hz-ssh-dispatch ze schrijft (images/<tag>.env). */
+function writeRecord(hzRoot: string, tag: string, from = tag) {
+  mkdirSync(join(hzRoot, 'images'), { recursive: true });
+  writeFileSync(
+    join(hzRoot, 'images', `${tag}.env`),
+    ['api', 'worker', 'web'].map((i) => `HZ_IMAGE_${i.toUpperCase()}=${REG}/hz-${i}@sha256:${dg(from, i)}\n`).join(''),
+  );
+}
 
 describe('scripts: syntaxis en shellcheck', () => {
   const dirs = ['scripts', 'postgres', 'docker'].map((d) => join(INFRA, d));
@@ -145,8 +157,11 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
       HZ_HEALTH_TRIES: '2',
       HZ_HEALTH_SLEEP: '0',
     };
-    const deploy = (e: string, tag: string, extra: Record<string, string> = {}) =>
-      run(join(s.bundle, 'infra/scripts/deploy.sh'), [e, tag], { ...env, ...extra });
+    // Zoals hz-ssh-dispatch: eerst de images van de tag vastleggen, dan deploy.sh van de bundel.
+    const deploy = (e: string, tag: string, extra: Record<string, string> = {}, record = true) => {
+      if (record && /^(sha-|v)[0-9a-f.]+$/.test(tag)) writeRecord(s.env.HZ_ROOT, tag);
+      return run(join(s.bundle, 'infra/scripts/deploy.sh'), [e, tag], { ...env, ...extra });
+    };
     const state = (e: string, f: string) => {
       const p = join(s.env.HZ_ROOT, 'env', e, f);
       return existsSync(p) ? readFileSync(p, 'utf8').trim() : null;
@@ -186,6 +201,8 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     expect(migrate).toBeGreaterThan(pull);
     expect(up).toBeGreaterThan(migrate);
     expect(calls[up]).toContain('tag=sha-aaaaaaa instance=hz-workspace-test env=test url=https://test.hz.example.nl');
+    // Images per digest (vastgelegd), niet per tag uit de registry.
+    expect(calls[up]).toContain(`img=${REG}/hz-api@sha256:${dg('sha-aaaaaaa', 'api')}`);
     // api en worker krijgen geen databasewachtwoorden
     const appEnv = readFileSync(join(t.env.HZ_RUN, 'test.app.env'), 'utf8');
     expect(appEnv).toMatch(/^HZ_TOKEN_KEY=/m);
@@ -202,21 +219,30 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     expect(readFileSync(join(t.env.HZ_LOG_DIR, 'deploys.log'), 'utf8')).toMatch(/ test sha-aaaaaaa - ok\n$/);
   });
 
-  it('ruimt alleen eigen oude images op (huidige, vorige en preview-tags blijven); nooit image prune', async () => {
+  it('ruimt alleen eigen oude images op (digests van huidige en vorige versie en preview-tags blijven); nooit image prune', async () => {
     const t = await setup();
     expect((await t.deploy('test', 'sha-aaaaaaa')).code).toBe(0);
     mkdirSync(join(t.env.HZ_ROOT, 'previews/pr-7'), { recursive: true });
     writeFileSync(join(t.env.HZ_ROOT, 'previews/pr-7/tag'), 'pr-7-abcdef1\n');
+    const old = 'f'.repeat(64);
     const r = await t.deploy('test', 'sha-bbbbbbb', {
-      FAKE_DOCKER_IMAGE_TAGS: 'sha-0000000 sha-aaaaaaa sha-bbbbbbb pr-7-abcdef1',
+      FAKE_DOCKER_IMAGES: [
+        `<none> sha256:${dg('sha-aaaaaaa', 'api')}`,
+        `<none> sha256:${dg('sha-bbbbbbb', 'web')}`,
+        `pr-7-abcdef1 sha256:${'1'.repeat(64)}`,
+        `sha-0000000 sha256:${'2'.repeat(64)}`,
+        `<none> sha256:${old}`,
+      ].join(';'),
     });
     expect(r.code, r.all).toBe(0);
     const rm = t.docker.calls().filter((c) => c.startsWith('image rm '));
-    expect(rm.map((c) => c.split(' ')[2])).toEqual([
-      'ghcr.io/homezerotech/hz-api:sha-0000000',
-      'ghcr.io/homezerotech/hz-worker:sha-0000000',
-      'ghcr.io/homezerotech/hz-web:sha-0000000',
-    ]);
+    expect(rm.map((c) => c.split(' ')[2])).toEqual(
+      ['api', 'worker', 'web'].flatMap((i) => [
+        `${REG}/hz-${i}:sha-0000000`,
+        `${REG}/hz-${i}@sha256:${'2'.repeat(64)}`,
+        `${REG}/hz-${i}@sha256:${old}`,
+      ]),
+    );
     expect(t.docker.calls().some((c) => /\b(image|system) prune\b/.test(c))).toBe(false);
   });
 
@@ -340,11 +366,30 @@ describe('uitrol (deploy.sh, HZW-004)', () => {
     );
   });
 
-  it('weigert onbekende omgevingen en tags', async () => {
+  it('weigert onbekende omgevingen en tags; productie alleen v-tags, test alleen sha-tags, nooit een PR-tag', async () => {
     const t = await setup();
     expect((await t.deploy('staging', 'sha-aaaaaaa')).err).toContain('prod of test');
     expect((await t.deploy('test', 'latest')).err).toContain('ongeldige tag');
     expect((await t.deploy('test', 'sha-aaaaaaa;reboot')).code).toBe(1);
+    for (const [e, tag] of [
+      ['prod', 'pr-1-abcdef1'],
+      ['test', 'pr-1-abcdef1'],
+      ['prod', 'sha-aaaaaaa'],
+      ['test', 'v1.0.0'],
+    ]) {
+      const r = await t.deploy(e!, tag!);
+      expect(r.code, `${e} ${tag}`).toBe(1);
+      expect(r.err).toContain(`ongeldige tag voor ${e}`);
+    }
+    expect(writes(t.docker.calls())).toEqual([]);
+  });
+
+  it('zonder vastgelegde images (nooit via hz-ssh-dispatch uitgerold) geen uitrol', async () => {
+    const t = await setup();
+    const r = await t.deploy('test', 'sha-eeeeeee', {}, false);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('geen vastgelegde images voor sha-eeeeeee');
+    expect(writes(t.docker.calls())).toEqual([]);
   });
 });
 
@@ -378,6 +423,11 @@ describe('preview per pull request (preview.sh, HZW-005)', () => {
     expect(up).toContain(
       'tag=pr-12-abcdef123456 instance=hz-workspace-pr-12 env=preview url=https://pr-12.test.hz.example.nl node_env=development devlogin=1',
     );
+    expect(up).toContain(`img=${REG}/hz-api:pr-12-abcdef123456`);
+    // De compose van de preview komt uit de bundel waar preview.sh staat (op de server: die van test).
+    expect(up).toContain(`-f ${join(t.bundle, 'infra/compose/app.yaml')}`);
+    expect(mode(t.dir(12))).toBe('755');
+    expect(mode(join(t.dir(12), 'app.env'))).toBe('600');
     expect(
       t.docker.calls().some((c) => /compose -p hz-workspace-pr-12 .* exec -T web wget .*\/api\/health/.test(c)),
     ).toBe(true);
@@ -425,49 +475,180 @@ describe('preview per pull request (preview.sh, HZW-005)', () => {
     expect((await t.pv('list')).out).toBe('pr-2 pr-2-bbbbbbb\npr-3 pr-3-ccccccc\n');
   });
 
-  it('weigert ongeldige nummers en tags', async () => {
+  it('weigert ongeldige nummers en tags; alleen de images van deze PR (pr-<nr>-...)', async () => {
     const t = await setup();
     expect((await t.pv('up', '12a', 'pr-12-abcdef1')).code).toBe(1);
     expect((await t.pv('up', '12', 'main')).code).toBe(1);
     expect((await t.pv('down', '../x')).code).toBe(1);
+    for (const tag of ['pr-13-abcdef1', 'v1.0.0', 'sha-abcdef1']) {
+      const r = await t.pv('up', '12', tag);
+      expect(r.code, tag).toBe(1);
+      expect(r.err).toContain('verwacht pr-12-<commit>');
+    }
+    expect(writes(t.docker.calls())).toEqual([]);
   });
 });
 
-describe('forced command voor GitHub Actions (hz-ssh-dispatch)', () => {
+describe('forced command voor GitHub Actions (hz-ssh-dispatch, één rol per sleutel)', () => {
+  const A = 'sha-abcdef1';
+  const digests = (tag: string) => ['api', 'worker', 'web'].map((i) => dg(tag, i)).join(' ');
+
   async function setup() {
     const root = tmp('hz-e0-disp-');
     const etc = join(root, 'etc');
     mkdirSync(etc);
-    writeFileSync(join(etc, 'hz.env'), 'HZ_DOMAIN=hz.example.nl\nHZ_REGISTRY=ghcr.io/homezerotech\n');
-    // Nep-bundel: deploy.sh en preview.sh schrijven alleen op hoe ze werden aangeroepen.
-    const bundle = join(root, 'bundle');
-    mkdirSync(join(bundle, 'infra/scripts'), { recursive: true });
-    for (const s of ['deploy.sh', 'preview.sh'])
-      writeFileSync(
-        join(bundle, 'infra/scripts', s),
-        `#!/usr/bin/env bash\necho "${s} $* cfg=\${DOCKER_CONFIG:-}" >> "${root}/called"\n`,
-        { mode: 0o755 },
-      );
+    writeFileSync(join(etc, 'hz.env'), `HZ_DOMAIN=hz.example.nl\nHZ_REGISTRY=${REG}\n`);
+    // Nep-bundel in elk image (FAKE_DOCKER_BUNDLE): deploy.sh en preview.sh schrijven alleen op dat ze draaiden.
+    // Het label laat zien uit welke bundel een script kwam; "IMAGE" is code uit een image (bij een PR: van de PR).
+    const fakeBundle = (dir: string, label: string) => {
+      mkdirSync(join(dir, 'infra/scripts'), { recursive: true });
+      for (const s of ['deploy.sh', 'preview.sh'])
+        writeFileSync(
+          join(dir, 'infra/scripts', s),
+          `#!/usr/bin/env bash\necho "${label} ${s} $* cfg=\${DOCKER_CONFIG:-}" >> "${root}/called"\n`,
+          { mode: 0o755 },
+        );
+    };
+    const bundle = join(root, 'image-bundle');
+    fakeBundle(bundle, 'IMAGE');
     const docker = fakeDocker(join(root, 'bin'));
-    const env = { HZ_ROOT: join(root, 'opt'), HZ_ETC: etc, HZ_DOCKER: docker.bin, FAKE_DOCKER_BUNDLE: bundle };
-    const ssh = (cmd: string, stdin = '') =>
-      run(script('hz-ssh-dispatch.sh'), [], { ...env, SSH_ORIGINAL_COMMAND: cmd }, stdin);
+    const hzRoot = join(root, 'opt');
+    const env = { HZ_ROOT: hzRoot, HZ_ETC: etc, HZ_DOCKER: docker.bin, FAKE_DOCKER_BUNDLE: bundle };
+    const ssh = (role: string, cmd: string, stdin = '') =>
+      run(script('hz-ssh-dispatch.sh'), role ? [role] : [], { ...env, SSH_ORIGINAL_COMMAND: cmd }, stdin);
     const called = () => (existsSync(join(root, 'called')) ? readFileSync(join(root, 'called'), 'utf8') : '');
-    return { root, env, docker, ssh, called };
+    const lines = () =>
+      called()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => l.replace(/ cfg=.*/, ''));
+    /** Bundel van main die op test draait (env/test/bundle -> releases/<sha>), met eigen label. */
+    const testBundle = (tag = 'sha-0123456') => {
+      const dir = join(hzRoot, 'releases', tag);
+      fakeBundle(dir, 'TEST');
+      writeFileSync(join(dir, '.compleet'), '');
+      mkdirSync(join(hzRoot, 'env/test'), { recursive: true });
+      execFileSync('ln', ['-sfn', dir, join(hzRoot, 'env/test/bundle')]);
+    };
+    return { root, env, hzRoot, docker, ssh, called, lines, testBundle };
   }
 
-  it('deploy: token alleen in een tijdelijke DOCKER_CONFIG, bundel uitgepakt, deploy.sh van die versie', async () => {
+  it('deploy test: build van main met digests; token alleen in een tijdelijke DOCKER_CONFIG; images per digest; bundel uit dat image', async () => {
     const t = await setup();
-    const r = await t.ssh('deploy test sha-abcdef1', 'ghs_tijdelijktoken\n');
+    const r = await t.ssh('test', `deploy test ${A} ${digests(A)}`, 'ghs_tijdelijktoken\n');
     expect(r.code, r.all).toBe(0);
     const login = t.docker.calls().find((c) => c.startsWith('login ghcr.io -u hz-deploy --password-stdin'))!;
     const cfg = /cfg=(\S+)/.exec(login)![1]!;
     expect(existsSync(cfg)).toBe(false); // na afloop weg
-    expect(t.docker.calls().some((c) => c.startsWith('pull --quiet ghcr.io/homezerotech/hz-api:sha-abcdef1'))).toBe(
-      true,
+    const pulls = t.docker.calls().filter((c) => c.startsWith('pull '));
+    expect(pulls.map((c) => c.split(' ')[2])).toEqual(
+      ['api', 'worker', 'web'].map((i) => `${REG}/hz-${i}@sha256:${dg(A, i)}`),
     );
-    expect(existsSync(join(t.env.HZ_ROOT, 'releases/sha-abcdef1/.compleet'))).toBe(true);
-    expect(t.called()).toMatch(/^deploy\.sh test sha-abcdef1 cfg=\S+\n$/);
+    expect(t.docker.calls().some((c) => c.startsWith(`create ${REG}/hz-api@sha256:${dg(A, 'api')}`))).toBe(true);
+    expect(readFileSync(join(t.hzRoot, `images/${A}.env`), 'utf8')).toContain(
+      `HZ_IMAGE_WEB=${REG}/hz-web@sha256:${dg(A, 'web')}`,
+    );
+    expect(existsSync(join(t.hzRoot, `releases/${A}/.compleet`))).toBe(true);
+    expect(t.called()).toMatch(new RegExp(`^IMAGE deploy\\.sh test ${A} cfg=\\S+\\n$`));
+    expect(existsSync(join(t.hzRoot, `images/${A}.getest`))).toBe(true);
+  });
+
+  it('een tag krijgt nooit nieuwe images: opnieuw uitrollen gebruikt de vastgelegde digests, andere digests worden geweigerd', async () => {
+    const t = await setup();
+    // Zonder digests en zonder eerdere uitrol: geweigerd (alleen een build van main komt op test).
+    let r = await t.ssh('test', `deploy test ${A}`);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('nog nooit uitgerold');
+    expect(t.docker.calls()).toEqual([]);
+    expect((await t.ssh('test', `deploy test ${A} ${digests(A)}`)).code).toBe(0);
+    r = await t.ssh('test', `deploy test ${A}`);
+    expect(r.code, r.all).toBe(0);
+    // Iemand heeft de tag in de registry overschreven (bv. een workflow van een PR): de server neemt hem niet.
+    const before = t.docker.calls().length;
+    r = await t.ssh('test', `deploy test ${A} ${digests('kwaad')}`);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('eerder met andere images uitgerold');
+    expect(t.docker.calls().length).toBe(before);
+    expect(readFileSync(join(t.hzRoot, `images/${A}.env`), 'utf8')).toContain(dg(A, 'api'));
+  });
+
+  it('deploy prod: alleen een v-tag, en alleen met de images van een sha die op test groen was', async () => {
+    const t = await setup();
+    let r = await t.ssh('prod', `deploy prod v1.0.0 ${A}`);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('niet groen uitgerold op test');
+    expect(t.docker.calls()).toEqual([]);
+    expect((await t.ssh('test', `deploy test ${A} ${digests(A)}`)).code).toBe(0);
+    const n = t.docker.calls().length;
+    r = await t.ssh('prod', `deploy prod v1.0.0 ${A}`, 'ghs_token\n');
+    expect(r.code, r.all).toBe(0);
+    expect(
+      t.docker
+        .calls()
+        .slice(n)
+        .filter((c) => c.startsWith('pull '))
+        .map((c) => c.split(' ')[2]),
+    ).toEqual(['api', 'worker', 'web'].map((i) => `${REG}/hz-${i}@sha256:${dg(A, i)}`));
+    expect(t.lines().pop()).toBe('IMAGE deploy.sh prod v1.0.0');
+    // Opnieuw (of terugzetten via de workflow): dezelfde release zonder sha mag, een onbekende release niet.
+    expect((await t.ssh('prod', 'deploy prod v1.0.0')).code).toBe(0);
+    r = await t.ssh('prod', 'deploy prod v2.0.0');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('nog nooit');
+    // Een test die rood eindigde telt niet als groen.
+    const B = 'sha-bbbbbbb';
+    writeFileSync(
+      join(t.env.FAKE_DOCKER_BUNDLE, 'infra/scripts/deploy.sh'),
+      `#!/usr/bin/env bash\necho "IMAGE deploy.sh $*" >> "${t.root}/called"; exit 1\n`,
+      { mode: 0o755 },
+    );
+    expect((await t.ssh('test', `deploy test ${B} ${digests(B)}`)).code).toBe(1);
+    expect(existsSync(join(t.hzRoot, `images/${B}.getest`))).toBe(false);
+    expect((await t.ssh('prod', `deploy prod v1.1.0 ${B}`)).err).toContain('niet groen uitgerold op test');
+  });
+
+  it('PR-code kan nooit naar productie of test: "deploy prod pr-1-abcdef1" en elke PR-tag buiten preview geweigerd', async () => {
+    const t = await setup();
+    for (const role of ['prod', 'test', 'preview'])
+      for (const cmd of [
+        'deploy prod pr-1-abcdef1',
+        'deploy test pr-1-abcdef1',
+        `deploy prod pr-1-abcdef1 ${A}`,
+        `deploy test pr-1-abcdef1 ${digests('pr')}`,
+        'deploy prod sha-abcdef1',
+        `deploy test v1.0.0 ${digests('v')}`,
+      ]) {
+        const r = await t.ssh(role, cmd);
+        expect(r.code, `${role}: ${cmd}`).toBe(1);
+      }
+    expect(t.called()).toBe('');
+    expect(t.docker.calls()).toEqual([]);
+    expect(existsSync(join(t.hzRoot, 'releases'))).toBe(false);
+    expect(existsSync(join(t.hzRoot, 'images'))).toBe(false);
+  });
+
+  it.each([
+    ['', 'status'],
+    ['admin', 'status'],
+    ['preview', `deploy test ${A} ${'0'.repeat(64)} ${'0'.repeat(64)} ${'0'.repeat(64)}`],
+    ['preview', 'deploy prod v1.0.0'],
+    ['preview', 'rollback prod'],
+    ['preview', 'status'],
+    ['preview', 'check'],
+    ['test', `deploy prod v1.0.0 ${A}`],
+    ['test', 'rollback prod'],
+    ['test', 'preview up 12 pr-12-abcdef1'],
+    ['test', 'preview down 12'],
+    ['prod', `deploy test ${A} ${'0'.repeat(64)} ${'0'.repeat(64)} ${'0'.repeat(64)}`],
+    ['prod', 'rollback test'],
+    ['prod', 'preview up 12 pr-12-abcdef1'],
+  ])('rol %j mag niet: %s', async (role, cmd) => {
+    const t = await setup();
+    t.testBundle();
+    const r = await t.ssh(role, cmd);
+    expect(r.code).toBe(1);
+    expect(t.called()).toBe('');
+    expect(t.docker.calls()).toEqual([]);
   });
 
   it.each([
@@ -476,60 +657,91 @@ describe('forced command voor GitHub Actions (hz-ssh-dispatch)', () => {
     ['sh -c id'],
     ['deploy prod latest'],
     ['deploy staging sha-abcdef1'],
-    ['deploy prod sha-abcdef1 extra'],
-    ['deploy prod sha-abcdef1; reboot'],
-    ['deploy prod $(id)'],
-    ['preview up 12 ../../etc'],
-    ['preview up 12a pr-12-abcdef1'],
-    ['rollback prod'],
+    ['deploy test sha-abcdef1 extra'],
+    ['deploy test sha-abcdef1; reboot'],
+    ['deploy test $(id)'],
+    ['deploy test sha-abcdef1 abc def ghi'],
+    ['rollback test'],
     ['scp -t /etc'],
-  ])('weigert: %j', async (cmd) => {
+  ])('weigert (rol test): %j', async (cmd) => {
     const t = await setup();
-    const r = await t.ssh(cmd);
+    const r = await t.ssh('test', cmd);
     expect(r.code).toBe(1);
     expect(t.called()).toBe('');
     expect(t.docker.calls()).toEqual([]);
   });
 
-  it('preview up en down; down gebruikt de bundel van de versie van die preview', async () => {
+  it('preview up: preview.sh uit de bundel van test (main), nooit een script uit het PR-image; van de PR alleen de images', async () => {
     const t = await setup();
-    expect((await t.ssh('preview up 12 pr-12-abcdef123456')).code).toBe(0);
-    mkdirSync(join(t.env.HZ_ROOT, 'previews/pr-12'), { recursive: true });
-    writeFileSync(join(t.env.HZ_ROOT, 'previews/pr-12/tag'), 'pr-12-abcdef123456\n');
-    const r = await t.ssh('preview down 12');
+    // Zonder uitrol op test is er geen vertrouwde preview.sh: weigeren.
+    let r = await t.ssh('preview', 'preview up 12 pr-12-abcdef123456');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('nog geen uitrol op test');
+    t.testBundle();
+    r = await t.ssh('preview', 'preview up 12 pr-12-abcdef123456', 'ghs_token\n');
     expect(r.code, r.all).toBe(0);
-    expect(
-      t
-        .called()
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => l.replace(/ cfg=.*/, '')),
-    ).toEqual(['preview.sh up 12 pr-12-abcdef123456', 'preview.sh down 12']);
+    expect(t.lines()).toEqual(['TEST preview.sh up 12 pr-12-abcdef123456']);
+    expect(t.called()).not.toContain('IMAGE');
+    // Geen bundel uit het PR-image: geen create/cp, geen releases/pr-*.
+    expect(t.docker.calls().filter((c) => /^(create|cp|pull) /.test(c))).toEqual([]);
+    expect(readdirSync(join(t.hzRoot, 'releases'))).toEqual(['sha-0123456']);
+    expect(t.docker.calls().some((c) => c.startsWith('login ghcr.io'))).toBe(true);
+    // Het nummer in de tag moet bij de PR horen.
+    expect((await t.ssh('preview', 'preview up 12 pr-13-abcdef123456')).code).toBe(1);
+  });
+
+  it('preview down: ook met de bundel van test', async () => {
+    const t = await setup();
+    t.testBundle();
+    mkdirSync(join(t.hzRoot, 'previews/pr-12'), { recursive: true });
+    writeFileSync(join(t.hzRoot, 'previews/pr-12/tag'), 'pr-12-abcdef123456\n');
+    const r = await t.ssh('preview', 'preview down 12');
+    expect(r.code, r.all).toBe(0);
+    expect(t.lines()).toEqual(['TEST preview.sh down 12']);
+  });
+
+  it('een symlink van test die buiten releases/ wijst wordt niet gevolgd', async () => {
+    const t = await setup();
+    const evil = join(t.root, 'elders/sha-0123456');
+    mkdirSync(join(evil, 'infra/scripts'), { recursive: true });
+    writeFileSync(join(evil, '.compleet'), '');
+    writeFileSync(join(evil, 'infra/scripts/preview.sh'), `#!/usr/bin/env bash\necho EVIL >> "${t.root}/called"\n`, {
+      mode: 0o755,
+    });
+    mkdirSync(join(t.hzRoot, 'env/test'), { recursive: true });
+    mkdirSync(join(t.hzRoot, 'releases'), { recursive: true });
+    execFileSync('ln', ['-sfn', evil, join(t.hzRoot, 'env/test/bundle')]);
+    expect((await t.ssh('preview', 'preview up 12 pr-12-abcdef1')).code).toBe(1);
+    expect(t.called()).toBe('');
   });
 
   it('voorcheck: zonder root, alleen de vaste kopie van server-check.sh met --voorcheck', async () => {
     const t = await setup();
-    mkdirSync(join(t.env.HZ_ROOT, 'bin'), { recursive: true });
+    mkdirSync(join(t.hzRoot, 'bin'), { recursive: true });
     writeFileSync(
-      join(t.env.HZ_ROOT, 'bin/hz-server-check'),
+      join(t.hzRoot, 'bin/hz-server-check'),
       `#!/usr/bin/env bash\necho "check $*" >> "${t.root}/called"\n`,
       {
         mode: 0o755,
       },
     );
-    expect((await t.ssh('voorcheck')).code).toBe(0);
+    expect((await t.ssh('test', 'voorcheck')).code).toBe(0);
     expect(t.called()).toBe('check --voorcheck --markdown\n');
-    expect((await t.ssh('voorcheck extra')).code).toBe(1);
+    expect((await t.ssh('test', 'voorcheck extra')).code).toBe(1);
   });
 
-  it('rollback naar de vorige versie die nog op de server staat', async () => {
+  it('rollback naar de vorige versie die nog op de server staat (zelfde images)', async () => {
     const t = await setup();
-    expect((await t.ssh('deploy prod v1.0.0')).code).toBe(0);
-    mkdirSync(join(t.env.HZ_ROOT, 'env/prod'), { recursive: true });
-    writeFileSync(join(t.env.HZ_ROOT, 'env/prod/previous'), 'v1.0.0\n');
-    const r = await t.ssh('rollback prod');
+    expect((await t.ssh('test', `deploy test ${A} ${digests(A)}`)).code).toBe(0);
+    expect((await t.ssh('prod', `deploy prod v1.0.0 ${A}`)).code).toBe(0);
+    mkdirSync(join(t.hzRoot, 'env/prod'), { recursive: true });
+    writeFileSync(join(t.hzRoot, 'env/prod/previous'), 'v1.0.0\n');
+    const r = await t.ssh('prod', 'rollback prod');
     expect(r.code, r.all).toBe(0);
-    expect(t.called().trim().split('\n').pop()).toMatch(/^deploy\.sh prod v1\.0\.0 cfg=$/);
+    expect(t.called().trim().split('\n').pop()).toMatch(/^IMAGE deploy\.sh prod v1\.0\.0 cfg=$/);
+    // Een vorige versie die geen release is (bv. een PR-tag in het bestand) wordt niet teruggezet.
+    writeFileSync(join(t.hzRoot, 'env/prod/previous'), 'pr-1-abcdef1\n');
+    expect((await t.ssh('prod', 'rollback prod')).code).toBe(1);
   });
 });
 
@@ -752,6 +964,13 @@ describe('servercontrole en voorcheck op de bestaande server (server-check.sh, H
       /andere thuismap \(\/home\/hz-workspace\)/,
     ],
     [
+      'gebruiker hz-preview bestaat al met een andere thuismap',
+      { files: { 'etc/passwd': 'root:x:0:0::/root:/bin/bash\nhz-preview:x:997:997::/home/hz-preview:/bin/sh\n' } },
+      {},
+      'voorcheck gebruiker',
+      /hz-preview bestaat al met een andere thuismap \(\/home\/hz-preview\)/,
+    ],
+    [
       'systemd-unit met onze naam van iets anders',
       { files: { 'etc/systemd/system/hz-workspace-backup.service': '[Unit]\nDescription=iets anders\n' } },
       {},
@@ -909,7 +1128,7 @@ describe('servercontrole en voorcheck op de bestaande server (server-check.sh, H
 });
 
 describe('server klaarzetten (server-setup.sh, HZW-002)', () => {
-  async function setup(o: ServerOpts = {}, args: string[] = []) {
+  async function setup(o: ServerOpts = {}, args: string[] = [], noKeys = false) {
     const srv = otherProjectsServer(o);
     const docker = fakeDocker(join(srv.data, 'bin'));
     const log = join(srv.data, 'cmds.log');
@@ -918,15 +1137,22 @@ describe('server klaarzetten (server-setup.sh, HZW-002)', () => {
       writeFileSync(f, `#!/usr/bin/env bash\necho "${name} $*" >> "${log}"\n${body}\n`, { mode: 0o755 });
       return f;
     };
-    const key = join(srv.data, 'deploy.pub');
-    writeFileSync(key, `${sshPublicKey('ci')}\n`);
+    // Drie CI-sleutels, elk met één doel.
+    const keys = Object.fromEntries(
+      ['test', 'prod', 'preview'].map((r) => {
+        const f = join(srv.data, `ci-${r}.pub`);
+        writeFileSync(f, `${sshPublicKey(`ci-${r}`)}\n`);
+        return [r, f];
+      }),
+    ) as Record<'test' | 'prod' | 'preview', string>;
+    const key = keys.prod;
     const env = {
       ...srv.env,
       HZ_DOCKER: docker.bin,
       HZ_SETUP_PREFIX: srv.root,
       HZ_USERADD: fake(
         'useradd',
-        `echo "hz-workspace:x:998:998::/srv/hz-workspace:/bin/bash" >> "${srv.root}/etc/passwd"`,
+        `u="\${@: -1}"; h=""; while (($#)); do [[ "$1" == --home-dir ]] && h="$2"; shift; done; echo "$u:x:998:998::$h:/bin/bash" >> "${srv.root}/etc/passwd"`,
       ),
       HZ_SYSTEMCTL: fake('systemctl'),
       HZ_SYSTEMD_TMPFILES: fake('systemd-tmpfiles'),
@@ -950,12 +1176,12 @@ describe('server klaarzetten (server-setup.sh, HZW-002)', () => {
       'caddy',
       '--proxy-config',
       '/etc/caddy',
-      '--deploy-key',
-      key,
     ];
-    const r = await run(script('server-setup.sh'), [...args0, ...args], env);
+    const keyArgs = ['--deploy-key-test', keys.test, '--deploy-key-prod', keys.prod, '--preview-key', keys.preview];
+    const r = await run(script('server-setup.sh'), [...args0, ...(noKeys ? [] : keyArgs), ...args], env);
     const cmds = existsSync(log) ? readFileSync(log, 'utf8') : '';
-    return { ...r, srv, docker, cmds, key, p: (rel: string) => join(srv.root, rel) };
+    const again = (more: string[]) => run(script('server-setup.sh'), [...args0, ...more], env);
+    return { ...r, srv, docker, cmds, key, keys, again, p: (rel: string) => join(srv.root, rel) };
   }
 
   it('droog (--dry-run): voorcheck groen, toont de stappen en wijzigt niets', async () => {
@@ -977,8 +1203,12 @@ describe('server klaarzetten (server-setup.sh, HZW-002)', () => {
     const r = await setup();
     expect(r.code, r.all).toBe(0);
     expect(r.cmds).toMatch(
-      /^useradd --system --home-dir \/srv\/hz-workspace --no-create-home --shell \/bin\/bash --groups docker /m,
+      /^useradd --system --home-dir \/srv\/hz-workspace --no-create-home --shell \/bin\/bash --groups docker .* hz-workspace$/m,
     );
+    // hz-preview: alleen docker, niet de groep hz-workspace (die de age-sleutel mag lezen).
+    const pv = r.cmds.split('\n').find((l) => l.startsWith('useradd') && l.endsWith(' hz-preview'))!;
+    expect(pv).toMatch(/--home-dir \/srv\/hz-workspace\/previews .*--groups docker /);
+    expect(pv).not.toMatch(/--groups \S*hz-workspace/);
     expect(existsSync(r.p('srv/hz-workspace/.hz-workspace'))).toBe(true);
     for (const [bin, src] of <[string, string][]>[
       ['hz-ssh-dispatch', 'hz-ssh-dispatch.sh'],
@@ -988,7 +1218,13 @@ describe('server klaarzetten (server-setup.sh, HZW-002)', () => {
     ])
       expect(readFileSync(r.p(`srv/hz-workspace/bin/${bin}`), 'utf8'), bin).toBe(readFileSync(script(src), 'utf8'));
     expect(mode(r.p('srv/hz-workspace/bin/hz-ssh-dispatch'))).toBe('755');
-    expect(mode(r.p('srv/hz-workspace/etc'))).toBe('750');
+    expect(mode(r.p('srv/hz-workspace/etc'))).toBe('751');
+    expect(mode(r.p('srv/hz-workspace/etc/hz.env'))).toBe('644');
+    // De age-sleutel: alleen root en de groep hz-workspace (niet hz-preview).
+    expect(mode(r.p('srv/hz-workspace/etc/age.key'))).toBe('640');
+    expect(r.cmds).toContain(`chown root:hz-workspace ${r.p('srv/hz-workspace/etc/age.key')}`);
+    expect(r.cmds).toContain(`chown hz-preview:hz-preview ${r.p('srv/hz-workspace/previews')}`);
+    for (const d of ['releases', 'env', 'images']) expect(mode(r.p(`srv/hz-workspace/${d}`)), d).toBe('755');
     const env = readFileSync(r.p('srv/hz-workspace/etc/hz.env'), 'utf8');
     for (const l of [
       'HZ_DOMAIN=homezero.verveen.me',
@@ -998,11 +1234,19 @@ describe('server klaarzetten (server-setup.sh, HZW-002)', () => {
       'HZ_PG_EXEC=docker exec -i hz-workspace-prod-db-1',
     ])
       expect(env).toContain(`${l}\n`);
+    // Per sleutel een vaste rol; de preview-sleutel bij een andere gebruiker.
+    const pub = (k: string) => readFileSync(k, 'utf8').trim();
     const ak = readFileSync(r.p('srv/hz-workspace/.ssh/authorized_keys'), 'utf8');
-    expect(ak).toContain(
-      `restrict,command="/srv/hz-workspace/bin/hz-ssh-dispatch" ${readFileSync(r.key, 'utf8').trim()}`,
-    );
+    expect(ak.split('\n').filter((l) => l.startsWith('restrict'))).toEqual([
+      `restrict,command="/srv/hz-workspace/bin/hz-ssh-dispatch test" ${pub(r.keys.test)}`,
+      `restrict,command="/srv/hz-workspace/bin/hz-ssh-dispatch prod" ${pub(r.keys.prod)}`,
+    ]);
     expect(mode(r.p('srv/hz-workspace/.ssh/authorized_keys'))).toBe('600');
+    const pk = readFileSync(r.p('srv/hz-workspace/previews/.ssh/authorized_keys'), 'utf8');
+    expect(pk.split('\n').filter((l) => l.startsWith('restrict'))).toEqual([
+      `restrict,command="/srv/hz-workspace/bin/hz-ssh-dispatch preview" ${pub(r.keys.preview)}`,
+    ]);
+    expect(mode(r.p('srv/hz-workspace/previews/.ssh/authorized_keys'))).toBe('600');
     expect(readFileSync(r.p('etc/sudoers.d/hz-workspace'), 'utf8')).toContain(
       'hz-workspace ALL=(root) NOPASSWD: /srv/hz-workspace/bin/hz-server-check --markdown',
     );
@@ -1046,6 +1290,35 @@ describe('server klaarzetten (server-setup.sh, HZW-002)', () => {
     expect((await setup({}, ['--proxy', 'nginx'])).code).toBe(1);
     expect((await setup({}, ['--domain', 'niet een domein'])).code).toBe(1);
   });
+
+  it('CI-sleutels: minstens één, nooit dezelfde voor twee rollen, de oude --deploy-key bestaat niet meer', async () => {
+    const none = await setup({}, [], true);
+    expect(none.code).toBe(1);
+    expect(none.err).toContain('geen CI-sleutel');
+    const same = await setup({}, [], true);
+    const r1 = await same.again(['--deploy-key-prod', same.keys.prod, '--preview-key', same.keys.prod]);
+    expect(r1.code).toBe(1);
+    expect(r1.err).toContain('dezelfde sleutel voor twee rollen');
+    const r2 = await same.again(['--deploy-key', same.keys.prod]);
+    expect(r2.code).toBe(1);
+    expect(r2.err).toContain('vervangen door --deploy-key-test, --deploy-key-prod en --preview-key');
+    expect(existsSync(same.p('srv/hz-workspace'))).toBe(false);
+  });
+
+  it('opnieuw draaien met alleen een nieuwe preview-sleutel laat de sleutels van test en productie staan', async () => {
+    const r = await setup();
+    expect(r.code, r.all).toBe(0);
+    const nieuw = join(r.srv.data, 'ci-preview-2.pub');
+    writeFileSync(nieuw, `${sshPublicKey('ci-preview-2')}\n`);
+    const r2 = await r.again(['--preview-key', nieuw]);
+    expect(r2.code, r2.all).toBe(0);
+    const ak = readFileSync(r.p('srv/hz-workspace/.ssh/authorized_keys'), 'utf8');
+    expect(ak).toContain(`hz-ssh-dispatch test" ${readFileSync(r.keys.test, 'utf8').trim()}`);
+    expect(ak).toContain(`hz-ssh-dispatch prod" ${readFileSync(r.keys.prod, 'utf8').trim()}`);
+    const pk = readFileSync(r.p('srv/hz-workspace/previews/.ssh/authorized_keys'), 'utf8');
+    expect(pk).toContain(readFileSync(nieuw, 'utf8').trim());
+    expect(pk).not.toContain(readFileSync(r.keys.preview, 'utf8').trim());
+  });
 });
 
 describe('SSH vanuit CI alleen over het tailnet (ci-ssh.sh, HZW-004)', () => {
@@ -1058,14 +1331,16 @@ describe('SSH vanuit CI alleen over het tailnet (ci-ssh.sh, HZW-004)', () => {
     writeFileSync(join(d, 'resolve'), `#!/usr/bin/env bash\nfor a in ${resolved}; do echo "$a STREAM $1"; done\n`, {
       mode: 0o755,
     });
+    let user: Record<string, string> = {};
     const go = (host: string, ...cmd: string[]) =>
       run(
         script('ci-ssh.sh'),
         [host, ...cmd],
-        { HZ_SSH: join(d, 'ssh'), HZ_RESOLVE: join(d, 'resolve') },
+        { HZ_SSH: join(d, 'ssh'), HZ_RESOLVE: join(d, 'resolve'), ...user },
         'ghs_token\n',
       );
-    return { go, log, d };
+    const as = (u: string) => (user = { HZ_SSH_USER: u });
+    return { go, as, log, d };
   }
 
   it('tailnet-naam (100.x): verbindt met dat adres, vaste host-sleutel, gebruiker hz-workspace, token via stdin', async () => {
@@ -1090,6 +1365,19 @@ describe('SSH vanuit CI alleen over het tailnet (ci-ssh.sh, HZW-004)', () => {
     const r = await t.go('server.example.nl', 'deploy', 'test', 'sha-abc1234');
     expect(r.code).toBe(1);
     expect(existsSync(t.log)).toBe(false);
+  });
+
+  it('previews als hz-preview (eigen sleutel en gebruiker); andere gebruikers geweigerd', async () => {
+    const t = ci('100.101.102.103');
+    t.as('hz-preview');
+    expect((await t.go('hetzner', 'preview', 'up', '12', 'pr-12-abcdef1')).code).toBe(0);
+    expect(readFileSync(t.log, 'utf8').trim().endsWith('hz-preview@100.101.102.103 preview up 12 pr-12-abcdef1')).toBe(
+      true,
+    );
+    t.as('root');
+    const r = await t.go('hetzner', 'status');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('ongeldige gebruiker');
   });
 
   it('tailnet IPv6 (fd7a:115c:a1e0::/48) mag', async () => {

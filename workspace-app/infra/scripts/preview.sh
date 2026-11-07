@@ -9,6 +9,10 @@
 #
 # Previews hebben geen echte secrets: wachtwoorden en HZ_TOKEN_KEY worden per preview willekeurig gemaakt, er is
 # geen koppeling met Google/Slack en de app draait op fixtures (nooit echte partnerdata).
+#
+# Wie draait dit: op de server de gebruiker hz-preview (alleen lid van docker, niet van hz-workspace, dus geen
+# toegang tot etc/age.key), via hz-ssh-dispatch met de preview-sleutel. Dit script komt dan uit de bundel die op
+# test draait (code van main), nooit uit het image van de pull request: van de PR worden alleen de images gestart.
 set -euo pipefail
 HZ_SCRIPT=preview
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +57,7 @@ case "$cmd" in
     nr="${2:-}"
     tag="${3:-}"
     valid_pr "$nr" || die "ongeldig PR-nummer"
-    valid_tag "$tag" || die "ongeldige tag"
+    valid_tag preview "$tag" "$nr" || die "ongeldige tag (verwacht pr-$nr-<commit>)"
     dir="$previews/pr-$nr"
     exec 9>"$previews/.lock"
     flock -w 300 9 || die "wacht te lang op een andere preview-actie"
@@ -75,8 +79,12 @@ case "$cmd" in
         printf 'HZ_PG_APP_PASSWORD=%s\n' "$(openssl rand -hex 24)"
         printf 'HZ_PG_BACKUP_PASSWORD=%s\n' "$(openssl rand -hex 24)"
       } >"$dir/.env" && printf 'HZ_TOKEN_KEY=%s\nHZ_AUTH_SECRET=%s\n' "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" >"$dir/app.env")
+      # De map mag gelezen worden (tag, voor status en het opruimen van images), de bestanden met wachtwoorden niet.
+      chmod 0755 "$dir"
     fi
     host="pr-$nr.$HZ_TEST_DOMAIN"
+    # Previews per tag: de images van deze pull request (pr-<nr>-<commit>), alleen als containers.
+    export HZ_IMAGE_API="$HZ_REGISTRY/hz-api:$tag" HZ_IMAGE_WORKER="$HZ_REGISTRY/hz-worker:$tag" HZ_IMAGE_WEB="$HZ_REGISTRY/hz-web:$tag"
     export HZ_INSTANCE="hz-workspace-pr-$nr" HZ_TAG="$tag" HZ_APP_ENV_FILE="$dir/app.env" HZ_ENVIRONMENT=preview \
       HZ_PUBLIC_URL="https://$host" HZ_NODE_ENV=development HZ_DEV_LOGIN=1 HZ_FIXTURE_SET=demo \
       HZ_MEM_DB="${HZ_PREVIEW_MEM_DB:-384m}" HZ_MEM_API="${HZ_PREVIEW_MEM_API:-256m}" HZ_MEM_WORKER="${HZ_PREVIEW_MEM_WORKER:-256m}" \

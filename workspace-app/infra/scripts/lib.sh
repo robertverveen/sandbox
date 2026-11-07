@@ -83,8 +83,36 @@ ping_url() {
 }
 
 valid_env() { [[ "$1" == prod || "$1" == test ]]; }
-valid_tag() { [[ "$1" =~ ^(sha-[0-9a-f]{7,40}|v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?|pr-[0-9]{1,6}-[0-9a-f]{7,40})$ ]]; }
 valid_pr() { [[ "$1" =~ ^[0-9]{1,6}$ ]]; }
+# Welke tag bij welke omgeving hoort (HZW-004/005). Productie draait alleen releases (vX.Y.Z), test alleen builds van
+# main (sha-<commit>), een preview alleen de images van zijn eigen pull request (pr-<nr>-<commit>). Een PR-tag kan
+# zo nooit naar test of productie, en een releasetag nooit naar een preview.
+#   valid_tag prod v1.2.3 | valid_tag test sha-abc1234 | valid_tag preview pr-12-abc1234 [12]
+valid_tag() {
+  case "$1" in
+    prod) [[ "${2:-}" =~ ^v[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6}(-[0-9a-z.]{1,20})?$ ]] ;;
+    test) [[ "${2:-}" =~ ^sha-[0-9a-f]{7,40}$ ]] ;;
+    preview) [[ "${2:-}" =~ ^pr-([0-9]{1,6})-[0-9a-f]{7,40}$ && (-z "${3:-}" || "${BASH_REMATCH[1]}" == "$3") ]] ;;
+    *) return 1 ;;
+  esac
+}
+# Sha256-digest van een image (64 hex, zonder "sha256:").
+valid_digest() { [[ "$1" =~ ^[0-9a-f]{64}$ ]]; }
+
+# Vastgelegde images van een uitgerolde versie: $HZ_ROOT/images/<tag>.env met HZ_IMAGE_API, HZ_IMAGE_WORKER en
+# HZ_IMAGE_WEB als <registry>/hz-<naam>@sha256:<digest>. hz-ssh-dispatch schrijft dit bestand bij de eerste uitrol
+# van een build van main (met de digests uit de build-job van die run); daarna draaien test, productie en een
+# rollback precies die images, wat er later ook onder dezelfde tag in de registry komt te staan.
+load_images() {
+  local tag="$1" f="$HZ_ROOT/images/$1.env" n v
+  [[ -f "$f" ]] || die "geen vastgelegde images voor $tag ($f); rol uit via de workflow (hz-ssh-dispatch)"
+  load_env "$f"
+  for n in api worker web; do
+    v="HZ_IMAGE_${n^^}"
+    [[ "${!v:-}" =~ ^${HZ_REGISTRY:?}/hz-$n@sha256:[0-9a-f]{64}$ ]] || die "ongeldig of ontbrekend $v in $f"
+  done
+  export HZ_IMAGE_API HZ_IMAGE_WORKER HZ_IMAGE_WEB
+}
 
 # Het gedeelde netwerk van de workspace (router <-> web-containers van prod, test en previews), met ons label.
 ensure_net() {

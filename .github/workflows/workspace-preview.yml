@@ -3,6 +3,11 @@
 #   PR gesloten of gemerged  -> preview weg (containers, database, certificaat-aanmelding) en de PR-images weg
 # PR's uit een fork krijgen geen preview (geen secrets naar code van buiten).
 # De runner komt als tijdelijke Tailscale-node (tag:ci) bij de server; SSH alleen op het tailnet-adres (ci-ssh.sh).
+# Secrets alleen in de environment 'preview': HZ_PREVIEW_SSH_KEY, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET. De preview-
+# sleutel hoort op de server bij de gebruiker hz-preview en mag alleen "preview up/down" (hz-ssh-dispatch preview):
+# geen uitrol naar test of productie, geen toegang tot de age-sleutel. De server start preview.sh uit de bundel van
+# test (code van main) en van deze PR alleen de images als containers; een PR die deze workflow aanpast kan met
+# deze sleutel dus niets anders dan een preview starten of opruimen.
 name: workspace-preview
 on:
   pull_request:
@@ -84,11 +89,12 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-      - name: SSH-sleutel van de uitrol (op de server alleen hz-ssh-dispatch)
+      - name: SSH-sleutel voor previews (op de server alleen hz-ssh-dispatch preview, gebruiker hz-preview)
         env:
-          KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
+          KEY: ${{ secrets.HZ_PREVIEW_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
         run: |
+          [[ -n "$KEY" ]] || { echo "::error::HZ_PREVIEW_SSH_KEY ontbreekt in de environment preview"; exit 1; }
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
@@ -97,6 +103,7 @@ jobs:
           HOST: ${{ vars.HZ_DEPLOY_HOST }}
           TAG: ${{ needs.meta.outputs.tag }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HZ_SSH_USER: hz-preview
         run: printf '%s\n' "$GH_TOKEN" | bash workspace-app/infra/scripts/ci-ssh.sh "$HOST" preview up "$PR" "$TAG"
       - name: Wachtwoord gevraagd en certificaat geldig
         env:
@@ -125,6 +132,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # Zelfde environment als 'up': de secrets staan alleen daar.
+    environment:
+      name: preview
     steps:
       - uses: actions/checkout@v4
         with:
@@ -135,17 +145,19 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-      - name: SSH-sleutel van de uitrol (op de server alleen hz-ssh-dispatch)
+      - name: SSH-sleutel voor previews (op de server alleen hz-ssh-dispatch preview, gebruiker hz-preview)
         env:
-          KEY: ${{ secrets.HZ_DEPLOY_SSH_KEY }}
+          KEY: ${{ secrets.HZ_PREVIEW_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.HZ_DEPLOY_KNOWN_HOSTS }}
         run: |
+          [[ -n "$KEY" ]] || { echo "::error::HZ_PREVIEW_SSH_KEY ontbreekt in de environment preview"; exit 1; }
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/hz_deploy && chmod 600 ~/.ssh/hz_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
       - name: Preview opruimen via het tailnet
         env:
           HOST: ${{ vars.HZ_DEPLOY_HOST }}
+          HZ_SSH_USER: hz-preview
         run: bash workspace-app/infra/scripts/ci-ssh.sh "$HOST" preview down "$PR" </dev/null
       - name: Preview is weg
         env:

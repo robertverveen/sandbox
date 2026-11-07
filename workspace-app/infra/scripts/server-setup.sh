@@ -6,15 +6,20 @@
 #   sudo infra/scripts/server-setup.sh --domain homezero.verveen.me --acme-email robert@homezero.nl \
 #     --registry ghcr.io/homezerotech --proxy caddy --proxy-network <netwerk van de proxy> \
 #     [--proxy-config /etc/caddy] [--router-port 18780] [--test-domain ...] [--errors-domain ...] \
-#     --deploy-key hz_deploy.pub [--dry-run]
+#     --deploy-key-test hz_ci_test.pub --deploy-key-prod hz_ci_prod.pub --preview-key hz_ci_preview.pub [--dry-run]
+#
+# Drie CI-sleutels, elk met één doel (HZW-004/005): test (environment 'test'), prod (environment 'production', na
+# goedkeuring) en preview (environment 'preview', voor pull requests). Minstens één is nodig; ze moeten verschillen.
 #
 # Stappen (met --dry-run alleen tonen, niets wijzigen):
 #   0. voorcheck (server-check.sh --voorcheck): rood = stoppen, er verandert niets
-#   1. gebruiker hz-workspace (systeemgebruiker, lid van docker, geen wachtwoord)
-#   2. map /srv/hz-workspace (root, met merkbestand .hz-workspace) met etc/, bin/ (root), releases/, env/, previews/,
-#      log/, proxy/, router/, edge/ (van hz-workspace)
+#   1. gebruikers hz-workspace (uitrol; lid van docker, leest de age-sleutel) en hz-preview (previews; lid van docker,
+#      niet van hz-workspace, dus geen toegang tot etc/age.key). Systeemgebruikers zonder wachtwoord.
+#   2. map /srv/hz-workspace (root, met merkbestand .hz-workspace) met etc/, bin/ (root), releases/, env/, images/,
+#      log/, proxy/, router/, edge/ (van hz-workspace) en previews/ (van hz-preview, ook zijn thuismap)
 #   3. vaste scripts in bin/ (hz-ssh-dispatch, hz-run, hz-server-check), hz.env, sudo-regel voor de servercontrole
-#   4. SSH-sleutel van GitHub Actions bij hz-workspace, alleen voor hz-ssh-dispatch (restrict + forced command);
+#   4. CI-sleutels: test en prod bij hz-workspace, preview bij hz-preview; elk alleen hz-ssh-dispatch met een vaste
+#      rol (restrict + forced command "hz-ssh-dispatch test|prod|preview");
 #      sshd luistert alleen op het tailnet (of ufw laat 22 alleen toe op tailscale0): CI komt via een tijdelijke
 #      Tailscale-node binnen, nooit via publieke SSH
 #   5. systemd-units hz-workspace-backup/-heartbeat/-hersteltest en tmpfiles voor /run/hz-workspace
@@ -37,7 +42,9 @@ test_domain=""
 errors_domain=""
 acme=""
 registry=""
-deploy_key=""
+key_test=""
+key_prod=""
+key_preview=""
 proxy=""
 proxy_network=""
 proxy_config=""
@@ -49,7 +56,10 @@ while (($#)); do
     --errors-domain) errors_domain="${2:?}"; shift 2 ;;
     --acme-email) acme="${2:?}"; shift 2 ;;
     --registry) registry="${2:?}"; shift 2 ;;
-    --deploy-key) deploy_key="${2:?}"; shift 2 ;;
+    --deploy-key-test) key_test="${2:?}"; shift 2 ;;
+    --deploy-key-prod) key_prod="${2:?}"; shift 2 ;;
+    --preview-key) key_preview="${2:?}"; shift 2 ;;
+    --deploy-key) die "--deploy-key is vervangen door --deploy-key-test, --deploy-key-prod en --preview-key (een sleutel per doel)" ;;
     --proxy) proxy="${2:?}"; shift 2 ;;
     --proxy-network) proxy_network="${2:?}"; shift 2 ;;
     --proxy-config) proxy_config="${2:?}"; shift 2 ;;
@@ -65,9 +75,24 @@ errors_domain="${errors_domain:-fouten.$domain}"
 for d in "$domain" "$test_domain" "$errors_domain"; do [[ "$d" =~ $domain_re ]] || die "ongeldig domein: ${d:-<leeg>}"; done
 [[ "$acme" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[a-z]{2,}$ ]] || die "ongeldig e-mailadres voor ACME"
 [[ "$registry" =~ ^[a-z0-9.-]+(/[a-z0-9._-]+)+$ ]] || die "ongeldige registry (bv. ghcr.io/homezerotech)"
-[[ -f "$deploy_key" ]] || die "--deploy-key ontbreekt (publieke sleutel van GitHub Actions)"
-key="$(head -n1 "$deploy_key")"
-[[ "$key" =~ ^(ssh-ed25519|ecdsa-sha2-nistp256)\ [A-Za-z0-9+/=]+(\ [^[:cntrl:]]*)?$ ]] || die "geen geldige publieke SSH-sleutel in $deploy_key"
+[[ -n "$key_test$key_prod$key_preview" ]] || die "geen CI-sleutel: --deploy-key-test, --deploy-key-prod en/of --preview-key (publieke sleutels)"
+# Lees een publieke sleutel; print "type base64" (zonder commentaar) of stop.
+pubkey() {
+  local f="$1" k
+  [[ -f "$f" ]] || die "sleutelbestand niet gevonden: $f"
+  k="$(head -n1 "$f")"
+  [[ "$k" =~ ^(ssh-ed25519|ecdsa-sha2-nistp256)\ [A-Za-z0-9+/=]+(\ [^[:cntrl:]]*)?$ ]] || die "geen geldige publieke SSH-sleutel in $f"
+  printf '%s\n' "$k"
+}
+declare -A ci_key=()
+for r in test prod preview; do
+  v="key_$r"
+  [[ -n "${!v}" ]] && ci_key[$r]="$(pubkey "${!v}")"
+done
+# Eén sleutel per doel: dezelfde sleutel voor twee rollen zou de scheiding (preview mag niet naar productie) opheffen.
+if [[ "$(for r in "${!ci_key[@]}"; do cut -d' ' -f1,2 <<<"${ci_key[$r]}"; done | sort | uniq -d)" != "" ]]; then
+  die "dezelfde sleutel voor twee rollen; maak per doel een eigen sleutel (RUNBOOK.md §2 stap 2)"
+fi
 export HZ_DOMAIN="$domain" HZ_TEST_DOMAIN="$test_domain" HZ_ERRORS_DOMAIN="$errors_domain" HZ_PROXY_KIND="$proxy" \
   HZ_PROXY_NETWORK="$proxy_network" HZ_ROUTER_PORT="$router_port"
 [[ -n "$proxy_config" ]] && export HZ_PROXY_CONFIG="$proxy_config"
@@ -75,6 +100,7 @@ valid_proxy || die "--proxy caddy|traefik|eigen; bij caddy --proxy-network of --
 
 home=/srv/hz-workspace
 user=hz-workspace
+puser=hz-preview
 
 # 0. Voorcheck: zonder groen geen enkele wijziging.
 log "voorcheck"
@@ -115,21 +141,34 @@ not_foreign() {
   [[ ! -e "$path" ]] || head -n1 "$path" | grep -q 'hz-workspace' || die "$1 bestaat al en is niet van de workspace; niets overschreven"
 }
 
-# 1. Gebruiker
+# 1. Gebruikers. hz-preview is bewust geen lid van de groep hz-workspace: previews draaien code van pull requests
+# (als containers) en mogen niet bij etc/age.key, waarmee de secrets van productie open gaan.
 if grep -Eq "^$user:" "$P/etc/passwd" 2>/dev/null; then
   log "gebruiker $user bestaat al"
 else
   run "${HZ_USERADD:-useradd}" --system --home-dir "$home" --no-create-home --shell /bin/bash --groups docker \
     --comment "HomeZero Workspace (hz-workspace)" "$user"
 fi
+if grep -Eq "^$puser:" "$P/etc/passwd" 2>/dev/null; then
+  log "gebruiker $puser bestaat al"
+else
+  run "${HZ_USERADD:-useradd}" --system --home-dir "$home/previews" --no-create-home --shell /bin/bash --groups docker \
+    --comment "HomeZero Workspace previews (hz-preview)" "$puser"
+fi
 
 # 2. Mappen: de map zelf en bin/ zijn van root (de CI-sleutel en de sudo-regel wijzen erheen), de rest van hz-workspace.
 mkd 0755 root:root "$home" "$home/bin"
-mkd 0750 "root:$user" "$home/etc"
-mkd 0750 "$user:$user" "$home/releases" "$home/env" "$home/previews" "$home/log"
+# etc: hz-preview mag erdoor (hz.env is niet geheim), maar de map niet lezen; age.key is alleen voor hz-workspace.
+mkd 0751 "root:$user" "$home/etc"
+mkd 0750 "$user:$user" "$home/log"
+# releases/env/images: leesbaar voor hz-preview, dat preview.sh uit de bundel van test start (geen geheimen: de
+# secrets in een bundel zijn met age versleuteld).
+mkd 0755 "$user:$user" "$home/releases" "$home/env" "$home/images"
 # Leesbaar voor de containers van de router, de eigen edge en een bestaande proxy (alleen configuratie, geen geheimen).
-mkd 0755 "$user:$user" "$home/router" "$home/proxy" "$home/edge" "$home/previews/allow"
+mkd 0755 "$user:$user" "$home/router" "$home/proxy" "$home/edge"
+mkd 0755 "$puser:$puser" "$home/previews" "$home/previews/allow"
 mkd 0700 "$user:$user" "$home/.ssh"
+mkd 0700 "$puser:$puser" "$home/previews/.ssh"
 printf '# hz-workspace: van de HomeZero Workspace (server-setup.sh). Niet weghalen: de voorcheck herkent de map hieraan.\n' |
   put "$home/.hz-workspace" 0644 root:root
 
@@ -150,19 +189,32 @@ done
   printf '# Back-up en herstel via de db-container (de database heeft geen open poort).\n'
   printf 'HZ_BACKUP_PREFIX=hz-workspace-prod\nHZ_PG_EXEC=docker exec -i hz-workspace-prod-db-1\n'
   printf 'HZ_RESTORE_ADMIN_DSN=postgresql:///postgres?user=postgres\n'
-} | put "$home/etc/hz.env" 0640 "root:$user"
+} | put "$home/etc/hz.env" 0644 root:root
 not_foreign /etc/sudoers.d/hz-workspace
 printf '# hz-workspace: servercontrole vanuit GitHub Actions (sshd -T en ufw vragen root); verder niets.\n%s ALL=(root) NOPASSWD: %s/bin/hz-server-check --markdown\n' "$user" "$home" |
   put /etc/sudoers.d/hz-workspace 0440 root:root
 ((dry)) || "${HZ_VISUDO:-visudo}" -cf "$P/etc/sudoers.d/hz-workspace" >/dev/null || die "sudo-regel ongeldig"
 
-# 4. SSH-sleutel van GitHub Actions: alleen hz-ssh-dispatch, geen shell, geen doorsturen.
-printf '# hz-workspace: GitHub Actions via een tijdelijke Tailscale-node (tag:ci); alleen hz-ssh-dispatch.\nrestrict,command="%s/bin/hz-ssh-dispatch" %s\n' "$home" "$key" |
-  put "$home/.ssh/authorized_keys" 0600 "$user:$user"
+# 4. CI-sleutels: elk alleen hz-ssh-dispatch met een vaste rol, geen shell, geen doorsturen. Een sleutel die bij deze
+# run niet is meegegeven blijft zoals hij was (opnieuw draaien met één nieuwe sleutel kan).
+ak_line() { printf 'restrict,command="%s/bin/hz-ssh-dispatch %s" %s\n' "$home" "$1" "$2"; }
+keep_line() { grep -E "^restrict,command=\"$home/bin/hz-ssh-dispatch $2\" " "$P$1" 2>/dev/null || true; }
+{
+  printf '# hz-workspace: GitHub Actions via een tijdelijke Tailscale-node (tag:ci); per sleutel een vaste rol.\n'
+  for r in test prod; do
+    if [[ -n "${ci_key[$r]:-}" ]]; then ak_line "$r" "${ci_key[$r]}"; else keep_line "$home/.ssh/authorized_keys" "$r"; fi
+  done
+} | put "$home/.ssh/authorized_keys" 0600 "$user:$user"
+{
+  printf '# hz-workspace: previews van pull requests (environment preview); alleen preview up/down.\n'
+  if [[ -n "${ci_key[preview]:-}" ]]; then ak_line preview "${ci_key[preview]}"; else keep_line "$home/previews/.ssh/authorized_keys" preview; fi
+} | put "$home/previews/.ssh/authorized_keys" 0600 "$puser:$puser"
 allow="$(${HZ_SSHD_T:-sshd -T} 2>/dev/null | awk 'tolower($1)=="allowusers" {for (i=2;i<=NF;i++) print $i}' || true)"
-if [[ -n "$allow" ]] && ! grep -qx "$user" <<<"$allow"; then
-  log "LET OP: sshd heeft AllowUsers zonder $user; voeg $user toe in de sshd-config (dit script wijzigt sshd niet)"
-fi
+for u in "$user" "$puser"; do
+  if [[ -n "$allow" ]] && ! grep -qx "$u" <<<"$allow"; then
+    log "LET OP: sshd heeft AllowUsers zonder $u; voeg $u toe in de sshd-config (dit script wijzigt sshd niet)"
+  fi
+done
 
 # 5. systemd-units (eigen namen) en /run/hz-workspace
 for u in "$infra"/systemd/hz-workspace-*; do

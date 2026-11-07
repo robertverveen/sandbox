@@ -28,7 +28,11 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       ACTIONLINT_VERSION: 1.7.7
+      # sha256 uit actionlint_1.7.7_checksums.txt van de release.
+      ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
       CADDY_VERSION: 2.10.2
+      # sha256 van caddy_2.10.2_linux_amd64.tar.gz (nagerekend tegen de sha512 in caddy_2.10.2_checksums.txt).
+      CADDY_SHA256: 5c218bc34c9197369263da7e9317a83acdbd80ef45d94dca5eff76e727c67cdd
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -44,8 +48,12 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends shellcheck age
           mkdir -p "$HOME/bin"
-          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" | tar -xz -C "$HOME/bin" actionlint
-          curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | tar -xz -C "$HOME/bin" caddy
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tar.gz" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$HOME/bin" actionlint
+          curl -fsSL -o "$RUNNER_TEMP/caddy.tar.gz" "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
+          echo "${CADDY_SHA256}  $RUNNER_TEMP/caddy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/caddy.tar.gz" -C "$HOME/bin" caddy
           echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @hz/web build

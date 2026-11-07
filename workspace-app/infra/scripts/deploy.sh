@@ -21,13 +21,16 @@ bundle="$(dirname "$infra")"
 env="${1:-}"
 tag="${2:-}"
 valid_env "$env" || die "omgeving moet prod of test zijn"
-valid_tag "$tag" || die "ongeldige tag: $tag"
+# Productie alleen een release (vX.Y.Z), test alleen een build van main (sha-...); nooit een PR-tag.
+valid_tag "$env" "$tag" || die "ongeldige tag voor $env: $tag"
 
 load_env "$HZ_ETC/hz.env"
 : "${HZ_REGISTRY:?HZ_REGISTRY ontbreekt in $HZ_ETC/hz.env}"
 : "${HZ_DOMAIN:?}" "${HZ_TEST_DOMAIN:?}"
 proxy_env
 valid_proxy || die "HZ_PROXY_KIND/HZ_PROXY_NETWORK/HZ_ROUTER_PORT in $HZ_ETC/hz.env kloppen niet (zie server-setup.sh)"
+# De images van deze versie per digest (vastgelegd door hz-ssh-dispatch), niet per tag uit de registry.
+load_images "$tag"
 
 instance="hz-workspace-$env"
 state="$HZ_ROOT/env/$env"
@@ -160,6 +163,8 @@ else
   printf '%s %s %s %s mislukt\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$env" "$tag" "${prev:--}" >>"$HZ_LOG_DIR/deploys.log"
   if [[ -n "$prev" && "$prev" != "$tag" ]]; then
     log "terug naar $prev"
+    [[ -f "$HZ_ROOT/images/$prev.env" ]] || die "uitrol $tag mislukt; terugzetten kan niet: geen vastgelegde images van $prev"
+    load_images "$prev"
     export HZ_TAG="$prev"
     if compose_app up -d --remove-orphans --wait --wait-timeout "${HZ_WAIT_TIMEOUT:-300}" && health_ok; then
       printf '%s %s %s %s teruggezet\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$env" "$prev" "$tag" >>"$HZ_LOG_DIR/deploys.log"
@@ -180,11 +185,16 @@ if [[ -d "$HZ_ROOT/releases" ]]; then
     grep -qxF "$t" <<<"$keep" || rm -rf "$dir"
   done < <(ls -1dt "$HZ_ROOT"/releases/*/ 2>/dev/null | tail -n +6)
 fi
+# Images: alles van de workspace dat niet bij de huidige of vorige versie (per digest) of een draaiende preview
+# (per tag) hoort.
+keep_digests="$(for t in $keep; do grep -ohE 'sha256:[0-9a-f]{64}' "$HZ_ROOT/images/$t.env" 2>/dev/null || true; done | sort -u)"
 previews="$(cat "$HZ_ROOT"/previews/pr-*/tag 2>/dev/null || true)"
 for repo in "$HZ_REGISTRY/hz-api" "$HZ_REGISTRY/hz-worker" "$HZ_REGISTRY/hz-web"; do
-  while IFS= read -r t; do
-    [[ -n "$t" && "$t" != "<none>" ]] || continue
-    grep -qxF "$t" <<<"$keep"$'\n'"$previews" && continue
-    "$HZ_DOCKER" image rm "$repo:$t" >/dev/null 2>&1 || true
-  done < <("$HZ_DOCKER" image ls "$repo" --format '{{.Tag}}' 2>/dev/null || true)
+  while read -r t d; do
+    [[ "${d:-<none>}" != "<none>" ]] && grep -qxF "$d" <<<"$keep_digests" && continue
+    [[ "${t:-<none>}" != "<none>" ]] && grep -qxF "$t" <<<"$keep"$'\n'"$previews" && continue
+    [[ "${t:-<none>}" != "<none>" ]] && { "$HZ_DOCKER" image rm "$repo:$t" >/dev/null 2>&1 || true; }
+    [[ "${d:-<none>}" == sha256:* ]] && { "$HZ_DOCKER" image rm "$repo@$d" >/dev/null 2>&1 || true; }
+  done < <("$HZ_DOCKER" image ls "$repo" --digests --format '{{.Tag}} {{.Digest}}' 2>/dev/null || true)
 done
+exit 0
