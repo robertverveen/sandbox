@@ -111,6 +111,7 @@ export class HttpClient {
       return await this.creds.accessToken(this.provider);
     } catch (e) {
       if (e instanceof ProviderHttpError) throw e;
+      if (e instanceof NotConnectedError && e.provider === this.provider) throw e;
       throw new NotConnectedError(this.provider, e instanceof Error ? e.message : 'geen token');
     }
   }
