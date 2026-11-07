@@ -220,7 +220,7 @@ export class LiveCalendar implements CalendarProvider {
   }
 
   async listCalendars() {
-    return (await this.rawCalendars()).map((c) => ({
+    return (await this.calendarsCached()).map((c) => ({
       id: c.id,
       summary: c.summaryOverride || c.summary || c.id,
       primary: !!c.primary,

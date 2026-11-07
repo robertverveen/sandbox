@@ -12,7 +12,9 @@ import {
   EVENTS_CHANNEL,
   createDb,
   dbSyncStore,
+  dbTokenStore,
   ensureDatabase,
+  readConnectionToken,
   getSyncJob,
   recordSyncEvent,
   requestSync,
@@ -169,6 +171,24 @@ describe('sync-motor op Postgres (HZW-036)', () => {
     // Een webhook haalt een needs_reauth-run niet naar voren.
     await requestSync(db, A, 'google_tasks');
     expect((await getSyncJob(db, A, 'google_tasks'))!.status).toBe('needs_reauth');
+  });
+
+  it('ververst token wordt versleuteld opgeslagen (scopes blijven); ontkoppelen wist het token', async () => {
+    const t = dbTokenStore(db, key);
+    await saveConnectionToken(db, key, B, 'calendar', '{"access_token":"oud"}', {
+      scopes: ['calendar.events'],
+      account: 'bram@homezero.nl',
+    });
+    await t.save(B, 'calendar', '{"access_token":"nieuw","refresh_token":"1//r"}');
+    expect(await readConnectionToken(db, key, B, 'calendar')).toBe('{"access_token":"nieuw","refresh_token":"1//r"}');
+    const raw = await withUser(db, B, (tx) =>
+      tx.execute(sql`select scopes, token_ciphertext from connections where provider = 'calendar'`),
+    );
+    const row = raw.rows[0] as { scopes: string[]; token_ciphertext: string };
+    expect(row.scopes).toEqual(['calendar.events']);
+    expect(row.token_ciphertext).not.toContain('nieuw');
+    await t.clear(B, 'calendar');
+    expect(await t.load(B, 'calendar')).toBeNull();
   });
 
   it('ontkoppelen wist planning, cursors en events van die bron', async () => {

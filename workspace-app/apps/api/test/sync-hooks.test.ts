@@ -38,6 +38,7 @@ let store: DbStore;
 let robert: string;
 const bus = new EventBus();
 const posted: unknown[] = [];
+const revoked: string[] = [];
 const server = setupServer(
   http.get(`${SLACK_BASE}/auth.test`, () => HttpResponse.json({ ok: true, user_id: 'U04L22BRJQ7', team_id: 'T' })),
   http.post(`${SLACK_BASE}/chat.postMessage`, async ({ request }) => {
@@ -85,7 +86,7 @@ beforeAll(async () => {
     store,
     bus,
     ssePingMs: 50,
-    sync: { db, slackSigningSecret: SIGNING, hookSecret: HOOK },
+    sync: { db, slackSigningSecret: SIGNING, hookSecret: HOOK, revoke: async (u, p) => void revoked.push(`${u}|${p}`) },
   }));
   const res = await req('POST', routes.devLogin.path, { body: '{}' });
   cookie = res.headers.get('set-cookie')!.split(';')[0]!;
@@ -267,5 +268,15 @@ describe('versturen alleen na een klik', () => {
     });
     expect(res.status).toBe(200);
     expect(posted).toEqual([{ channel: 'CDEMOFEEN', text: 'Ik kijk ernaar' }]);
+  });
+});
+
+describe('ontkoppelen', () => {
+  it('trekt het token in en wist planning en cursors van die bron', async () => {
+    const res = await req('DELETE', '/api/connections/gmail');
+    expect(res.status).toBe(200);
+    expect(revoked).toEqual([`${robert}|gmail`]);
+    expect(await getSyncJob(db, robert, 'gmail')).toBeNull();
+    expect(await getSyncJob(db, robert, 'slack')).not.toBeNull();
   });
 });

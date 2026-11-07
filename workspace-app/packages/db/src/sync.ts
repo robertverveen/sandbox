@@ -62,6 +62,16 @@ export function dbTokenStore(db: Db, masterKey: Buffer) {
           where provider = ${provider}`),
       );
     },
+    /** Ontkoppelen: versleuteld token weg (de rij blijft met status disconnected). */
+    async clear(userId: string, provider: string) {
+      await withUser(db, userId, async (tx) => {
+        await tx.execute(sql`update connections set token_ciphertext = null, token_iv = null, token_tag = null, dek_wrapped = null,
+          status = 'disconnected' where provider = ${provider}`);
+        await tx.execute(
+          sql`insert into audit_log (user_id, action, target) values (${userId}, 'connection.token_cleared', ${provider})`,
+        );
+      });
+    },
     async markReauth(userId: string, provider: string, reason: string) {
       await withUser(db, userId, async (tx) => {
         await tx.execute(

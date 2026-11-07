@@ -19,6 +19,8 @@ export interface SyncHookOptions {
   /** Geheim voor Agenda- en Gmail-hooktokens (HZ_HOOK_SECRET). */
   hookSecret?: string;
   now?: () => number;
+  /** Ontkoppelen: token intrekken bij de bron en uit de database wissen. */
+  revoke?: (userId: string, provider: string) => Promise<void>;
 }
 
 const safeEq = (a: string, b: string) => {

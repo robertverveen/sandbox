@@ -511,6 +511,7 @@ export function createApp(deps: AppDeps) {
   on('disconnect', async ({ params }, _c, ctx) => {
     await store.setConnection(ctx.user.id, params.provider, { status: 'disconnected' });
     // Ontkoppelen wist ook planning, cursors en metadata van die bron (stuk E3).
+    await deps.sync?.revoke?.(ctx.user.id, params.provider);
     if (deps.sync?.db) await wipeSyncData(deps.sync.db, ctx.user.id, params.provider);
     await store.audit(ctx.user.id, 'connection.disconnect', params.provider);
     bus.invalidate(ctx.user.id, 'connections', 'items', 'dagstart');
