@@ -254,3 +254,147 @@ describe('Slack live met user token (HZW-033)', () => {
     expect(e.retryAfterMs).toBe(3000);
   });
 });
+
+describe('leescursor in beide richtingen en gelezen op een ander apparaat (HZW-033, ronde 3)', () => {
+  const FEEN = 'sl:CDEMOFEEN';
+  const NEW = '1793262720.000200';
+  const OLD = '1793261000.000100';
+  /** Lange cache (zoals in productie, 5 min): de app moet zijn eigen bewaarde stand goed hebben. */
+  const cached = () => new LiveSlack(creds(), { store: new MemorySyncStore(), stateTtlMs: 5 * 60_000 });
+  const calls = (m: string) => requests.filter((r) => r.url.pathname.endsWith(m)).length;
+
+  it('ongelezen zetten (leescursor terug) toont het gesprek en het aandacht-item direct weer als ongelezen', async () => {
+    const s = cached();
+    await s.markRead('CDEMOFEEN', NEW);
+    expect((await s.listConversations()).find((c) => c.key === FEEN)!.unread).toBe(false);
+    expect((await s.attention()).find((i) => i.channelId === 'CDEMOFEEN')!.read).toBe(true);
+    // Terug naar het bericht ervoor: Slack staat op OLD, en de app (uit de cache, binnen 5 min) ook.
+    await s.markRead('CDEMOFEEN', OLD);
+    expect(slack.lastRead.CDEMOFEEN).toBe(OLD);
+    clear();
+    expect((await s.listConversations()).find((c) => c.key === FEEN)!.unread).toBe(true);
+    expect((await s.attention()).find((i) => i.channelId === 'CDEMOFEEN')!.read).toBe(false);
+    expect(calls('conversations.info')).toBe(0); // het kwam uit de eigen stand, niet uit een verse ophaalronde
+  });
+
+  it('gelezen op Slack-mobiel: pollReadState haalt last_read buiten de cache om op, alleen voor ongelezen gesprekken', async () => {
+    const s = cached();
+    expect((await s.listConversations()).find((c) => c.key === FEEN)!.unread).toBe(true);
+    slack.lastRead.CDEMOFEEN = NEW; // gelezen op een ander apparaat; er komt geen event (Events API kent geen *_marked)
+    clear();
+    expect((await s.listConversations()).find((c) => c.key === FEEN)!.unread).toBe(true); // cache: nog oud
+    const r = await s.pollReadState({ events: true });
+    expect(r).toEqual({ read: 1, full: 0 });
+    const info = requests.filter((x) => x.url.pathname.endsWith('conversations.info'));
+    expect(info.map((x) => x.url.searchParams.get('channel'))).toEqual(['CDEMOFEEN']);
+    expect(calls('conversations.history')).toBe(0);
+    clear();
+    expect((await s.listConversations({ fetch: false })).find((c) => c.key === FEEN)!.unread).toBe(false);
+    expect(requests.some((x) => x.url.pathname.startsWith('/api/conversations.'))).toBe(false);
+  });
+
+  it('ongelezen gezet op een ander apparaat: zonder Events ververst de poll verouderde standen volledig', async () => {
+    let t = 1_000_000;
+    const real = Date.now;
+    Date.now = () => t;
+    try {
+      const s = cached();
+      await s.markRead('CDEMOFEEN', NEW);
+      await s.listConversations();
+      slack.lastRead.CDEMOFEEN = OLD; // elders ongelezen gezet
+      t += 5 * 60_000; // na stateTtl
+      clear();
+      const r = await s.pollReadState({ events: false });
+      expect(r.full).toBe(3);
+      expect((await s.listConversations({ fetch: false })).find((c) => c.key === FEEN)!.unread).toBe(true);
+      // Met Events: dezelfde stand is pas na 30 minuten "verouderd" (vangnet); binnen die tijd geen calls.
+      clear();
+      t += 60_000;
+      expect(await s.pollReadState({ events: true })).toEqual({ read: 1, full: 0 }); // alleen het ongelezen gesprek
+    } finally {
+      Date.now = real;
+    }
+  });
+
+  it('een event zonder tekst (webhook bewaart geen inhoud): de poll haalt dat gesprek volledig op', async () => {
+    const s = cached();
+    await s.markRead('CDEMOFEEN', NEW);
+    await s.listConversations();
+    slack.history.CDEMOFEEN!.push({ ts: '1793263500.000100', user: 'UMIKE', text: 'Nieuw bericht' });
+    expect(await s.applyEvent({ type: 'message', channel: 'CDEMOFEEN', ts: '1793263500.000100', user: 'UMIKE' })).toBe(
+      true,
+    );
+    clear();
+    expect(await s.pollReadState({ events: true })).toEqual({ read: 0, full: 1 });
+    const c = (await s.listConversations({ fetch: false })).find((x) => x.key === FEEN)!;
+    expect(c).toMatchObject({ unread: true, preview: 'Mike: Nieuw bericht' });
+  });
+
+  it('rate limit bij een koude start: RateLimitError gaat door, geen gesprekken die stil als gelezen tonen', async () => {
+    server.use(
+      http.get(
+        `${S}/conversations.info`,
+        () => new HttpResponse(null, { status: 429, headers: { 'retry-after': '7' } }),
+      ),
+    );
+    const e = await cached()
+      .listConversations()
+      .catch((x) => x);
+    expect(e).toBeInstanceOf(RateLimitError);
+    expect(e.retryAfterMs).toBe(7000);
+    const a = await cached()
+      .attention()
+      .catch((x) => x);
+    expect(a).toBeInstanceOf(RateLimitError);
+  });
+
+  it('rate limit met een bekende stand: de bewaarde (echte) stand blijft, de worker-poll krijgt de fout', async () => {
+    let t = 1_000_000;
+    const real = Date.now;
+    Date.now = () => t;
+    try {
+      const s = cached();
+      await s.listConversations();
+      t += 10 * 60_000;
+      server.use(http.get(`${S}/conversations.info`, () => HttpResponse.json({ ok: false, error: 'ratelimited' })));
+      const list = await s.listConversations();
+      expect(list.find((c) => c.key === FEEN)!.unread).toBe(true);
+      await expect(s.pollReadState()).rejects.toBeInstanceOf(RateLimitError);
+    } finally {
+      Date.now = real;
+    }
+  });
+
+  it('koude start begrensd: max. 20 gesprekken (20x info + 20x history) per verzoek, max. 3 tegelijk', async () => {
+    const many = Array.from({ length: 45 }, (_, i) => ({ id: `CMANY${i}`, name: `kanaal-${i}`, is_channel: true }));
+    let inFlight = 0;
+    let peak = 0;
+    const slow = async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight--;
+    };
+    server.use(
+      http.get(`${S}/users.conversations`, () => HttpResponse.json({ ok: true, channels: many })),
+      http.get(`${S}/conversations.info`, async ({ request }) => {
+        await slow();
+        return HttpResponse.json({ ok: true, channel: { id: q(request).channel, last_read: '1793262720.000200' } });
+      }),
+      http.get(`${S}/conversations.history`, async () => {
+        await slow();
+        return HttpResponse.json({ ok: true, messages: [{ ts: '1793262720.000200', user: 'UMJ', text: 'x' }] });
+      }),
+    );
+    const s = cached();
+    clear();
+    const list = await s.listConversations();
+    expect(list).toHaveLength(45);
+    expect(calls('conversations.info')).toBe(20);
+    expect(calls('conversations.history')).toBe(20);
+    expect(peak).toBeLessThanOrEqual(6); // 3 gesprekken tegelijk, elk info + history
+    // De worker vult de rest aan binnen zijn budget (40 calls = 20 volledige standen per run).
+    clear();
+    expect(await s.pollReadState({ events: true })).toEqual({ read: 0, full: 20 });
+  });
+});

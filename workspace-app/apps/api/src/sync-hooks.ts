@@ -166,7 +166,6 @@ export function registerSyncHooks<E extends Env>(app: Hono<E>, o: SyncHookOption
       for (const u of members) targets.add(u);
       if (!members.length) for (const j of await usersWithJob(o.db, 'slack')) targets.add(j.userId);
     }
-    let handled = 0;
     for (const userId of targets) {
       // Alleen metadata, geen berichttekst.
       const payload = {
@@ -176,14 +175,9 @@ export function registerSyncHooks<E extends Env>(app: Hono<E>, o: SyncHookOption
         user: ev.user,
         subtype: ev.subtype,
       };
-      const fresh = await recordSyncEvent(
-        o.db,
-        'slack',
-        handled ? `${body.event_id}:${userId}` : body.event_id,
-        userId,
-        payload,
-      );
-      handled++;
+      // Ontdubbelen per (event, collega): onafhankelijk van de volgorde of het aantal doelen, zodat een Slack-retry
+      // met andere leden of in een andere volgorde niets dubbel verwerkt.
+      const fresh = await recordSyncEvent(o.db, 'slack', `${body.event_id}:${userId}`, userId, payload);
       if (fresh) await requestSync(o.db, userId, 'slack');
     }
     return c.json({ ok: true });

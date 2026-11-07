@@ -250,7 +250,8 @@ describe('dubbele events', () => {
   });
 });
 
-describe('Slack: push alleen als Slack Events echt werkt', () => {
+describe('Slack: gelezen-status binnen 3 minuten, met en zonder Events', () => {
+  let lastRead: Record<string, string>;
   const slackOk = () => [
     http.get(`${SLACK_BASE}/auth.test`, () => HttpResponse.json({ ok: true, user_id: 'UME', team_id: 'T' })),
     http.get(`${SLACK_BASE}/users.list`, () => HttpResponse.json({ ok: true, members: [] })),
@@ -263,17 +264,27 @@ describe('Slack: push alleen als Slack Events echt werkt', () => {
         ],
       }),
     ),
-    http.get(`${SLACK_BASE}/conversations.info`, ({ request }) =>
+    http.get(`${SLACK_BASE}/conversations.info`, ({ request }) => {
+      const ch = new URL(request.url).searchParams.get('channel')!;
+      return HttpResponse.json({ ok: true, channel: { id: ch, last_read: lastRead[ch] ?? '0' } });
+    }),
+    http.get(`${SLACK_BASE}/conversations.history`, ({ request }) =>
       HttpResponse.json({
         ok: true,
-        channel: { id: new URL(request.url).searchParams.get('channel'), last_read: '0' },
+        messages:
+          new URL(request.url).searchParams.get('channel') === 'CFEEN'
+            ? [{ ts: '1793262720.000200', user: 'UMJ', text: 'Leads?' }]
+            : [{ ts: '1793262000.000100', user: 'UMJ', text: 'Hoi' }],
       }),
     ),
-    http.get(`${SLACK_BASE}/conversations.history`, () => HttpResponse.json({ ok: true, messages: [] })),
   ];
   const minutes = (o: SyncOutcome) => (+o.nextRunAt - +now) / 60_000;
+  const slackCalls = (m: string) => seen.filter((r) => r.url.includes(`/${m}`));
+  beforeEach(() => {
+    lastRead = { CFEEN: '1793262000.000100', DMJ: '1793262000.000100' };
+  });
 
-  it('zonder Events-geheim en zonder ontvangen event: pollen elke 3 minuten (niet 30)', async () => {
+  it('zonder Events-geheim en zonder ontvangen event: pollen elke 3 minuten', async () => {
     repo.add(U, 'slack');
     server.use(...slackOk());
     const o = await runSync(deps, U, 'slack');
@@ -284,23 +295,62 @@ describe('Slack: push alleen als Slack Events echt werkt', () => {
     expect(repo.jobs.get(`${U}|slack`)!.push).toEqual({ slackChannels: ['CFEEN', 'DMJ'], slackEvents: false });
   });
 
-  it('met HZ_SLACK_SIGNING_SECRET in de worker: alleen een veiligheidspoll (30 minuten)', async () => {
+  it('met HZ_SLACK_SIGNING_SECRET in de worker: óók elke 3 minuten (Events kent geen *_marked)', async () => {
     repo.add(U, 'slack');
     server.use(...slackOk());
     const o = await runSync({ ...deps, slackEvents: true }, U, 'slack');
-    expect(minutes(o)).toBe(30);
+    expect(minutes(o)).toBe(3);
   });
 
-  it('zonder geheim, maar er kwam al een event binnen: Events werkt, dus 30 minuten', async () => {
+  it('er kwam al een event binnen (Events werkt): poll blijft 3 minuten', async () => {
     repo.add(U, 'slack');
     server.use(...slackOk());
     repo.record(U, 'slack', 'Ev77', { type: 'message', channel: 'CFEEN', ts: '1793262720.000200' });
     const o = await runSync(deps, U, 'slack');
-    expect(minutes(o)).toBe(30);
+    expect(minutes(o)).toBe(3);
     expect(repo.jobs.get(`${U}|slack`)!.push.slackEvents).toBe(true);
-    // Ook de run daarna (geen nieuw event) blijft op push: het eerste event is gezien.
-    now = new Date(+now + 30 * 60_000);
-    expect(minutes(await runSync(deps, U, 'slack'))).toBe(30);
+    now = new Date(+now + 3 * 60_000);
+    expect(minutes(await runSync(deps, U, 'slack'))).toBe(3);
+  });
+
+  it('gelezen op een ander apparaat: de volgende run (na 3 min) haalt last_read echt opnieuw op en meldt het via SSE', async () => {
+    repo.add(U, 'slack');
+    server.use(...slackOk());
+    const d = { ...deps, slackEvents: true };
+    await runSync(d, U, 'slack'); // nulpunt: CFEEN ongelezen
+    repo.notified.length = 0;
+    lastRead.CFEEN = '1793262720.000200'; // gelezen op Slack-mobiel, geen event
+    seen.length = 0;
+    now = new Date(+now + 3 * 60_000);
+    const o = await runSync(d, U, 'slack');
+    expect(o.changed).toBe(1);
+    expect(repo.notified).toEqual([{ userId: U, keys: INVALIDATE.slack }]);
+    // Alleen conversations.info voor het ongelezen gesprek, buiten de 5-minutencache om; geen history (Events).
+    expect(slackCalls('conversations.info').map((r) => new URL(r.url).searchParams.get('channel'))).toEqual(['CFEEN']);
+    expect(slackCalls('conversations.history')).toEqual([]);
+    // Volgende run: niets meer ongelezen, dus geen calls per gesprek en geen melding.
+    seen.length = 0;
+    repo.notified.length = 0;
+    now = new Date(+now + 3 * 60_000);
+    expect((await runSync(d, U, 'slack')).changed).toBe(0);
+    expect(slackCalls('conversations.info')).toEqual([]);
+    expect(repo.notified).toEqual([]);
+  });
+
+  it('rate limit in de poll: terugval volgens Retry-After, geen "gelezen" gok', async () => {
+    repo.add(U, 'slack');
+    server.use(...slackOk());
+    await runSync(deps, U, 'slack');
+    server.use(
+      http.get(
+        `${SLACK_BASE}/conversations.info`,
+        () => new HttpResponse(null, { status: 429, headers: { 'retry-after': '120' } }),
+      ),
+    );
+    now = new Date(+now + 3 * 60_000);
+    const o = await runSync(deps, U, 'slack');
+    expect(o).toMatchObject({ status: 'backoff', failures: 1 });
+    expect(+o.nextRunAt - +now).toBe(120_000);
   });
 });
 

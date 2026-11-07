@@ -6,7 +6,10 @@
  * - wie Slack niet gekoppeld heeft krijgt bij /api/conversations een 200 met zijn Gmail-gesprekken;
  * - een 401 op de gedeelde Google-koppeling zet `connections` echt op needs_reauth;
  * - Agenda ontkoppelen op de gedeelde koppeling trekt in bij Google, wist het token en de agenda-data;
- * - Slack gelezen zetten gaat tot het gelezen bericht (niet tot het nieuwste); read=false zonder ts is een 400.
+ * - Slack gelezen zetten gaat tot het gelezen bericht (niet tot het nieuwste); read=false zonder ts is een 400;
+ *   ongelezen zetten zet de leescursor in Slack terug én de app (gesprekken en Inhalen) toont het direct als ongelezen;
+ * - versturen kan alleen via de verstuur-routes: een willekeurige andere POST (bijv. /api/ask of een MCP-aanroep)
+ *   krijgt een 403 en Slack ziet geen chat.postMessage.
  */
 import { randomBytes } from 'node:crypto';
 import { sql } from 'drizzle-orm';
@@ -87,6 +90,9 @@ const SLACK_MSGS = [
   { type: 'message', ts: '1793350200.000300', user: 'UANNA', text: 'Derde (nog ongelezen)' },
 ];
 const marks: Array<{ channel: string; ts: string }> = [];
+const posted: Array<Record<string, string>> = [];
+/** Leescursor zoals Slack hem bewaart (conversations.mark verschuift hem, conversations.info geeft hem). */
+let slackLastRead = SLACK_MSGS[0]!.ts;
 const revoked: string[] = [];
 const slackOk = (r: Request, body: Record<string, unknown>) =>
   bearer(r) === 'xoxp-robert'
@@ -118,14 +124,27 @@ const server = setupServer(
     slackOk(request, { channels: [{ id: 'CZONNIG', name: 'zonnig-hz', is_channel: true, is_member: true }] }),
   ),
   http.get(`${SLACK_BASE}/conversations.info`, ({ request }) =>
-    slackOk(request, { channel: { id: 'CZONNIG', name: 'zonnig-hz', last_read: SLACK_MSGS[0]!.ts } }),
+    slackOk(request, { channel: { id: 'CZONNIG', name: 'zonnig-hz', last_read: slackLastRead } }),
   ),
+  // Inhalen: een vermelding van Robert in het derde bericht.
+  http.get(`${SLACK_BASE}/search.messages`, ({ request }) => {
+    const query = new URL(request.url).searchParams.get('query') ?? '';
+    const matches = query.startsWith('<@UROBERT>')
+      ? [{ ...SLACK_MSGS[2]!, channel: { id: 'CZONNIG', name: 'zonnig-hz' }, permalink: 'https://x.example/p' }]
+      : [];
+    return slackOk(request, { messages: { matches } });
+  }),
+  http.post(`${SLACK_BASE}/chat.postMessage`, async ({ request }) => {
+    posted.push(Object.fromEntries(new URLSearchParams(await request.text())));
+    return slackOk(request, { ts: '1793350300.000400' });
+  }),
   http.get(`${SLACK_BASE}/conversations.history`, ({ request }) =>
     slackOk(request, { messages: [...SLACK_MSGS].reverse(), has_more: false }),
   ),
   http.post(`${SLACK_BASE}/conversations.mark`, async ({ request }) => {
     const b = Object.fromEntries(new URLSearchParams(await request.text()));
     marks.push({ channel: b.channel!, ts: b.ts! });
+    if (bearer(request) === 'xoxp-robert') slackLastRead = b.ts!;
     return slackOk(request, {});
   }),
 );
@@ -134,6 +153,7 @@ let db: Db;
 let close: () => Promise<void>;
 let store: DbStore;
 let app: ReturnType<typeof createApp>['app'];
+let providers: ReturnType<typeof createProviders>['providers'];
 const ids: Record<string, string> = {};
 const cookies: Record<string, string> = {};
 
@@ -164,6 +184,7 @@ beforeAll(async () => {
   const bundle = createProviders({ HZ_LIVE_SLACK: '1', HZ_LIVE_GMAIL: '1' }, createUserCredentials({ store: tokens }), {
     store: dbSyncStore(db, currentUserId),
   });
+  providers = bundle.providers;
   ({ app } = createApp({
     config,
     bundle,
@@ -173,6 +194,10 @@ beforeAll(async () => {
       revoke: (userId, provider) => disconnectSource(db, KEY, userId, provider, (p, t) => revokeToken(p, t)),
     },
   }));
+  // Proefroute (zie de laatste test): een POST die geen verstuur-route is, maar toch Slack probeert te versturen.
+  app.post('/api/probe-ander-stuk', async (c) =>
+    c.json({ ts: (await providers.slack.postMessage('CZONNIG', 'zelf verstuurd')).ts }),
+  );
   for (const [who, email] of [
     ['robert', 'robert@homezero.nl'],
     ['lisanne', 'lisanne@homezero.nl'],
@@ -294,6 +319,32 @@ describe('Slack gelezen zetten tot het gelezen bericht (HZW-033)', () => {
     expect(marks).toEqual([{ channel: 'CZONNIG', ts: SLACK_MSGS[0]!.ts }]);
   });
 
+  it('gelezen en daarna ongelezen zetten: Slack én de app (gesprekken en Inhalen) tonen het weer als ongelezen', async () => {
+    const zonnig = async () =>
+      routes.conversations.response
+        .parse(await (await req('robert', 'GET', '/api/conversations')).json())
+        .conversations.find((c) => c.key === 'sl:CZONNIG')!;
+    const mention = async () => {
+      const r = routes.items.response.parse(await (await req('robert', 'GET', '/api/items')).json());
+      return r.items.find((i) => i.type === 'slack' && i.channelId === 'CZONNIG' && i.ts === SLACK_MSGS[2]!.ts) as
+        | { read?: boolean }
+        | undefined;
+    };
+    marks.splice(0);
+    expect((await req('robert', 'POST', path, { read: true, ts: SLACK_MSGS[2]!.ts })).status).toBe(200);
+    expect(await zonnig()).toMatchObject({ unread: false });
+    expect(await mention()).toMatchObject({ read: true });
+    expect((await req('robert', 'POST', path, { read: false, ts: SLACK_MSGS[2]!.ts })).status).toBe(200);
+    expect(marks).toEqual([
+      { channel: 'CZONNIG', ts: SLACK_MSGS[2]!.ts },
+      { channel: 'CZONNIG', ts: SLACK_MSGS[1]!.ts },
+    ]);
+    expect(slackLastRead).toBe(SLACK_MSGS[1]!.ts);
+    // Direct daarna (binnen de 5-minutencache): de app moet de teruggezette leescursor gebruiken.
+    expect(await zonnig()).toMatchObject({ unread: true });
+    expect(await mention()).toMatchObject({ read: false });
+  });
+
   it('read=false zonder ts, op het oudste bericht of met een onbekende ts: duidelijke fout, niets gemarkeerd', async () => {
     marks.splice(0);
     const a = await req('robert', 'POST', path, { read: false });
@@ -308,5 +359,19 @@ describe('Slack gelezen zetten tot het gelezen bericht (HZW-033)', () => {
     marks.splice(0);
     expect((await req('robert', 'POST', path, {})).status).toBe(200);
     expect(marks).toEqual([{ channel: 'CZONNIG', ts: SLACK_MSGS[2]!.ts }]);
+  });
+});
+
+describe('versturen alleen vanuit de verstuur-routes', () => {
+  it('POST /messages (mens drukt op Versturen) gaat naar Slack; een andere POST mag niets versturen (403)', async () => {
+    posted.splice(0);
+    const ok = await req('robert', 'POST', '/api/conversations/sl:CZONNIG/messages', { text: 'Ik kijk ernaar' });
+    expect(ok.status).toBe(200);
+    expect(posted).toEqual([{ channel: 'CZONNIG', text: 'Ik kijk ernaar' }]);
+    // Een andere POST-route (zoals straks /api/ask of een MCP-aanroep van E5) die toch probeert te versturen.
+    const res = await req('robert', 'POST', '/api/probe-ander-stuk', {});
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { message: string }).message).toMatch(/klik van een mens/);
+    expect(posted).toHaveLength(1);
   });
 });

@@ -31,7 +31,11 @@ import { addDays, toLocal } from '@hz/shared/logic';
 
 export const SYNC_QUEUES = { plan: 'sync.plan', run: 'sync.run' } as const;
 
-/** Poll-interval per bron (ms). Met een actief push-kanaal alleen een veiligheidspoll. */
+/**
+ * Poll-interval per bron (ms). Met een actief push-kanaal alleen een veiligheidspoll, behalve Slack: de Events API
+ * kent geen *_marked-events, dus gelezen-op-een-ander-apparaat komt alleen via de poll op last_read (elke 3 min,
+ * ook met Events). Events maken die poll wel goedkoper: alleen conversations.info voor ongelezen gesprekken.
+ */
 export const POLL_MS: Record<string, number> = {
   calendar: 5 * 60_000,
   google_tasks: 2 * 60_000,
@@ -95,6 +99,8 @@ interface Result {
   changed: number;
   push?: Record<string, unknown>;
   pushActive?: boolean;
+  /** Vaste volgende run, ook met push (Slack: poll op last_read). */
+  intervalMs?: number;
 }
 
 async function syncCalendar(p: Providers, d: SyncDeps, job: SyncJobRow): Promise<Result> {
@@ -151,7 +157,14 @@ async function syncSlack(p: Providers, d: SyncDeps, job: SyncJobRow): Promise<Re
   let changed = 0;
   const events = await d.repo.takeEvents(job.userId, 'slack');
   for (const e of events) if (await s.applyEvent(e.payload as Parameters<LiveSlack['applyEvent']>[0])) changed++;
-  const convs = await s.listConversations();
+  // Push telt alleen als Slack Events echt binnenkomt: geheim ingesteld, of er is al een event ontvangen.
+  const seen = events.length > 0 || job.push.slackEvents === true || !!(await d.repo.hasEvents?.(job.userId, 'slack'));
+  const eventsOn = !!d.slackEvents || seen;
+  // Leescursor opnieuw uit Slack (buiten de cache om) voor wat bij ons ongelezen staat; zonder Events ook de nieuwe
+  // berichten. Een rate limit gaat door naar runSync (terugval volgens Retry-After).
+  const channels = events.map((e) => String((e.payload as { channel?: string }).channel ?? '')).filter(Boolean);
+  await s.pollReadState({ events: eventsOn, channels });
+  const convs = await s.listConversations({ fetch: false });
   const sig = convs
     .filter((c) => c.unread)
     .map((c) => `${c.key}@${c.time ?? ''}`)
@@ -162,12 +175,14 @@ async function syncSlack(p: Providers, d: SyncDeps, job: SyncJobRow): Promise<Re
     await d.store.set('slack:unreadsig', sig);
     if (prev !== null) changed++;
   }
-  // Push telt alleen als Slack Events echt binnenkomt: geheim ingesteld, of er is al een event ontvangen. Anders
-  // pollen we elke 3 minuten (geen veiligheidspoll van 30 minuten op een push die er niet is).
-  const seen = events.length > 0 || job.push.slackEvents === true || !!(await d.repo.hasEvents?.(job.userId, 'slack'));
   // Kanaal-id's (metadata, geen inhoud) voor de webhook: welke collega's zitten in het kanaal van een event.
   const slackChannels = convs.map((c) => c.key.replace(/^sl:/, '')).sort();
-  return { changed, push: { ...job.push, slackChannels, slackEvents: seen }, pushActive: !!d.slackEvents || seen };
+  return {
+    changed,
+    push: { ...job.push, slackChannels, slackEvents: seen },
+    pushActive: eventsOn,
+    intervalMs: POLL_MS.slack,
+  };
 }
 
 async function syncJira(p: Providers): Promise<Result> {
@@ -227,7 +242,7 @@ export async function runSync(d: SyncDeps, userId: string, provider: string): Pr
   try {
     const name = (await d.repo.userName?.(userId)) ?? null;
     const r = await withUserScope(userId, () => syncer(d.providers, d, job), { name });
-    const interval = r.pushActive ? PUSH_POLL_MS : (POLL_MS[provider] ?? 10 * 60_000);
+    const interval = r.intervalMs ?? (r.pushActive ? PUSH_POLL_MS : (POLL_MS[provider] ?? 10 * 60_000));
     o = {
       status: 'idle',
       failures: 0,

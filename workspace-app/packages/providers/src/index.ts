@@ -169,7 +169,8 @@ export function createProviders(
     slack: pick<Providers['slack']>(
       'SLACK',
       () => new FixtureSlack(dataset, log),
-      () => new LiveSlack(creds, { store, fetchImpl }),
+      // HZ_SLACK_POLL_BUDGET: Slack-calls per worker-run per collega (tier 3 is ~50/min per methode voor de hele app).
+      () => new LiveSlack(creds, { store, fetchImpl, pollBudget: Number(env.HZ_SLACK_POLL_BUDGET) || undefined }),
     ),
     jira: pick<Providers['jira']>(
       'JIRA',

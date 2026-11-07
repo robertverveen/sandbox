@@ -25,6 +25,7 @@ import {
   AuthError,
   LiveSlack,
   NotConnectedError,
+  NotHumanError,
   withHumanAction,
   withUserScope,
   type ProviderBundle,
@@ -37,6 +38,17 @@ import { catchCount, collect, firstName, myPartnerActies, slimContext, type Ctx 
 import type { AppStore, ConnectionState } from './store';
 
 export const VERSION = '0.1.0';
+
+/**
+ * Routes waarin een ingelogde collega zelf op Versturen, Reageren of Uitnodigen drukt. Alleen hier mogen live
+ * providers iets naar buiten sturen (assertHumanAction); de rest van de API, de worker en Claude nooit.
+ */
+export const HUMAN_ACTION_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
+  'sendMessage',
+  'react',
+  'createEvent',
+  'rsvp',
+]);
 export const SESSION_COOKIE = 'hz_session';
 
 type Env = { Variables: { user: User; token: string } };
@@ -124,6 +136,8 @@ export function createApp(deps: AppDeps) {
       );
     if (err instanceof AuthError)
       return c.json({ error: 'needs_reauth', message: `${err.provider}: opnieuw koppelen.` }, 409);
+    // Versturen buiten een verstuur-route (geen klik van een mens): geweigerd, niets verstuurd.
+    if (err instanceof NotHumanError) return c.json({ error: 'forbidden', message: err.message }, 403);
     console.error(err);
     return c.json({ error: 'server', message: 'Er ging iets mis op de server.' }, 500);
   });
@@ -148,11 +162,9 @@ export function createApp(deps: AppDeps) {
     if (!user || !token) return c.json({ error: 'unauthenticated', message: 'Log in om verder te gaan.' }, 401);
     c.set('user', user);
     c.set('token', token);
-    // Per request: voor welke collega werken de live providers (eigen token en cursors). Een POST/PUT/PATCH/DELETE
-    // van een ingelogde collega is een klik van een mens; alleen dan mogen providers versturen of uitnodigen.
-    return withUserScope(user.id, () => (c.req.method === 'GET' ? next() : withHumanAction(user.id, next)), {
-      name: firstName(user),
-    });
+    // Per request: voor welke collega werken de live providers (eigen token en cursors). Versturen mag alleen binnen
+    // de expliciete verstuur-routes (HUMAN_ACTION_ROUTES, zie on()), niet bij elke POST.
+    return withUserScope(user.id, () => next(), { name: firstName(user) });
   });
   registerSyncHooks(app, deps.sync ?? { db: null });
 
@@ -176,7 +188,10 @@ export function createApp(deps: AppDeps) {
         body = def.body.parse(raw ?? {});
       }
       const user = c.get('user');
-      const out = await handler({ params, query, body } as Input<N>, c, { bundle, store, user });
+      const run = () => handler({ params, query, body } as Input<N>, c, { bundle, store, user });
+      // Alleen deze routes zijn "een mens drukte op Versturen/Reageren/Uitnodigen"; elke andere POST (ook /api/ask of
+      // een MCP-aanroep) mag niets naar buiten sturen.
+      const out = await (user && HUMAN_ACTION_ROUTES.has(name) ? withHumanAction(user.id, run) : run());
       if (out instanceof Response) return out;
       return c.json(out as object);
     });

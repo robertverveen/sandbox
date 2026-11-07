@@ -2,8 +2,13 @@
  * HZW-033: Slack Web API met de user token van de interne app (live).
  *
  * - Kanalen, DM's en groepen waar de collega in zit (users.conversations), geschiedenis, threads, zoeken.
- * - Echte gelezen-status: per gesprek last_read uit conversations.info; gelezen zetten met conversations.mark,
- *   zodat het ook op Slack-mobiel gelezen is. Events (channel_marked, im_marked) houden het bij.
+ * - Echte gelezen-status: per gesprek last_read uit conversations.info; gelezen en ongelezen zetten met
+ *   conversations.mark, zodat het ook op Slack-mobiel klopt. De Events API kent geen *_marked-events (alleen RTM):
+ *   gelezen op een ander apparaat komt binnen via pollReadState() in de worker (elke 3 minuten conversations.info
+ *   voor de gesprekken die bij ons ongelezen staan, buiten de cache om).
+ * - Rate limits (conversations.info en .history zijn tier 3, ~50/min per methode per app per workspace): elke
+ *   ophaalronde heeft een budget en een kleine parallelliteit; een RateLimitError wordt nooit stil ingeslikt (een
+ *   gesprek zonder stand zou dan als gelezen tonen), maar doorgegeven zodat de worker terugvalt.
  * - Versturen en reageren alleen na een klik van een mens (assertHumanAction); de worker en Claude doen dat
  *   nooit. Eigen workspace-emoji via emoji.list.
  * - Slack geeft HTTP 200 met {ok:false}; 429 met Retry-After is de rate limit.
@@ -23,6 +28,31 @@ import { MemorySyncStore, type SyncStore } from './store';
 import { assertHumanAction } from './tokens';
 
 export const SLACK_BASE = 'https://slack.com/api';
+/** User-scopes van de interne Slack-app (infra/slack/manifest.yml; een test houdt die twee gelijk). */
+export const SLACK_USER_SCOPES = [
+  'channels:history',
+  'groups:history',
+  'im:history',
+  'mpim:history',
+  'channels:read',
+  'groups:read',
+  'im:read',
+  'mpim:read',
+  'channels:write',
+  'groups:write',
+  'im:write',
+  'mpim:write',
+  'chat:write',
+  'reactions:read',
+  'reactions:write',
+  'search:read',
+  'users:read',
+  'emoji:read',
+] as const;
+/** Alleen voor Slack-to-do's (HZW-037, HZ_SLACK_TODOS=1). */
+export const SLACK_TODO_SCOPES = ['reminders:read', 'reminders:write', 'lists:read'] as const;
+/** User-events voor de Events API (nieuwe berichten; *_marked bestaat daar niet). */
+export const SLACK_USER_EVENTS = ['message.channels', 'message.groups', 'message.im', 'message.mpim'] as const;
 const AUTH_ERRORS = new Set(['invalid_auth', 'not_authed', 'token_revoked', 'token_expired', 'account_inactive']);
 
 export interface SConv {
@@ -65,8 +95,17 @@ interface ConvState {
   latest_ts?: string;
   latest_user?: string;
   latest_text?: string;
+  /** Laatste volledige verversing (conversations.info + history). */
   at: number;
+  /** Laatste keer dat last_read uit Slack kwam (conversations.info of eigen mark). */
+  readAt?: number;
+  /** Een event meldde een nieuwer bericht dan de laatste volledige verversing (tekst nog niet opgehaald). */
+  dirty?: boolean;
 }
+
+/** Ongelezen volgens de bekende stand: nieuwste bericht van een ander na de leescursor. */
+const isUnread = (st: ConvState | null | undefined, me: string) =>
+  !!(st?.latest_ts && st.latest_user !== me && (!st.last_read || parseFloat(st.latest_ts) > parseFloat(st.last_read)));
 
 export const tsToLocal = (ts: string) => toLocal(new Date(Math.round(parseFloat(ts) * 1000)));
 const userName = (u?: SUser) => u?.profile?.display_name || u?.real_name || u?.profile?.real_name || u?.name || '';
@@ -89,6 +128,8 @@ export class LiveSlack implements SlackProvider {
   readonly store: SyncStore;
   private stateTtlMs: number;
   private maxStateFetch: number;
+  private pollBudget: number;
+  private concurrency: number;
   private now: () => Date;
   constructor(
     readonly creds: LiveCredentials,
@@ -97,14 +138,22 @@ export class LiveSlack implements SlackProvider {
       base?: string;
       fetchImpl?: typeof fetch;
       stateTtlMs?: number;
+      /** Max. gesprekken waarvan één API-verzoek de stand ophaalt (elk 2 tier-3-calls). */
       maxStateFetch?: number;
+      /** Max. Slack-calls per worker-run in pollReadState(). */
+      pollBudget?: number;
+      /** Gelijktijdige Slack-calls bij het ophalen van standen. */
+      concurrency?: number;
       now?: () => Date;
     } = {},
   ) {
     this.http = new HttpClient('slack', opts.base ?? SLACK_BASE, creds, opts.fetchImpl);
     this.store = opts.store ?? new MemorySyncStore();
     this.stateTtlMs = opts.stateTtlMs ?? 5 * 60_000;
-    this.maxStateFetch = opts.maxStateFetch ?? 60;
+    // Koude start: 20 gesprekken = 20x info + 20x history, onder de ~50/min van tier 3. De worker vult de rest aan.
+    this.maxStateFetch = opts.maxStateFetch ?? 20;
+    this.pollBudget = opts.pollBudget ?? 40;
+    this.concurrency = Math.max(1, opts.concurrency ?? 3);
     this.now = opts.now ?? (() => new Date());
   }
 
@@ -198,22 +247,129 @@ export class LiveSlack implements SlackProvider {
       this.call<{ messages?: SMessage[] }>('conversations.history', { channel: channelId, limit: 1 }),
     ]);
     const last = hist.messages?.[0];
+    const now = Date.now();
     const st: ConvState = {
       last_read: info.channel.last_read,
       latest_ts: last?.ts,
       latest_user: last?.user ?? last?.username,
       latest_text: last?.text,
-      at: Date.now(),
+      at: now,
+      readAt: now,
     };
     await this.store.set(`slack:state:${channelId}`, st);
     return st;
   }
 
-  private async state(channelId: string, allowFetch: boolean): Promise<ConvState | null> {
-    const c = await this.store.get<ConvState>(`slack:state:${channelId}`);
-    if (c && (Date.now() - c.at < this.stateTtlMs || !allowFetch)) return c;
-    if (!allowFetch) return c;
-    return this.refreshState(channelId);
+  /** Alleen de leescursor opnieuw uit Slack (conversations.info), buiten de cache om; laatste bericht blijft. */
+  async refreshLastRead(channelId: string): Promise<ConvState> {
+    const info = await this.call<{ channel: SConv }>('conversations.info', { channel: channelId });
+    const key = `slack:state:${channelId}`;
+    const st = (await this.store.get<ConvState>(key)) ?? { at: 0 };
+    const next: ConvState = { ...st, last_read: info.channel.last_read, readAt: Date.now() };
+    await this.store.set(key, next);
+    return next;
+  }
+
+  /**
+   * Standen van een reeks gesprekken: uit de cache, en voor ontbrekende of verouderde standen opgehaald binnen een
+   * budget (ontbrekend eerst, daarna de oudste), met beperkte parallelliteit. Rate limit: niets meer ophalen; heeft een
+   * gesprek dan helemaal geen stand, of is `strict` gezet, dan gaat de RateLimitError door (nooit "gelezen" gokken).
+   * Andere fouten per gesprek (bijv. channel_not_found): de oude stand blijven gebruiken.
+   */
+  private async states(
+    ids: string[],
+    opts: { fetch: boolean; budget?: number; strict?: boolean },
+  ): Promise<Map<string, ConvState | null>> {
+    const out = new Map<string, ConvState | null>();
+    for (const id of ids) out.set(id, await this.store.get<ConvState>(`slack:state:${id}`));
+    if (!opts.fetch) return out;
+    const now = Date.now();
+    const todo = ids
+      .filter((id) => {
+        const c = out.get(id);
+        return !c || now - c.at >= this.stateTtlMs;
+      })
+      .sort((a, b) => (out.get(a)?.at ?? -1) - (out.get(b)?.at ?? -1))
+      .slice(0, opts.budget ?? this.maxStateFetch);
+    let limited: RateLimitError | null = null;
+    await Promise.all(
+      Array.from({ length: Math.min(this.concurrency, todo.length) }, async () => {
+        for (let id = todo.shift(); id && !limited; id = todo.shift()) {
+          try {
+            out.set(id, await this.refreshState(id));
+          } catch (e) {
+            if (e instanceof RateLimitError) limited = e;
+            else if (e instanceof AuthError) throw e;
+          }
+        }
+      }),
+    );
+    if (limited && (opts.strict || ids.some((id) => !out.get(id)))) throw limited;
+    return out;
+  }
+
+  /**
+   * Worker-poll (elke 3 minuten): de enige manier om "gelezen op een ander apparaat" te zien, want de Events API
+   * stuurt geen *_marked-events. Binnen `budget` Slack-calls, in deze volgorde:
+   * 1. gesprekken die bij ons ongelezen staan: conversations.info (alleen last_read), altijd buiten de cache om
+   *    (volledig als een event een nieuw bericht meldde waarvan we de tekst nog niet hebben, of als de stand
+   *    verouderd is);
+   * 2. gesprekken zonder stand: volledig (info + history);
+   * 3. verouderde standen, oudste eerst: volledig. Zonder Slack Events (`events: false`) is dat elke stateTtl
+   *    (nieuwe berichten komen alleen zo binnen); met Events elke 30 minuten (vangnet voor gemiste events en voor
+   *    "ongelezen gezet" op een ander apparaat).
+   * Een rate limit gaat door naar de worker (terugval volgens Retry-After); wat al binnen was, blijft bewaard.
+   */
+  async pollReadState(
+    opts: { events?: boolean; channels?: string[]; budget?: number } = {},
+  ): Promise<{ read: number; full: number }> {
+    const me = (await this.self()).user_id;
+    let convs = await this.convsCached();
+    // Een event uit een gesprek dat we nog niet kennen (nieuwe DM, net toegevoegd aan een kanaal): lijst verversen.
+    if (opts.channels?.some((ch) => !convs.some((c) => c.id === ch))) convs = await this.rawConversations();
+    const ids = convs.map((c) => c.id);
+    const cached = new Map<string, ConvState | null>();
+    for (const id of ids) cached.set(id, await this.store.get<ConvState>(`slack:state:${id}`));
+    const now = Date.now();
+    const staleMs = opts.events ? 30 * 60_000 : this.stateTtlMs;
+    const readOf = (id: string) => cached.get(id)?.readAt ?? cached.get(id)?.at ?? 0;
+    const unread = ids.filter((id) => isUnread(cached.get(id), me)).sort((a, b) => readOf(a) - readOf(b));
+    const missing = ids.filter((id) => !cached.get(id));
+    const stale = ids
+      .filter((id) => {
+        const c = cached.get(id);
+        return c && !unread.includes(id) && now - c.at >= staleMs;
+      })
+      .sort((a, b) => cached.get(a)!.at - cached.get(b)!.at);
+    const plan: Array<{ id: string; cost: number; run: () => Promise<unknown> }> = [];
+    let budget = opts.budget ?? this.pollBudget;
+    const add = (id: string, full: boolean) => {
+      const cost = full ? 2 : 1;
+      if (cost > budget) return;
+      budget -= cost;
+      plan.push({ id, cost, run: () => (full ? this.refreshState(id) : this.refreshLastRead(id)) });
+    };
+    for (const id of unread) add(id, !!cached.get(id)?.dirty || now - cached.get(id)!.at >= staleMs);
+    for (const id of missing) add(id, true);
+    for (const id of stale) add(id, true);
+    let limited: RateLimitError | null = null;
+    const done = { read: 0, full: 0 };
+    await Promise.all(
+      Array.from({ length: Math.min(this.concurrency, plan.length) }, async () => {
+        for (let p = plan.shift(); p && !limited; p = plan.shift()) {
+          try {
+            await p.run();
+            if (p.cost === 1) done.read++;
+            else done.full++;
+          } catch (e) {
+            if (e instanceof RateLimitError) limited = e;
+            else if (e instanceof AuthError) throw e;
+          }
+        }
+      }),
+    );
+    if (limited) throw limited;
+    return done;
   }
 
   private convName(c: SConv, users: Record<string, SUser>) {
@@ -222,34 +378,21 @@ export class LiveSlack implements SlackProvider {
     return '#' + (c.name ?? c.id);
   }
 
-  async listConversations(): Promise<Conversation[]> {
+  /**
+   * Gesprekken met echte ongelezen-status. `fetch: false` (worker, na pollReadState): alleen de bewaarde standen,
+   * geen Slack-calls per gesprek. Standaard haalt een verzoek ontbrekende of verouderde standen op binnen
+   * maxStateFetch.
+   */
+  async listConversations(opts: { fetch?: boolean } = {}): Promise<Conversation[]> {
     const [convs, users, me] = await Promise.all([this.convsCached(), this.users(), this.self()]);
-    let budget = this.maxStateFetch;
     const out: Conversation[] = [];
-    // Begrensd parallel: tier-3-methoden (50+/min); de sync-motor ververst de rest op de achtergrond.
-    const states = new Map<string, ConvState | null>();
-    const queue = [...convs];
-    await Promise.all(
-      Array.from({ length: 5 }, async () => {
-        for (let c = queue.shift(); c; c = queue.shift()) {
-          const allow = budget-- > 0;
-          states.set(
-            c.id,
-            await this.state(c.id, allow).catch((e) => {
-              if (e instanceof AuthError) throw e;
-              return null;
-            }),
-          );
-        }
-      }),
+    const states = await this.states(
+      convs.map((c) => c.id),
+      { fetch: opts.fetch !== false },
     );
     for (const c of convs) {
       const st = states.get(c.id);
-      const unread = !!(
-        st?.latest_ts &&
-        st.latest_user !== me.user_id &&
-        (!st.last_read || st.latest_ts > st.last_read)
-      );
+      const unread = isUnread(st, me.user_id);
       const who = st?.latest_user === me.user_id ? 'jij' : userName(users[st?.latest_user ?? '']) || '';
       out.push({
         key: 'sl:' + c.id,
@@ -367,21 +510,26 @@ export class LiveSlack implements SlackProvider {
     add(mention, 'mention');
     add(mega, 'mega');
     const items = [...seen.values()];
-    // Echte gelezen-status uit Slack: ts <= last_read van dat gesprek.
-    for (const ch of new Set(items.map((i) => i.channelId!))) {
-      const st = await this.state(ch, true).catch(() => null);
-      for (const it of items)
-        if (it.channelId === ch && st?.last_read) it.read = parseFloat(it.ts!) <= parseFloat(st.last_read);
+    // Echte gelezen-status uit Slack: ts <= last_read van dat gesprek. Rate limit zonder bekende stand: doorgeven.
+    const states = await this.states([...new Set(items.map((i) => i.channelId!))], { fetch: true });
+    for (const it of items) {
+      const st = states.get(it.channelId!);
+      if (st?.last_read) it.read = parseFloat(it.ts!) <= parseFloat(st.last_read);
     }
     return items.sort((a, b) => b.time.localeCompare(a.time));
   }
 
-  /** Echt gelezen zetten in Slack (conversations.mark): daarna ook gelezen op Slack-mobiel. */
+  /**
+   * Leescursor in Slack zetten (conversations.mark): alles tot en met ts is gelezen, alles erna ongelezen, ook op
+   * Slack-mobiel. Voor ongelezen zetten geeft de API de ts van het bericht vóór het eerste ongelezen bericht mee.
+   */
   async markRead(channelId: string, ts: string): Promise<void> {
     await this.call('conversations.mark', { channel: channelId, ts }, true);
-    const st = (await this.store.get<ConvState>(`slack:state:${channelId}`)) ?? { at: Date.now() };
-    if (!st.last_read || parseFloat(ts) > parseFloat(st.last_read)) st.last_read = ts;
-    await this.store.set(`slack:state:${channelId}`, { ...st, at: Date.now() });
+    // De leescursor staat in Slack nu precies op ts, ook als die terug ging (ongelezen zetten). Dus altijd ts
+    // overnemen; `at` blijft staan (het laatste bericht is niet opnieuw opgehaald).
+    const key = `slack:state:${channelId}`;
+    const st = (await this.store.get<ConvState>(key)) ?? { at: 0 };
+    await this.store.set(key, { ...st, last_read: ts, readAt: Date.now() });
   }
 
   /** Versturen: alleen na een klik van een mens (de app en Claude maken alleen concepten). */
@@ -415,9 +563,10 @@ export class LiveSlack implements SlackProvider {
   }
 
   /**
-   * Events API (de sync-motor geeft events door, na handtekeningcontrole en ontdubbelen):
-   * nieuw bericht -> laatste bericht bijwerken; channel_marked/im_marked/group_marked/mpim_marked (gelezen in
-   * een andere Slack-app) -> last_read bijwerken. Geeft terug of er iets veranderde.
+   * Events API (de sync-motor geeft events door, na handtekeningcontrole en ontdubbelen): nieuw bericht -> laatste
+   * bericht bijwerken. *_marked (channel_marked, im_marked, ...) bestaat alleen in RTM, niet in de Events API; het
+   * wordt hier toch verwerkt als het ooit binnenkomt, maar gelezen-elders hangt af van pollReadState().
+   * Geeft terug of er iets veranderde.
    */
   async applyEvent(ev: {
     type: string;
@@ -440,6 +589,8 @@ export class LiveSlack implements SlackProvider {
         st.latest_ts = ev.ts;
         st.latest_user = ev.user;
         st.latest_text = ev.text;
+        // De webhook bewaart geen berichttekst: de volgende poll haalt het bericht zelf op.
+        if (ev.text === undefined) st.dirty = true;
       }
       await this.store.set(key, st);
       return true;

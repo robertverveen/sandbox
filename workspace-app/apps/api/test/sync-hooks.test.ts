@@ -197,8 +197,9 @@ describe('Slack Events (webhook)', () => {
     expect(await eventCount('slack')).toBe(1);
     expect((await getSyncJob(db, robert, 'slack'))!.nextRunAt.getFullYear()).toBe(2099);
     const stored = await withPurpose(db, 'system', (tx) =>
-      tx.execute(sql`select payload from sync_events where event_id = 'Ev0001'`),
+      tx.execute(sql`select event_id, payload from sync_events where event_id like 'Ev0001%'`),
     );
+    expect(stored.rows.map((r) => (r as { event_id: string }).event_id)).toEqual([`Ev0001:${robert}`]);
     expect(JSON.stringify(stored.rows)).not.toContain('geheime inhoud');
   });
 });
@@ -249,6 +250,51 @@ describe("Slack Events met twee collega's in één kanaal", () => {
       tx.execute(sql`select user_id from sync_events where event_id like 'EvGedeeld1%' order by user_id`),
     );
     expect(ev.rows.map((r) => (r as { user_id: string }).user_id).sort()).toEqual([robert, lisanne].sort());
+  });
+
+  it('Slack-retry met andere authorizations en meer kanaalleden: per collega één keer verwerkt, volgorde maakt niet uit', async () => {
+    const setChannels = (u: string, ch: string[]) =>
+      finishSync(
+        db,
+        u,
+        'slack',
+        { status: 'idle', failures: 0, nextRunAt: new Date('2099-01-01T00:00:00Z'), push: { slackChannels: ch } },
+        new Date(),
+      );
+    await setChannels(robert, ['CRETRY', 'DROBERT']);
+    await setChannels(lisanne, ['DLISANNE']);
+    const event = { type: 'message', channel: 'CRETRY', ts: '1793262850.000100', user: 'UANNA' };
+    const first = JSON.stringify({
+      type: 'event_callback',
+      event_id: 'EvRetry1',
+      authorizations: [{ user_id: 'U04L22BRJQ7' }],
+      event,
+    });
+    expect((await req('POST', '/api/hooks/slack', { body: first, headers: slackSig(first) })).status).toBe(200);
+    expect(await pushed(robert)).toBe(true);
+    expect(await pushed(lisanne)).toBe(false);
+    // Intussen kent de sync van Lisanne het kanaal; Slack herhaalt het event en noemt nu Lisanne eerst.
+    await setChannels(robert, ['CRETRY', 'DROBERT']);
+    await setChannels(lisanne, ['CRETRY', 'DLISANNE']);
+    const retry = JSON.stringify({
+      type: 'event_callback',
+      event_id: 'EvRetry1',
+      authorizations: [{ user_id: 'U0LISANNE' }],
+      event,
+    });
+    const res = await req('POST', '/api/hooks/slack', {
+      body: retry,
+      headers: { ...slackSig(retry), 'x-slack-retry-num': '1' },
+    });
+    expect(res.status).toBe(200);
+    expect(await pushed(robert)).toBe(false); // al verwerkt: niet nog eens
+    expect(await pushed(lisanne)).toBe(true); // nieuw doel: wel
+    const ev = await withPurpose(db, 'system', (tx) =>
+      tx.execute(sql`select event_id from sync_events where event_id like 'EvRetry1%' order by event_id`),
+    );
+    expect(ev.rows.map((r) => (r as { event_id: string }).event_id).sort()).toEqual(
+      [`EvRetry1:${robert}`, `EvRetry1:${lisanne}`].sort(),
+    );
   });
 
   it('een DM van alleen Robert zet geen run klaar voor Lisanne', async () => {

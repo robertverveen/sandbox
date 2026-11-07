@@ -29,7 +29,7 @@ import {
   withUser,
   type Db,
 } from '@hz/db';
-import { GOOGLE_TASKS_BASE, withUserScope } from '@hz/providers';
+import { GOOGLE_TASKS_BASE, SLACK_BASE, withUserScope } from '@hz/providers';
 import { sql } from 'drizzle-orm';
 import { createSyncDeps, planSync } from '../src/sync-db';
 import { runSync } from '../src/sync';
@@ -157,6 +157,61 @@ describe('sync-motor op Postgres (HZW-036)', () => {
       await listener.end();
     }
   }, 30_000);
+
+  it('Slack gelezen op een ander apparaat (met Events-geheim): de volgende run na 3 min haalt het op en meldt het', async () => {
+    let lastRead = '1793262000.000100';
+    const infoCalls: string[] = [];
+    const ok = (r: Request, body: object) =>
+      r.headers.get('authorization') === 'Bearer xoxp-van-bram'
+        ? HttpResponse.json({ ok: true, ...body })
+        : HttpResponse.json({ ok: false, error: 'invalid_auth' });
+    server.use(
+      http.get(`${SLACK_BASE}/auth.test`, ({ request }) => ok(request, { user_id: 'UBRAM', team_id: 'T1' })),
+      http.get(`${SLACK_BASE}/users.list`, ({ request }) => ok(request, { members: [] })),
+      http.get(`${SLACK_BASE}/users.conversations`, ({ request }) =>
+        ok(request, { channels: [{ id: 'CBRAM', name: 'warmtehuis-hz', is_channel: true }] }),
+      ),
+      http.get(`${SLACK_BASE}/conversations.info`, ({ request }) => {
+        infoCalls.push(new URL(request.url).searchParams.get('channel')!);
+        return ok(request, { channel: { id: 'CBRAM', last_read: lastRead } });
+      }),
+      http.get(`${SLACK_BASE}/conversations.history`, ({ request }) =>
+        ok(request, { messages: [{ ts: '1793262720.000200', user: 'UPIET', text: 'Planning?' }] }),
+      ),
+    );
+    const listener = new pg.Client({ connectionString: URL_ });
+    await listener.connect();
+    const got: string[] = [];
+    listener.on('notification', (n) => got.push(n.payload ?? ''));
+    await listener.query(`LISTEN ${EVENTS_CHANNEL}`);
+    let now = new Date('2026-11-07T08:00:00Z');
+    const deps = createSyncDeps({
+      db,
+      masterKey: key,
+      env: { HZ_LIVE_SLACK: '1', HZ_SLACK_SIGNING_SECRET: 'alleen-voor-de-test' },
+      now: () => now,
+    });
+    try {
+      const first = await runSync(deps, B, 'slack');
+      expect(first.status).toBe('idle');
+      expect(+first.nextRunAt - +now).toBe(3 * 60_000); // ook met het Events-geheim: 3 minuten, niet 30
+      lastRead = '1793262720.000200'; // gelezen op Slack-mobiel; de Events API stuurt hiervoor niets
+      infoCalls.length = 0;
+      got.length = 0;
+      now = new Date(+now + 3 * 60_000);
+      const second = await runSync(deps, B, 'slack');
+      expect(second).toMatchObject({ status: 'idle', changed: 1 });
+      expect(infoCalls).toEqual(['CBRAM']); // buiten de 5-minutencache om
+      for (let i = 0; i < 20 && !got.length; i++) await new Promise((r) => setTimeout(r, 50));
+      expect(got.map((p) => JSON.parse(p))).toEqual([{ userId: B, keys: ['conversations', 'items', 'dagstart'] }]);
+      // De bewaarde stand (sync_state van Bram, onder RLS) is nu gelezen.
+      const st = await withUserScope(B, () => deps.store.get<{ last_read: string }>('slack:state:CBRAM'));
+      expect(st!.last_read).toBe('1793262720.000200');
+    } finally {
+      await listener.end();
+      server.resetHandlers();
+    }
+  });
 
   it('token afgewezen: koppeling en planning op needs_reauth', async () => {
     await saveConnectionToken(db, key, A, 'google_tasks', JSON.stringify({ access_token: 'ingetrokken' }), {
