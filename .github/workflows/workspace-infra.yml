@@ -73,7 +73,7 @@ jobs:
         image: [api, worker, web]
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Bouw hz-${{ matrix.image }} (geen push)
         uses: docker/build-push-action@v6
         with:
