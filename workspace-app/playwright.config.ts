@@ -1,0 +1,37 @@
+import { defineConfig, devices } from '@playwright/test';
+
+/** E2E tegen de echte app: API (fixtures) en Vite op eigen poorten, zodat ze niet botsen met andere stukken. */
+const API = Number(process.env.HZ_E2E_API_PORT ?? 8780);
+const WEB = Number(process.env.HZ_E2E_WEB_PORT ?? 8781);
+
+export default defineConfig({
+  testDir: 'e2e',
+  timeout: 30_000,
+  fullyParallel: false,
+  workers: 1,
+  reporter: [['list']],
+  use: { baseURL: `http://127.0.0.1:${WEB}`, trace: 'retain-on-failure' },
+  projects: [{ name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } } }],
+  webServer: [
+    {
+      command: 'node_modules/.bin/tsx apps/api/src/index.ts',
+      url: `http://127.0.0.1:${API}/api/health`,
+      env: {
+        HZ_API_PORT: String(API),
+        HZ_FIXTURE_SET: 'demo',
+        HZ_STORE: 'memory',
+        NODE_ENV: 'development',
+        HZ_CONTEXT_EXPORT: '',
+      },
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    {
+      command: `apps/web/node_modules/.bin/vite --config apps/web/vite.config.ts apps/web --port ${WEB} --strictPort`,
+      url: `http://127.0.0.1:${WEB}/`,
+      env: { HZ_API_PORT: String(API), HZ_WEB_PORT: String(WEB) },
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+  ],
+});

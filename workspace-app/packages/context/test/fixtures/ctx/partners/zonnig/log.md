@@ -1,0 +1,2 @@
+- [2026-11-03] Werksessie over de thuisbatterijflow -> zonnig
+- [2026-11-01] Toegang Pico gegeven

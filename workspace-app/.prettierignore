@@ -1,0 +1,13 @@
+pnpm-lock.yaml
+packages/db/drizzle/
+apps/web/src/styles/prototype.css
+packages/context/test/reference/
+.local/
+# Inhoud van anderen en testrepo's: nooit herformatteren.
+*.md
+PROGRESS.html
+stories.json
+packages/context/test/fixtures/
+apps/web/dist/
+apps/api/dist/
+apps/worker/dist/

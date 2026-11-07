@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#fbfbf8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#131939" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/src/assets/favicon.svg" type="image/svg+xml" />
+    <title>HomeZero Workspace</title>
+    <script>
+      // Thema vóór de eerste render, zodat er geen flits van licht naar donker is.
+      try {
+        var t = localStorage.getItem('hz:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

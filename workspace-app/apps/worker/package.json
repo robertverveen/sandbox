@@ -1,0 +1,30 @@
+{
+  "name": "@hz/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/worker.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hz/db": "workspace:*",
+    "@hz/providers": "workspace:*",
+    "@hz/shared": "workspace:*",
+    "drizzle-orm": "0.44.7",
+    "pg": "8.16.3",
+    "pg-boss": "10.4.2"
+  },
+  "devDependencies": {
+    "tsup": "8.5.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

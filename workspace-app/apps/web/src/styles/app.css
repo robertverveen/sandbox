@@ -1,0 +1,131 @@
+/* Aanvullingen voor de webapp bovenop de huisstijl van het prototype (prototype.css). */
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+}
+a.nav-item,
+a.calm-chip,
+a.cv-more,
+a.linklike,
+a.chip {
+  text-decoration: none;
+}
+a.nav-item {
+  color: var(--muted);
+}
+a.nav-item:hover,
+a.nav-item.active {
+  color: var(--fg);
+}
+a.calm-chip {
+  color: var(--fg);
+}
+a.linklike {
+  color: var(--blue-500);
+}
+.quiet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.quiet-foot .foot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+.quiet-foot .theme-btn {
+  width: 28px;
+  height: 28px;
+}
+.todo-card {
+  margin-top: 4px;
+  border-style: dashed;
+  max-width: 760px;
+}
+.login {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 16px;
+}
+.login-card {
+  max-width: 420px;
+  width: 100%;
+}
+.login-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px;
+}
+.login-card h1 {
+  font-size: 28px;
+}
+.note.warn {
+  background: var(--yellow-100);
+  color: #5c3d00;
+}
+:root[data-theme='dark'] .note.warn {
+  background: #3a3214;
+  color: var(--yellow-300);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .note.warn {
+    background: #3a3214;
+    color: var(--yellow-300);
+  }
+}
+.ma-row.sel {
+  background: var(--hover);
+}
+/* Links die in het prototype knoppen waren: zelfde box-model (knoppen zijn border-box). */
+a.nav-item,
+a.calm-chip,
+a.btn {
+  box-sizing: border-box;
+}
+/* Links in het werkvlak: accentkleur, zodat ze ook in donker leesbaar zijn (prototype: altijd blue-500). */
+a.linklike,
+.ctx-act-main a {
+  color: var(--accent);
+}
+/* Toegankelijkheid (axe, WCAG AA): iets donkerder grijs voor kleine tekst en onderstreepte links in lopende tekst. */
+.brand span,
+.searchbtn,
+.searchbtn .kbd {
+  color: var(--muted);
+}
+.ctx-act-main .sub a,
+.ctx-act-main .sub a.linklike {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+.ctx-act.od .od-t {
+  color: var(--danger);
+}
+:root[data-theme='dark'] a.linklike,
+:root[data-theme='dark'] .ctx-act-main a {
+  color: var(--blue-300);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) a.linklike,
+  :root:not([data-theme='light']) .ctx-act-main a {
+    color: var(--blue-300);
+  }
+}
+.nav-item .count:not(.hot),
+.count-badge {
+  color: var(--muted);
+}
+/* Lichte modus: --faint iets donkerder (#5f6d8a, 5:1 op wit) zodat kleine grijze tekst AA haalt.
+   Donker houdt de waarden van het prototype (de donkere regels hebben een hogere specificiteit). */
+:root {
+  --faint: #5f6d8a;
+}

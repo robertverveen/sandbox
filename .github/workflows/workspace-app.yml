@@ -1,0 +1,53 @@
+# CI van de HomeZero Workspace-app (HZW-001). De git-root is deze map; de app staat in workspace-app/.
+name: workspace-app
+on:
+  pull_request:
+    paths: ['workspace-app/**', '.github/workflows/workspace-app.yml']
+  push:
+    branches: [main]
+    paths: ['workspace-app/**', '.github/workflows/workspace-app.yml']
+
+defaults:
+  run:
+    working-directory: workspace-app
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        # Superuser is 'postgres'. hz_dev (de migratierol) wordt hieronder aangemaakt ZONDER SUPERUSER,
+        # anders omzeilt elke query RLS en faalt de RLS-test (rolsuper=false).
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: workspace-app/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: workspace-app/pnpm-lock.yaml
+      - name: Rollen in Postgres (hz_dev zonder superuser, runtime-rol hz_app)
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE hz_dev LOGIN PASSWORD 'hz_dev' CREATEDB NOSUPERUSER NOCREATEROLE NOBYPASSRLS"
+          psql -h localhost -U postgres -v migrator=hz_dev -f packages/db/sql/bootstrap-roles.sql
+          psql -h localhost -U postgres -tAc "select rolname, rolsuper, rolbypassrls from pg_roles where rolname in ('hz_dev', 'hz_app')"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
